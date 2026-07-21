@@ -82,6 +82,7 @@ Usage examples:
 ```bash
 ./build/duppy attachment
 ./build/duppy target
+./build/duppy enemy
 ```
 
 ### Components
