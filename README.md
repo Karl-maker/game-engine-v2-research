@@ -57,6 +57,16 @@ Files:
 - `src/ecs/components/PhysicsMaterialComponent.h`
 - `src/ecs/components/LightComponent.h`
 - `src/ecs/components/CameraComponent.h`
+- `src/ecs/components/RigidbodyComponent.h`
+- `src/ecs/components/CombatVolumeComponent.h`
+- `src/ecs/components/StatsComponent.h`
+- `src/ecs/components/RaycastComponent.h`
+- `src/ecs/services/RaycastConeFactoryService.h`
+- `src/ecs/components/MotionComponent.h`
+- `src/ecs/components/ControllerComponent.h`
+- `src/ecs/components/TerrainComponent.h`
+- `src/ecs/components/ColliderComponent.h`
+- `src/ecs/components/MeshRendererComponent.h`
 
 Key ideas:
 - `createEntity(name)` allocates a monotonic `EntityId` (+1) and attaches `IdentityComponent`.
