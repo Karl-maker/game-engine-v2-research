@@ -185,14 +185,26 @@ class EntityRegistry final {
  public:
   EntityRegistry();
 
+  // Creates a new entity and returns its allocated id.
+  // - Allocation is monotonic (+1).
+  // - An `IdentityComponent` is automatically attached.
   EntityId createEntity(std::string name = {});
+
+  // Destroys an entity and removes all of its components.
   void destroyEntity(EntityId id);
+
+  // Returns true if the id currently refers to a live entity.
   bool isAlive(EntityId id) const;
 
+  // Convenience accessors for the always-present Identity component.
   IdentityComponent& identity(EntityId id);
   const IdentityComponent& identity(EntityId id) const;
 
   template <typename T, typename... Args>
+  // Adds (or replaces) a component on an entity.
+  // Example:
+  //   registry.emplace<TransformComponent>(id);
+  //   registry.emplace<Health>(id, 100);
   T& emplace(EntityId id, Args&&... args) {
     ensureAlive(id);
     auto& storage = storageFor<T>();
@@ -200,6 +212,7 @@ class EntityRegistry final {
   }
 
   template <typename T>
+  // Checks if an entity has a component of type T.
   bool has(EntityId id) const {
     if (!isAlive(id)) return false;
     const auto* s = tryStorageFor<T>();
@@ -207,18 +220,21 @@ class EntityRegistry final {
   }
 
   template <typename T>
+  // Gets a component reference (throws if missing).
   T& get(EntityId id) {
     ensureAlive(id);
     return storageFor<T>().get(id);
   }
 
   template <typename T>
+  // Gets a component reference (throws if missing).
   const T& get(EntityId id) const {
     ensureAlive(id);
     return storageFor<T>().get(id);
   }
 
   template <typename T>
+  // Gets a component pointer (nullptr if missing).
   T* tryGet(EntityId id) {
     if (!isAlive(id)) return nullptr;
     auto* s = tryStorageFor<T>();
@@ -227,6 +243,7 @@ class EntityRegistry final {
   }
 
   template <typename T>
+  // Gets a component pointer (nullptr if missing).
   const T* tryGet(EntityId id) const {
     if (!isAlive(id)) return nullptr;
     const auto* s = tryStorageFor<T>();
@@ -235,6 +252,9 @@ class EntityRegistry final {
   }
 
   template <typename T>
+  // Removes a component (no-op if missing).
+  // Example:
+  //   registry.remove<TransformComponent>(id);
   void remove(EntityId id) {
     if (!isAlive(id)) return;
     if (auto* s = tryStorageFor<T>()) {
@@ -246,6 +266,9 @@ class EntityRegistry final {
   // Iterates entities that have ALL requested components and calls:
   //   fn(EntityId, Components&...)
   template <typename... Components, typename Fn>
+  // Iterates entities that have ALL listed components.
+  // - Uses the smallest dense set as the primary iterator.
+  // - Safe to call `defer...` methods inside the callback; call `applyDeferred()` later.
   void view(Fn&& fn) {
     static_assert(sizeof...(Components) > 0, "view requires at least one component type");
 
@@ -268,9 +291,11 @@ class EntityRegistry final {
   // Deferred edit API (command buffer).
   // Use these inside systems, then call `applyDeferred()` once per frame.
 
+  // Applies all queued edits in FIFO order.
   void applyDeferred();
 
   template <typename T, typename... Args>
+  // Queues a component add/replace to be applied later.
   void deferEmplace(EntityId id, Args&&... args) {
     m_commands.enqueue([this, id, argsTuple = std::make_tuple(std::forward<Args>(args)...)]() mutable {
       if (!isAlive(id)) return;
@@ -281,6 +306,7 @@ class EntityRegistry final {
   }
 
   template <typename T>
+  // Queues a component removal to be applied later.
   void deferRemove(EntityId id) {
     m_commands.enqueue([this, id] {
       if (!isAlive(id)) return;
@@ -288,6 +314,7 @@ class EntityRegistry final {
     });
   }
 
+  // Queues an entity destruction to be applied later.
   void deferDestroy(EntityId id) {
     m_commands.enqueue([this, id] {
       if (!isAlive(id)) return;
@@ -296,6 +323,7 @@ class EntityRegistry final {
   }
 
   template <typename T, typename Fn>
+  // Queues a mutation lambda to run later if the component exists.
   void deferMutate(EntityId id, Fn&& mutator) {
     m_commands.enqueue([this, id, mutator = std::forward<Fn>(mutator)]() mutable {
       if (!isAlive(id)) return;
@@ -306,6 +334,9 @@ class EntityRegistry final {
   }
 
   template <typename T, typename MemberT>
+  // Queues an arithmetic increment of a specific component member.
+  // Example:
+  //   registry.deferAdd<TransformComponent>(id, &TransformComponent::position.x, 1.0f);
   void deferAdd(EntityId id, MemberT T::*member, MemberT delta) {
     static_assert(std::is_arithmetic_v<MemberT>, "deferAdd expects an arithmetic member");
     deferMutate<T>(id, [member, delta](T& c) { c.*member += delta; });
