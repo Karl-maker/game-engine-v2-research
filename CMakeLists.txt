@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(duppy
   src/main.cpp
+  src/ecs/EntityRegistry.cpp
   src/core/ConsoleInputService.cpp
   src/core/GameLoopService.cpp
   src/core/SteadyTimeSource.cpp
@@ -22,4 +23,3 @@ endif()
 
 find_package(Threads REQUIRED)
 target_link_libraries(duppy PRIVATE Threads::Threads)
-

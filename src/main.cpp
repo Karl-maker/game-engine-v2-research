@@ -1,16 +1,25 @@
 #include "core/ConsoleInputService.h"
 #include "core/GameLoopService.h"
 #include "core/SteadyTimeSource.h"
+#include "ecs/EntityRegistry.h"
 
 // Author: Karl-Johan Bailey
 
 #include <iostream>
+#include <string_view>
 
 namespace {
 
 class DemoGame final : public core::IGame {
  public:
-  void onStart() override { std::cout << "Duppy Conquerer loop started. Type 'q' + Enter to quit.\n"; }
+  void onStart() override {
+    std::cout << "Duppy Conquerer loop started. Type 'q' + Enter to quit.\n";
+
+    m_player = m_registry.createEntity("Player");
+    std::cout << "Created entity id=" << m_registry.identity(m_player).id << " name=" << m_registry.identity(m_player).name
+              << "\n";
+    std::cout << "Try: `name <newName>` then Enter.\n";
+  }
 
   void onTick(const core::TickContext& ctx) override {
     // This is where your per-frame gameplay/simulation code goes.
@@ -19,8 +28,28 @@ class DemoGame final : public core::IGame {
     // - Read inputs from ctx.inputLines (or swap in a different input service later).
 
     for (const auto& line : ctx.inputLines) {
-      if (!line.empty() && line != "q" && line != "quit" && line != "exit") {
-        std::cout << "\ncommand: " << line << "\n";
+      if (line.empty()) continue;
+      if (line == "q" || line == "quit" || line == "exit") continue;
+
+      if (startsWith(line, "name ")) {
+        const auto newName = line.substr(5);
+        m_registry.deferMutate<ecs::IdentityComponent>(m_player, [newName](ecs::IdentityComponent& idc) {
+          idc.name = newName;
+        });
+        continue;
+      }
+
+      std::cout << "\ncommand: " << line << "\n";
+    }
+
+    // Apply queued entity/component edits at a safe point (end-of-frame sync).
+    m_registry.applyDeferred();
+
+    if (m_registry.isAlive(m_player)) {
+      const auto& ident = m_registry.identity(m_player);
+      if (ident.name != m_lastName) {
+        m_lastName = ident.name;
+        std::cout << "\nentity " << ident.id << " renamed to " << ident.name << "\n";
       }
     }
 
@@ -31,6 +60,15 @@ class DemoGame final : public core::IGame {
   }
 
   void onStop() override { std::cout << "Stopped.\n"; }
+
+ private:
+  static bool startsWith(const std::string& s, std::string_view prefix) {
+    return s.size() >= prefix.size() && std::string_view(s.data(), prefix.size()) == prefix;
+  }
+
+  ecs::EntityRegistry m_registry;
+  ecs::EntityId m_player = ecs::kInvalidEntityId;
+  std::string m_lastName;
 };
 
 }  // namespace
