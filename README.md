@@ -52,6 +52,7 @@ Files:
 - `src/ecs/EntityRegistry.cpp`
 - `src/ecs/components/IdentityComponent.h`
 - `src/ecs/components/TransformComponent.h`
+- `src/ecs/components/AttachmentComponent.h`
 
 Key ideas:
 - `createEntity(name)` allocates a monotonic `EntityId` (+1) and attaches `IdentityComponent`.

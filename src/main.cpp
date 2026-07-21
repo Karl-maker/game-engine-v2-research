@@ -3,6 +3,7 @@
 #include "core/SteadyTimeSource.h"
 #include "ecs/EntityRegistry.h"
 #include "ecs/components/TransformComponent.h"
+#include "ecs/components/AttachmentComponent.h"
 
 // Author: Karl-Johan Bailey
 
@@ -17,9 +18,11 @@ class DemoGame final : public core::IGame {
     std::cout << "Duppy Conquerer loop started. Type 'q' + Enter to quit.\n";
 
     m_player = m_registry.createEntity("Player");
-    m_registry.emplace<ecs::TransformComponent>(m_player);
 
-    auto& p1 = m_registry.get<ecs::TransformComponent>(1);
+    m_registry.emplace<ecs::TransformComponent>(m_player);
+    m_registry.emplace<ecs::AttachmentComponent>(m_player);
+
+    auto& p1 = m_registry.get<ecs::TransformComponent>(m_player);
     p1.position.x = 5.0f;
  
     std::cout << "Created entity id=" << m_registry.identity(m_player).id << " name=" << m_registry.identity(m_player).name

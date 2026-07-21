@@ -13,6 +13,7 @@ This project includes a minimal Entity Registry that:
 
 ```cpp
 #include "ecs/EntityRegistry.h"
+#include "ecs/components/AttachmentComponent.h"
 #include "ecs/components/TransformComponent.h"
 ```
 
