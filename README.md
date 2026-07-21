@@ -54,6 +54,9 @@ Files:
 - `src/ecs/components/TransformComponent.h`
 - `src/ecs/components/AttachmentComponent.h`
 - `src/ecs/components/TargetComponent.h`
+- `src/ecs/components/PhysicsMaterialComponent.h`
+- `src/ecs/components/LightComponent.h`
+- `src/ecs/components/CameraComponent.h`
 
 Key ideas:
 - `createEntity(name)` allocates a monotonic `EntityId` (+1) and attaches `IdentityComponent`.
