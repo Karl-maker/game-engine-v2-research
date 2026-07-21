@@ -8,9 +8,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(duppy
   src/main.cpp
   src/ecs/EntityRegistry.cpp
+  src/ecs/systems/AttachmentSystem.cpp
+  src/ecs/systems/TargetSystem.cpp
   src/core/ConsoleInputService.cpp
   src/core/GameLoopService.cpp
   src/core/SteadyTimeSource.cpp
+  src/games/AttachmentDemoGame.cpp
+  src/games/TargetDemoGame.cpp
 )
 
 target_include_directories(duppy PRIVATE src)

@@ -14,6 +14,7 @@
 // - It does NOT apply transforms by itself (that is system logic).
 
 #include "ecs/EntityId.h"
+#include "math/Vec3.h"
 
 #include <string>
 #include <vector>
@@ -21,12 +22,6 @@
 namespace ecs {
 
 struct AttachmentComponent {
-  struct Vec3 {
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
-  };
-
   enum class Mode {
     Parent,   // Hard parent: child matches parent (optionally with offsets).
     Follow,   // Smoothly follow target position and/or rotation.
@@ -50,9 +45,9 @@ struct AttachmentComponent {
     bool enabled = true;
 
     // Offsets to apply when computing the attached transform.
-    Vec3 positionOffset{0.0f, 0.0f, 0.0f};
-    Vec3 rotationOffset{0.0f, 0.0f, 0.0f};  // pitch/yaw/roll in degrees
-    Vec3 scaleOffset{0.0f, 0.0f, 0.0f};     // additive scale offset (system-defined)
+    math::Vec3 positionOffset{0.0f, 0.0f, 0.0f};
+    math::Vec3 rotationOffset{0.0f, 0.0f, 0.0f};  // pitch/yaw/roll in degrees
+    math::Vec3 scaleOffset{0.0f, 0.0f, 0.0f};     // additive scale offset (system-defined)
 
     // What to inherit from the target.
     bool inheritPosition = true;
@@ -83,4 +78,3 @@ struct AttachmentComponent {
 };
 
 }  // namespace ecs
-

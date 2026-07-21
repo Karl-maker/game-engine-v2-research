@@ -6,27 +6,22 @@
 // Any element can have a location/orientation/scale in the world.
 // Attach it to an entity to give it spatial data.
 
+#include "math/Vec3.h"
+
 namespace ecs {
 
 struct TransformComponent {
-  struct Position {
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
-  } position;
+  using Position = math::Vec3;
+  using Rotation = math::Vec3;  // pitch/yaw/roll in degrees
+  using Scale = math::Vec3;
 
-  struct Rotation {
-    float pitch = 0.0f;
-    float yaw = 0.0f;
-    float roll = 0.0f;
-  } rotation;
+  Position position{0.0f, 0.0f, 0.0f};
+  Rotation rotation{0.0f, 0.0f, 0.0f};
+  Scale scale{1.0f, 1.0f, 1.0f};
 
-  struct Scale {
-    float x = 1.0f;
-    float y = 1.0f;
-    float z = 1.0f;
-  } scale;
+  static constexpr int kPitch = 0;
+  static constexpr int kYaw = 1;
+  static constexpr int kRoll = 2;
 };
 
 }  // namespace ecs
-

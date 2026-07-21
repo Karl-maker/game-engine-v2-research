@@ -13,7 +13,7 @@ Minimal, dependency-free C++ game loop scaffold:
 ```bash
 cmake -S . -B build
 cmake --build build
-./build/duppy
+./build/duppy attachment
 ```
 
 ## Build & Run (single command, no CMake)
@@ -22,18 +22,18 @@ macOS/Linux:
 ```bash
 mkdir -p build &&
 g++ -std=c++17 -O2 -pthread -Isrc \
-  src/main.cpp src/core/*.cpp src/ecs/EntityRegistry.cpp \
+  src/main.cpp src/core/*.cpp src/ecs/EntityRegistry.cpp src/ecs/systems/*.cpp src/games/*.cpp \
   -o build/duppy &&
-./build/duppy
+./build/duppy attachment
 ```
 
 Windows (Developer Command Prompt):
 ```bat
 mkdir build
 cl /std:c++17 /W4 /EHsc /I src ^
-  src\main.cpp src\core\*.cpp src\ecs\EntityRegistry.cpp ^
+  src\main.cpp src\core\*.cpp src\ecs\EntityRegistry.cpp src\ecs\systems\*.cpp src\games\*.cpp ^
   /Fe:build\duppy.exe
-build\duppy.exe
+build\duppy.exe attachment
 ```
 
 ## Controls
@@ -53,6 +53,7 @@ Files:
 - `src/ecs/components/IdentityComponent.h`
 - `src/ecs/components/TransformComponent.h`
 - `src/ecs/components/AttachmentComponent.h`
+- `src/ecs/components/TargetComponent.h`
 
 Key ideas:
 - `createEntity(name)` allocates a monotonic `EntityId` (+1) and attaches `IdentityComponent`.
@@ -62,6 +63,13 @@ Key ideas:
 
 Usage examples:
 - `docs/entity-registry.md`
+
+## Demos (terminal)
+
+```bash
+./build/duppy attachment
+./build/duppy target
+```
 
 ### Components
 
@@ -89,4 +97,26 @@ Example:
 auto id = registry.createEntity("Crate");
 registry.emplace<ecs::TransformComponent>(id);  // add
 registry.remove<ecs::TransformComponent>(id);   // remove
+```
+
+### Attachment Component
+
+Describes how one entity is attached to another (data only; a system interprets it).
+
+Example:
+```cpp
+#include "ecs/components/AttachmentComponent.h"
+
+registry.emplace<ecs::AttachmentComponent>(camera);
+```
+
+### Target Component
+
+Orientation-only descriptor: rotate an entity to face a target entity (data only; a system interprets it).
+
+Example:
+```cpp
+#include "ecs/components/TargetComponent.h"
+
+registry.emplace<ecs::TargetComponent>(camera).targetEntity = player;
 ```
