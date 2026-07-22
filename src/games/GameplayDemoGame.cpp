@@ -9,6 +9,7 @@
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
+#include "materials/presets/PebblyDirt.h"
 
 #include <iostream>
 
@@ -39,7 +40,8 @@ void GameplayDemoGame::onStart() {
     terrain.cellSizeMeters = 1.0f;
     terrain.heightScaleMeters = 35.0f;
 
-    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain);
+    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::PebblyDirt());
+    // Render using the current OpenGL demo shader (textures are ignored for now).
     shader.shader.key = "graphics/shaders/terrain";
     shader.depthWrite = true;
   }
@@ -83,7 +85,11 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   if (m_renderer.isOpen()) {
-    m_renderer.render(frame);
+    m_renderer.render(frame,
+                      ctx.debugHudEnabled,
+                      static_cast<float>(ctx.fpsEstimate),
+                      static_cast<float>(ctx.deltaSeconds * 1000.0),
+                      static_cast<float>(ctx.cpuWorkSeconds * 1000.0));
   } else {
     if (ctx.requestQuit) ctx.requestQuit();
     return;

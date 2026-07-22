@@ -26,7 +26,11 @@ class OpenGlRenderer final {
   bool isOpen() const;
   void pollEvents();
 
-  void render(const ecs::systems::GraphicsSystem::FrameSnapshot& frame);
+  void render(const ecs::systems::GraphicsSystem::FrameSnapshot& frame,
+              bool debugHudEnabled,
+              float fpsEstimate,
+              float deltaMs,
+              float cpuWorkMs);
 
  private:
   struct Program final {
@@ -51,6 +55,7 @@ class OpenGlRenderer final {
   TerrainMesh* getOrCreateTerrainMesh(const ecs::systems::GraphicsSystem::TerrainDraw& terrain);
 
   static std::string readTextFile(const std::string& path);
+  static std::string readShaderSourceWithIncludes(const std::string& path);
   static std::uint32_t compileShader(std::uint32_t type, const std::string& source, std::string* outError);
   static Program linkProgram(std::uint32_t vsId, std::uint32_t fsId, std::string* outError);
   static void destroyProgram(Program& p);
@@ -59,10 +64,20 @@ class OpenGlRenderer final {
   GLFWwindow* m_window = nullptr;
   int m_fbWidth = 1;
   int m_fbHeight = 1;
+  std::string m_baseTitle;
+  double m_lastTitleUpdateSeconds = 0.0;
+
+  // Debug overlay (top-left text).
+  std::uint32_t m_overlayProgram = 0;
+  std::uint32_t m_overlayVao = 0;
+  std::uint32_t m_overlayVbo = 0;
+  std::size_t m_overlayCapacityVerts = 0;
+  std::string m_gpuVendor;
+  std::string m_gpuRenderer;
+  std::string m_glVersion;
 
   std::unordered_map<std::string, Program> m_programs;
   std::unordered_map<std::uint32_t, TerrainMesh> m_terrainMeshes;  // key: entity id
 };
 
 }  // namespace graphics
-

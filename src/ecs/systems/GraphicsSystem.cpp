@@ -62,6 +62,30 @@ bool readBaseColorParam(const ecs::ShaderComponent& shader, float& r, float& g, 
   return false;
 }
 
+bool readBoolParam(const ecs::ShaderComponent& shader, const char* name, bool& out) {
+  for (const auto& p : shader.parameters) {
+    if (p.name != name) continue;
+    if (const auto* v = std::get_if<bool>(&p.value)) {
+      out = *v;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool readColorParam(const ecs::ShaderComponent& shader, const char* name, float& r, float& g, float& b) {
+  for (const auto& p : shader.parameters) {
+    if (p.name != name) continue;
+    if (const auto* c = std::get_if<render::Color>(&p.value)) {
+      r = c->r;
+      g = c->g;
+      b = c->b;
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& registry) {
@@ -112,6 +136,21 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readBaseColorParam(shader, draw.baseColorR, draw.baseColorG, draw.baseColorB);
         (void)readFloatParam(shader, "roughness", draw.roughness);
         (void)readFloatParam(shader, "metallic", draw.metallic);
+        (void)readFloatParam(shader, "specularIntensity", draw.specularIntensity);
+        (void)readFloatParam(shader, "dirtColorNoiseStrength", draw.dirtColorNoiseStrength);
+        (void)readBoolParam(shader, "dirtSinksEnabled", draw.dirtSinksEnabled);
+        (void)readFloatParam(shader, "dirtSinkStrength", draw.dirtSinkStrength);
+        (void)readFloatParam(shader, "dirtSinkScale", draw.dirtSinkScale);
+        (void)readFloatParam(shader, "dirtSinkDensity", draw.dirtSinkDensity);
+
+        (void)readBoolParam(shader, "pebblesEnabled", draw.pebblesEnabled);
+        (void)readColorParam(shader, "pebbleColor", draw.pebbleColorR, draw.pebbleColorG, draw.pebbleColorB);
+        (void)readFloatParam(shader, "pebbleRoughness", draw.pebbleRoughness);
+        (void)readFloatParam(shader, "pebbleScale", draw.pebbleScale);
+        (void)readFloatParam(shader, "pebbleDensity", draw.pebbleDensity);
+        (void)readFloatParam(shader, "pebbleBlend", draw.pebbleBlend);
+        (void)readFloatParam(shader, "pebbleNormalStrength", draw.pebbleNormalStrength);
+        (void)readFloatParam(shader, "pebbleHeight", draw.pebbleHeight);
         m_frame.terrains.push_back(std::move(draw));
       });
 

@@ -71,6 +71,7 @@ void GameLoopService::run() {
   double fpsWindowStart = startSeconds;
   std::uint64_t fpsWindowFrames = 0;
   double fpsEstimate = 0.0;
+  double lastWorkSeconds = 0.0;
 
   while (!m_quitRequested.load(std::memory_order_relaxed)) {
     // --- Timing (delta / elapsed) ---
@@ -99,6 +100,9 @@ void GameLoopService::run() {
     ctx.elapsedSeconds = frameStart - startSeconds;
     ctx.frameIndex = frameIndex;
     ctx.inputLines = std::move(lines);
+    ctx.debugHudEnabled = m_debug.enabled;
+    ctx.fpsEstimate = fpsEstimate;
+    ctx.cpuWorkSeconds = lastWorkSeconds;
     ctx.requestQuit = [this] { requestQuit(); };
 
     // --- GAME LOGIC ENTRY POINT ---
@@ -114,6 +118,9 @@ void GameLoopService::run() {
       fpsWindowStart = fpsNow;
       fpsWindowFrames = 0;
     }
+
+    const double workNow = m_timeSource.nowSeconds();
+    lastWorkSeconds = workNow - frameStart;
 
     maybePrintDebug(fpsEstimate, deltaSeconds, frameIndex);
     frameIndex += 1;

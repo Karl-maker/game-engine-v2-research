@@ -60,6 +60,24 @@ class GraphicsSystem final {
     float baseColorB = 0.45f;
     float roughness = 1.0f;
     float metallic = 0.0f;
+    float specularIntensity = 1.0f;
+    float dirtColorNoiseStrength = 0.35f;
+    bool dirtSinksEnabled = false;
+    float dirtSinkStrength = 0.12f;
+    float dirtSinkScale = 1.25f;
+    float dirtSinkDensity = 0.35f;
+
+    // Pebbles layer parameters.
+    bool pebblesEnabled = false;
+    float pebbleColorR = 0.45f;
+    float pebbleColorG = 0.42f;
+    float pebbleColorB = 0.38f;
+    float pebbleRoughness = 0.75f;
+    float pebbleScale = 0.25f;
+    float pebbleDensity = 0.55f;
+    float pebbleBlend = 0.65f;
+    float pebbleNormalStrength = 0.6f;
+    float pebbleHeight = 0.06f;
   };
 
   struct LightDraw final {

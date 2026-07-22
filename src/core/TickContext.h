@@ -18,6 +18,11 @@ struct TickContext {
   std::uint64_t frameIndex = 0;
   std::vector<std::string> inputLines;
 
+  // Debug/telemetry (populated by the loop when debug is enabled).
+  bool debugHudEnabled = false;
+  double fpsEstimate = 0.0;
+  double cpuWorkSeconds = 0.0;  // previous frame CPU work time (excluding sleep)
+
   std::function<void()> requestQuit;
 };
 

@@ -17,11 +17,30 @@ in vec2 v_Uv;
 out vec4 o_Color;
 
 uniform vec3 u_CameraPos;
+uniform float u_Time;
 
 // Material-ish controls (example names).
 uniform vec4 u_BaseColor;
 uniform float u_Roughness;
 uniform float u_Metallic;
+uniform float u_SpecularIntensity;
+uniform float u_DirtColorNoiseStrength;
+
+// Dirt sinks (small depressions)
+uniform int u_DirtSinksEnabled;
+uniform float u_DirtSinkStrength;
+uniform float u_DirtSinkScale;
+uniform float u_DirtSinkDensity;
+
+// Pebbles layer controls.
+uniform int u_PebblesEnabled;
+uniform vec3 u_PebbleColor;
+uniform float u_PebbleRoughness;
+uniform float u_PebbleScale;
+uniform float u_PebbleDensity;
+uniform float u_PebbleBlend;
+uniform float u_PebbleNormalStrength;
+uniform float u_PebbleHeight;
 
 // Optional albedo texture.
 uniform sampler2D u_Albedo;
@@ -38,7 +57,121 @@ uniform vec3 u_LightColor[MAX_LIGHTS];
 uniform float u_LightIntensity[MAX_LIGHTS];
 uniform float u_LightRange[MAX_LIGHTS];
 
-vec3 shadeLambert(vec3 albedo, vec3 normal, vec3 viewDir) {
+float saturate(float x) { return clamp(x, 0.0, 1.0); }
+
+float hash12(vec2 p) {
+  // Cheap hash in [0,1)
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float valueNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float a = hash12(i + vec2(0.0, 0.0));
+  float b = hash12(i + vec2(1.0, 0.0));
+  float c = hash12(i + vec2(0.0, 1.0));
+  float d = hash12(i + vec2(1.0, 1.0));
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  float freq = 1.0;
+  for (int i = 0; i < 5; ++i) {
+    sum += amp * valueNoise(p * freq);
+    freq *= 2.02;
+    amp *= 0.5;
+  }
+  return sum;
+}
+
+#include "pebbles.glsl"
+
+// Small "sink" masks on the ground plane.
+// Returns:
+// - sinkMask: 0..1 (where 1 is deepest)
+// - sinkEdge: 0..1 (edge band)
+vec2 dirtSinks(vec2 worldXZ, float scale, float density) {
+  vec2 p = worldXZ * scale;
+  vec2 cell = floor(p);
+  vec2 f = fract(p);
+
+  float best = 10.0;
+  float bestId = 0.0;
+  for (int j = -1; j <= 1; ++j) {
+    for (int i = -1; i <= 1; ++i) {
+      vec2 c = cell + vec2(float(i), float(j));
+      float id = hash12(c + 19.7);
+      vec2 center = vec2(hash12(c + 2.1), hash12(c + 9.2));
+      vec2 d = (vec2(float(i), float(j)) + center) - f;
+      float dist = dot(d, d);
+      if (dist < best) {
+        best = dist;
+        bestId = id;
+      }
+    }
+  }
+
+  float present = step(1.0 - density, bestId);
+  float r = mix(0.10, 0.28, bestId);
+  float d = sqrt(best);
+
+  float mask = present * (1.0 - smoothstep(r * 0.7, r, d));
+  // Sharper core with gentle edge.
+  float sink = pow(saturate(mask), 1.35);
+  float edge = present * smoothstep(r * 0.45, r * 0.92, d);
+  return vec2(sink, edge);
+}
+
+vec3 perturbNormal(vec3 worldPos, vec3 N, float strength) {
+  // Tiny procedural "bump" from height noise on XZ plane.
+  vec2 p = worldPos.xz;
+  float eps = 0.25;
+  float h = fbm(p * 1.5);
+  float hx = fbm((p + vec2(eps, 0.0)) * 1.5);
+  float hz = fbm((p + vec2(0.0, eps)) * 1.5);
+  vec2 grad = vec2(hx - h, hz - h) / eps;
+
+  vec3 up = vec3(0.0, 1.0, 0.0);
+  vec3 T = normalize(cross(up, N));
+  // Handle near-parallel with up.
+  if (length(T) < 0.001) {
+    T = normalize(cross(vec3(1.0, 0.0, 0.0), N));
+  }
+  vec3 B = normalize(cross(N, T));
+
+  vec3 bumped = normalize(N + (T * grad.x + B * grad.y) * strength);
+  return bumped;
+}
+
+vec3 fresnelSchlick(float cosTheta, vec3 F0) {
+  return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+float distributionGGX(float NdotH, float roughness) {
+  float a = roughness * roughness;
+  float a2 = a * a;
+  float denom = (NdotH * NdotH) * (a2 - 1.0) + 1.0;
+  return a2 / max(3.14159265 * denom * denom, 1e-6);
+}
+
+float geometrySchlickGGX(float NdotV, float roughness) {
+  float r = roughness + 1.0;
+  float k = (r * r) / 8.0;
+  return NdotV / max(NdotV * (1.0 - k) + k, 1e-6);
+}
+
+float geometrySmith(float NdotV, float NdotL, float roughness) {
+  float ggx1 = geometrySchlickGGX(NdotV, roughness);
+  float ggx2 = geometrySchlickGGX(NdotL, roughness);
+  return ggx1 * ggx2;
+}
+
+vec3 shadePbrish(vec3 albedo, vec3 normal, vec3 viewDir, float roughness, float metallic) {
   vec3 result = vec3(0.0);
 
   for (int i = 0; i < u_LightCount && i < MAX_LIGHTS; ++i) {
@@ -61,13 +194,35 @@ vec3 shadeLambert(vec3 albedo, vec3 normal, vec3 viewDir) {
       attenuation = falloff * falloff;
     }
 
-    float NdotL = max(dot(normal, L), 0.0);
+    float NdotL = saturate(dot(normal, L));
+    float NdotV = saturate(dot(normal, viewDir));
+    if (NdotL <= 0.0 || NdotV <= 0.0) continue;
+
     vec3 light = u_LightColor[i] * u_LightIntensity[i] * attenuation;
-    result += albedo * light * NdotL;
+
+    vec3 H = normalize(L + viewDir);
+    float NdotH = saturate(dot(normal, H));
+    float VdotH = saturate(dot(viewDir, H));
+
+    float r = clamp(roughness, 0.04, 1.0);
+    vec3 F0 = mix(vec3(0.04), albedo, saturate(metallic));
+    vec3 F = fresnelSchlick(VdotH, F0);
+    float D = distributionGGX(NdotH, r);
+    float G = geometrySmith(NdotV, NdotL, r);
+
+    vec3 spec = (D * G * F) / max(4.0 * NdotV * NdotL, 1e-5);
+    spec *= u_SpecularIntensity;
+
+    vec3 kS = F;
+    vec3 kD = (vec3(1.0) - kS) * (1.0 - saturate(metallic));
+
+    vec3 diffuse = kD * albedo / 3.14159265;
+    result += (diffuse + spec) * light * NdotL;
   }
 
-  // Tiny ambient term.
-  result += albedo * 0.03;
+  // Ambient: slightly boosted and tinted by sky.
+  vec3 ambient = albedo * 0.06 + vec3(0.02, 0.03, 0.04) * 0.35;
+  result += ambient;
   return result;
 }
 
@@ -75,11 +230,78 @@ void main() {
   vec3 N = normalize(v_WorldNormal);
   vec3 V = normalize(u_CameraPos - v_WorldPos);
 
-  vec3 albedo = u_BaseColor.rgb;
+  // --- Procedural dirt detail ---
+  vec2 p = v_WorldPos.xz;
+  float macro = fbm(p * 0.04);
+  float micro = fbm(p * 1.75 + u_Time * 0.05);
+  float grain = valueNoise(p * 7.0);
+
+  // Height-ish mask for subtle wet/dry patches.
+  float wetMask = saturate((macro - 0.45) * 2.5);
+
+  // Base albedo variation: warmer/cooler specks and grain.
+  vec3 base = u_BaseColor.rgb;
+  vec3 warm = vec3(0.10, 0.06, 0.02);
+  vec3 cool = vec3(-0.04, -0.02, 0.00);
+  base += mix(cool, warm, micro) * (0.35 * u_DirtColorNoiseStrength);
+  base *= 0.85 + macro * 0.35;
+  base *= 0.92 + (grain - 0.5) * (0.12 * u_DirtColorNoiseStrength);
+
+  // Slope-based tint (steeper slopes slightly darker).
+  float slope = 1.0 - saturate(dot(N, vec3(0.0, 1.0, 0.0)));
+  base *= 1.0 - slope * 0.18;
+
+  float roughness = clamp(u_Roughness + (0.5 - micro) * 0.25, 0.04, 1.0);
+  roughness = mix(roughness, roughness * 0.55, wetMask);  // "wetter" looks smoother
+  float metallic = u_Metallic;
+
+  // Micro-bump from procedural noise.
+  N = perturbNormal(v_WorldPos, N, 0.35);
+
+  vec3 albedo = base;
   if (u_UseAlbedo) {
     albedo *= texture(u_Albedo, v_Uv).rgb;
   }
 
-  vec3 color = shadeLambert(albedo, N, V);
+  if (u_DirtSinksEnabled != 0) {
+    vec2 s = dirtSinks(v_WorldPos.xz + vec2(13.7, -4.2), u_DirtSinkScale, u_DirtSinkDensity);
+    float sink = s.x;
+    float edge = s.y;
+
+    // Darker in sinks, a little darker at edges.
+    albedo *= 1.0 - sink * (0.22 * u_DirtSinkStrength) - edge * (0.08 * u_DirtSinkStrength);
+    // Sinks are smoother (compacted/wet).
+    roughness = clamp(roughness - sink * (0.25 * u_DirtSinkStrength), 0.04, 1.0);
+
+    // Push normal slightly to create a shallow depression feel.
+    // Using a height-like field from the sink mask.
+    float eps = 0.35;
+    float sx = dirtSinks(v_WorldPos.xz + vec2(eps, 0.0) + vec2(13.7, -4.2), u_DirtSinkScale, u_DirtSinkDensity).x;
+    float sz = dirtSinks(v_WorldPos.xz + vec2(0.0, eps) + vec2(13.7, -4.2), u_DirtSinkScale, u_DirtSinkDensity).x;
+    vec2 grad = vec2(sx - sink, sz - sink) / eps;
+    vec3 sinkN = normalize(vec3(grad.x * u_DirtSinkStrength, 1.0, grad.y * u_DirtSinkStrength));
+    N = normalize(mix(N, sinkN, sink * 0.85));
+  }
+
+  if (u_PebblesEnabled != 0) {
+    applyPebbles(albedo,
+                 roughness,
+                 N,
+                 v_WorldPos,
+                 V,
+                 u_PebbleColor,
+                 u_PebbleRoughness,
+                 u_PebbleScale,
+                 u_PebbleDensity,
+                 u_PebbleBlend,
+                 u_PebbleNormalStrength,
+                 u_PebbleHeight);
+  }
+
+  vec3 color = shadePbrish(albedo, N, V, roughness, metallic);
+
+  // Simple tonemap-ish curve + gamma for display.
+  color = color / (color + vec3(1.0));
+  color = pow(color, vec3(1.0 / 2.2));
   o_Color = vec4(color, 1.0);
 }
