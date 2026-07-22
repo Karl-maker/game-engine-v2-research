@@ -66,6 +66,11 @@ class OpenGlRenderer final {
     int lodStep = 1;  // 1=full res, 2=half, 4=quarter, ...
   };
 
+  struct TerrainLodState final {
+    int lodStep = 1;
+    bool wantTess = true;
+  };
+
   struct RockMesh final {
     struct Chunk final {
       math::Vec3 center{};
@@ -142,6 +147,9 @@ class OpenGlRenderer final {
   std::unordered_map<std::uint32_t, RockMesh> m_rockMeshes;        // key: entity id
 
   TextureService m_textures;
+
+  // Runtime LOD state (hysteresis) to avoid flickering when hovering at thresholds.
+  std::unordered_map<std::uint32_t, TerrainLodState> m_terrainLodState;  // key: terrain entity id
 };
 
 }  // namespace graphics
