@@ -43,6 +43,8 @@ if(DUPPY_ENABLE_OPENGL)
   if(GLFW_FOUND)
     target_sources(duppy PRIVATE
       src/graphics/OpenGlRenderer.cpp
+      src/graphics/ShaderService.cpp
+      src/graphics/TextureService.cpp
     )
     target_compile_definitions(duppy PRIVATE DUPPY_ENABLE_OPENGL=1)
     target_include_directories(duppy PRIVATE ${GLFW_INCLUDE_DIRS})
@@ -53,6 +55,7 @@ if(DUPPY_ENABLE_OPENGL)
 
     if(APPLE)
       target_link_libraries(duppy PRIVATE "-framework OpenGL")
+      target_link_libraries(duppy PRIVATE "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation")
     else()
       find_package(OpenGL REQUIRED)
       target_link_libraries(duppy PRIVATE OpenGL::GL)

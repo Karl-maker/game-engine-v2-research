@@ -67,17 +67,45 @@ class GraphicsSystem final {
     float dirtSinkScale = 1.25f;
     float dirtSinkDensity = 0.35f;
 
-    // Pebbles layer parameters.
-    bool pebblesEnabled = false;
-    float pebbleColorR = 0.45f;
-    float pebbleColorG = 0.42f;
-    float pebbleColorB = 0.38f;
-    float pebbleRoughness = 0.75f;
-    float pebbleScale = 0.25f;
-    float pebbleDensity = 0.55f;
-    float pebbleBlend = 0.65f;
-    float pebbleNormalStrength = 0.6f;
-    float pebbleHeight = 0.06f;
+    // Texture channels (optional).
+    render::AssetRef albedoTex{};
+    render::AssetRef normalTex{};
+    render::AssetRef roughnessTex{};
+    render::AssetRef aoTex{};
+    render::AssetRef displacementTex{};
+    bool hasAlbedoTex = false;
+    bool hasNormalTex = false;
+    bool hasRoughnessTex = false;
+    bool hasAoTex = false;
+    bool hasDisplacementTex = false;
+
+    // UV tiling (shader parameter).
+    float uvTilingX = 1.0f;
+    float uvTilingY = 1.0f;
+    float normalStrength = 1.0f;
+    float aoStrength = 0.6f;
+
+    // Displacement influence (shading/bump only).
+    float displacementStrength = 0.25f;
+
+    // Optional rock layer (second material set).
+    bool rockLayerEnabled = false;
+    render::AssetRef rockAlbedoTex{};
+    render::AssetRef rockNormalTex{};
+    render::AssetRef rockRoughnessTex{};
+    render::AssetRef rockAoTex{};
+    render::AssetRef rockDisplacementTex{};
+    bool hasRockAlbedoTex = false;
+    bool hasRockNormalTex = false;
+    bool hasRockRoughnessTex = false;
+    bool hasRockAoTex = false;
+    bool hasRockDisplacementTex = false;
+    float rockUvTilingX = 1.0f;
+    float rockUvTilingY = 1.0f;
+    float rockNormalStrength = 1.0f;
+    float rockDisplacementStrength = 0.8f;
+    float rockBlendStrength = 0.65f;
+    float rockNoiseScale = 0.06f;
   };
 
   struct LightDraw final {
@@ -94,21 +122,23 @@ class GraphicsSystem final {
   struct FrameSnapshot final {
     ActiveCamera camera;
     std::vector<TerrainDraw> terrains;
-    struct GrassDraw final {
+
+    struct RockDraw final {
       EntityId entity = kInvalidEntityId;
       math::Vec3 position{};
-      math::Vec3 area{10.0f, 0.0f, 10.0f};
-      float density = 4.0f;
-      std::uint32_t seed = 12345;
-      float minScale = 0.8f;
-      float maxScale = 1.2f;
-      float jitter = 1.0f;
+      math::Vec3 area{12.0f, 0.0f, 12.0f};
+      float density = 1.6f;
+      std::uint32_t seed = 424242;
+      float minScale = 0.04f;
+      float maxScale = 0.12f;
+      float clumpiness = 0.8f;
+      float patchScale = 0.06f;
       float lodBias = 1.0f;
       bool castShadows = false;
       bool receiveShadows = true;
       render::AssetRef shader{};
     };
-    std::vector<GrassDraw> grasses;
+    std::vector<RockDraw> rocks;
     std::vector<LightDraw> lights;
   };
 

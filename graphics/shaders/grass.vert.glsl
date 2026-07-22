@@ -16,6 +16,7 @@ uniform vec3 u_CamForward;
 
 out vec2 v_Uv;
 out float v_Light;
+out float v_Var;
 
 float saturate(float x) { return clamp(x, 0.0, 1.0); }
 
@@ -32,6 +33,7 @@ void main() {
 
   // Per-instance bend direction and amount (static; no swaying).
   float id = fract(sin(dot(i_WorldPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
+  v_Var = id;
   float leanAngle = (id * 2.0 - 1.0) * 0.85;
   vec3 leanDir = normalize(right * cos(leanAngle) + fwd * sin(leanAngle));
 

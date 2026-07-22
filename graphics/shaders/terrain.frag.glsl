@@ -39,19 +39,41 @@ uniform float u_GrassTintNear;
 uniform float u_GrassTintFar;
 uniform float u_GrassTintStrength;
 
-// Pebbles layer controls.
-uniform int u_PebblesEnabled;
-uniform vec3 u_PebbleColor;
-uniform float u_PebbleRoughness;
-uniform float u_PebbleScale;
-uniform float u_PebbleDensity;
-uniform float u_PebbleBlend;
-uniform float u_PebbleNormalStrength;
-uniform float u_PebbleHeight;
-
 // Optional albedo texture.
 uniform sampler2D u_Albedo;
 uniform bool u_UseAlbedo = false;
+
+uniform sampler2D u_NormalTex;
+uniform bool u_UseNormal = false;
+uniform float u_NormalStrength;
+uniform sampler2D u_RoughnessTex;
+uniform bool u_UseRoughness = false;
+uniform sampler2D u_AOTex;
+uniform bool u_UseAO = false;
+uniform float u_AOStrength;
+uniform sampler2D u_DisplacementTex;
+uniform bool u_UseDisplacement = false;
+uniform float u_DisplacementStrength;
+
+uniform vec2 u_UvTiling;
+
+// Rock layer (optional)
+uniform int u_RockLayerEnabled;
+uniform sampler2D u_RockAlbedo;
+uniform bool u_UseRockAlbedo;
+uniform sampler2D u_RockNormalTex;
+uniform bool u_UseRockNormal;
+uniform sampler2D u_RockRoughnessTex;
+uniform bool u_UseRockRoughness;
+uniform sampler2D u_RockAOTex;
+uniform bool u_UseRockAO;
+uniform sampler2D u_RockDisplacementTex;
+uniform bool u_UseRockDisplacement;
+uniform vec2 u_RockUvTiling;
+uniform float u_RockNormalStrength;
+uniform float u_RockDisplacementStrength;
+uniform float u_RockBlendStrength;
+uniform float u_RockNoiseScale;
 
 // Minimal packed light data.
 // type: 0=Directional, 1=Point, 2=Spot (matches LightComponent::Type order in C++).
@@ -95,8 +117,6 @@ float fbm(vec2 p) {
   }
   return sum;
 }
-
-#include "pebbles.glsl"
 
 // Small "sink" masks on the ground plane.
 // Returns:
@@ -153,6 +173,28 @@ vec3 perturbNormal(vec3 worldPos, vec3 N, float strength) {
 
   vec3 bumped = normalize(N + (T * grad.x + B * grad.y) * strength);
   return bumped;
+}
+
+vec3 applyNormalMapFrom(sampler2D tex, vec3 N, vec2 uv, float strength) {
+  // Tangent space aligned to world XZ for demo purposes.
+  vec3 t = normalize(vec3(1.0, 0.0, 0.0));
+  vec3 b = normalize(vec3(0.0, 0.0, 1.0));
+  vec3 nTex = texture(tex, uv).xyz * 2.0 - 1.0;
+  nTex.xy *= max(0.0, strength);
+  vec3 nWorld = normalize(t * nTex.x + b * nTex.y + N * nTex.z);
+  return nWorld;
+}
+
+vec3 applyHeightBump(vec3 N, sampler2D tex, vec2 uv, float strength) {
+  float eps = 0.0025;
+  float h = texture(tex, uv).r;
+  float hx = texture(tex, uv + vec2(eps, 0.0)).r;
+  float hy = texture(tex, uv + vec2(0.0, eps)).r;
+  vec2 grad = vec2(hx - h, hy - h) / eps;
+  vec3 t = normalize(vec3(1.0, 0.0, 0.0));
+  vec3 b = normalize(vec3(0.0, 0.0, 1.0));
+  vec3 bump = normalize(N + (t * grad.x + b * grad.y) * strength);
+  return bump;
 }
 
 vec3 fresnelSchlick(float cosTheta, vec3 F0) {
@@ -227,8 +269,8 @@ vec3 shadePbrish(vec3 albedo, vec3 normal, vec3 viewDir, float roughness, float 
     result += (diffuse + spec) * light * NdotL;
   }
 
-  // Ambient: slightly boosted and tinted by sky.
-  vec3 ambient = albedo * 0.06 + vec3(0.02, 0.03, 0.04) * 0.35;
+  // Ambient: lifted a bit so shadows aren't overly dark.
+  vec3 ambient = albedo * 0.09 + vec3(0.02, 0.03, 0.04) * 0.45;
   result += ambient;
   return result;
 }
@@ -236,38 +278,110 @@ vec3 shadePbrish(vec3 albedo, vec3 normal, vec3 viewDir, float roughness, float 
 void main() {
   vec3 N = normalize(v_WorldNormal);
   vec3 V = normalize(u_CameraPos - v_WorldPos);
+  vec2 uv = v_Uv * u_UvTiling;
 
-  // --- Procedural dirt detail ---
-  vec2 p = v_WorldPos.xz;
-  float macro = fbm(p * 0.04);
-  float micro = fbm(p * 1.75 + u_Time * 0.05);
-  float grain = valueNoise(p * 7.0);
+  // If an albedo texture is bound, let it fully own the base color.
+  // Otherwise, fall back to procedural dirt.
+  vec3 albedo = vec3(0.0);
+  float roughness = u_Roughness;
+  float wetMask = 0.0;
+  float micro = 0.5;
 
-  // Height-ish mask for subtle wet/dry patches.
-  float wetMask = saturate((macro - 0.45) * 2.5);
+  if (u_UseAlbedo) {
+    albedo = texture(u_Albedo, uv).rgb;
+    roughness = u_Roughness;
+  } else {
+    // --- Procedural dirt detail ---
+    vec2 p = v_WorldPos.xz;
+    float macro = fbm(p * 0.04);
+    micro = fbm(p * 1.75 + u_Time * 0.05);
+    float grain = valueNoise(p * 7.0);
 
-  // Base albedo variation: warmer/cooler specks and grain.
-  vec3 base = u_BaseColor.rgb;
-  vec3 warm = vec3(0.10, 0.06, 0.02);
-  vec3 cool = vec3(-0.04, -0.02, 0.00);
-  base += mix(cool, warm, micro) * (0.35 * u_DirtColorNoiseStrength);
-  base *= 0.85 + macro * 0.35;
-  base *= 0.92 + (grain - 0.5) * (0.12 * u_DirtColorNoiseStrength);
+    // Height-ish mask for subtle wet/dry patches.
+    wetMask = saturate((macro - 0.45) * 2.5);
 
-  // Slope-based tint (steeper slopes slightly darker).
-  float slope = 1.0 - saturate(dot(N, vec3(0.0, 1.0, 0.0)));
-  base *= 1.0 - slope * 0.18;
+    // Base albedo variation: warmer/cooler specks and grain.
+    vec3 base = u_BaseColor.rgb;
+    vec3 warm = vec3(0.10, 0.06, 0.02);
+    vec3 cool = vec3(-0.04, -0.02, 0.00);
+    base += mix(cool, warm, micro) * (0.35 * u_DirtColorNoiseStrength);
+    base *= 0.85 + macro * 0.35;
+    base *= 0.92 + (grain - 0.5) * (0.12 * u_DirtColorNoiseStrength);
 
-  float roughness = clamp(u_Roughness + (0.5 - micro) * 0.25, 0.04, 1.0);
-  roughness = mix(roughness, roughness * 0.55, wetMask);  // "wetter" looks smoother
+    // Slope-based tint (steeper slopes slightly darker).
+    float slope = 1.0 - saturate(dot(N, vec3(0.0, 1.0, 0.0)));
+    base *= 1.0 - slope * 0.18;
+
+    roughness = clamp(u_Roughness + (0.5 - micro) * 0.25, 0.04, 1.0);
+    roughness = mix(roughness, roughness * 0.55, wetMask);  // "wetter" looks smoother
+
+    albedo = base;
+  }
+
   float metallic = u_Metallic;
 
   // Micro-bump from procedural noise.
   N = perturbNormal(v_WorldPos, N, 0.35);
 
-  vec3 albedo = base;
-  if (u_UseAlbedo) {
-    albedo *= texture(u_Albedo, v_Uv).rgb;
+  if (u_UseNormal) {
+    N = applyNormalMapFrom(u_NormalTex, N, uv, u_NormalStrength);
+  }
+
+  if (u_UseRoughness) {
+    float rTex = texture(u_RoughnessTex, uv).r;
+    roughness = clamp(roughness * rTex, 0.04, 1.0);
+  }
+
+  float ao = 1.0;
+  if (u_UseAO) {
+    ao = texture(u_AOTex, uv).r;
+  }
+
+  if (u_UseDisplacement) {
+    // Minimal displacement influence (shading-only; no vertex displacement).
+    float h = texture(u_DisplacementTex, uv).r;
+    albedo *= 0.92 + (h - 0.5) * (0.26 * u_DisplacementStrength);
+    N = applyHeightBump(N, u_DisplacementTex, uv, 0.95 * u_DisplacementStrength);
+  }
+
+  // --- Optional rock layer blended with a noisy mask (no blocky tiles) ---
+  if (u_RockLayerEnabled != 0) {
+    // Slope helps rocks appear where terrain is steeper.
+    float slope = 1.0 - saturate(dot(N, vec3(0.0, 1.0, 0.0)));
+
+    // Noise mask in world space, with slight domain warp to break tiling.
+    vec2 wp = v_WorldPos.xz * u_RockNoiseScale;
+    vec2 warp = vec2(fbm(wp * 1.3), fbm(wp * 1.7)) - 0.5;
+    wp += warp * 0.45;
+    float n = fbm(wp * 2.2);
+    float mask = saturate((n - 0.45) * 2.2);
+    mask = saturate(mask + slope * 0.65);
+    mask *= saturate(u_RockBlendStrength);
+
+    vec2 uv2 = v_Uv * u_RockUvTiling;
+    uv2 += (warp * 0.08);
+
+    vec3 rockAlbedo = vec3(0.45);
+    if (u_UseRockAlbedo) rockAlbedo = texture(u_RockAlbedo, uv2).rgb;
+
+    float rockRough = roughness;
+    if (u_UseRockRoughness) rockRough = clamp(rockRough * texture(u_RockRoughnessTex, uv2).r, 0.04, 1.0);
+
+    float rockAo = 1.0;
+    if (u_UseRockAO) rockAo = texture(u_RockAOTex, uv2).r;
+
+    vec3 rockN = N;
+    if (u_UseRockNormal) rockN = applyNormalMapFrom(u_RockNormalTex, N, uv2, u_RockNormalStrength);
+    if (u_UseRockDisplacement) {
+      rockN = applyHeightBump(rockN, u_RockDisplacementTex, uv2, 1.25 * u_RockDisplacementStrength);
+      rockAlbedo *= 0.90 + (texture(u_RockDisplacementTex, uv2).r - 0.5) * (0.32 * u_RockDisplacementStrength);
+    }
+
+    // Blend into base.
+    albedo = mix(albedo, rockAlbedo, mask);
+    roughness = mix(roughness, rockRough, mask);
+    ao = mix(ao, rockAo, mask);
+    N = normalize(mix(N, rockN, mask));
   }
 
   if (u_DirtSinksEnabled != 0) {
@@ -290,22 +404,8 @@ void main() {
     N = normalize(mix(N, sinkN, sink * 0.85));
   }
 
-  if (u_PebblesEnabled != 0) {
-    applyPebbles(albedo,
-                 roughness,
-                 N,
-                 v_WorldPos,
-                 V,
-                 u_PebbleColor,
-                 u_PebbleRoughness,
-                 u_PebbleScale,
-                 u_PebbleDensity,
-                 u_PebbleBlend,
-                 u_PebbleNormalStrength,
-                 u_PebbleHeight);
-  }
-
   vec3 color = shadePbrish(albedo, N, V, roughness, metallic);
+  color *= mix(1.0, ao, clamp(u_AOStrength, 0.0, 1.0));
 
   if (u_GrassTintEnabled != 0) {
     float dist = length(u_CameraPos.xz - v_WorldPos.xz);

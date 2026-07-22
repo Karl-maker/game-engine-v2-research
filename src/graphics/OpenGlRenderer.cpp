@@ -7,10 +7,7 @@
 #include "terrain/PerlinNoise2D.h"
 
 #include <algorithm>
-#include <fstream>
-#include <functional>
 #include <iostream>
-#include <unordered_set>
 #include <sstream>
 #include <vector>
 #include <cmath>
@@ -35,7 +32,7 @@ struct Vertex final {
   float u, v;
 };
 
-struct GrassInstance final {
+struct RockInstance final {
   float px, py, pz;
   float scale;
   float rot;
@@ -164,6 +161,47 @@ static const unsigned char kFont5x7[96][7] = {
     {0, 0, 0, 0, 0, 0, 0},                        // DEL
 };
 
+static std::uint32_t compileGlShader(std::uint32_t type, const std::string& source, std::string* outError) {
+  const GLuint id = glCreateShader(type);
+  const char* src = source.c_str();
+  const GLint len = static_cast<GLint>(source.size());
+  glShaderSource(id, 1, &src, &len);
+  glCompileShader(id);
+
+  GLint ok = 0;
+  glGetShaderiv(id, GL_COMPILE_STATUS, &ok);
+  if (ok == GL_TRUE) return id;
+
+  GLint logLen = 0;
+  glGetShaderiv(id, GL_INFO_LOG_LENGTH, &logLen);
+  std::string log;
+  log.resize(static_cast<std::size_t>(std::max(0, logLen)));
+  if (logLen > 0) glGetShaderInfoLog(id, logLen, nullptr, log.data());
+  glDeleteShader(id);
+  if (outError) *outError = std::move(log);
+  return 0;
+}
+
+static std::uint32_t linkGlProgram(std::uint32_t vsId, std::uint32_t fsId, std::string* outError) {
+  const GLuint program = glCreateProgram();
+  glAttachShader(program, vsId);
+  glAttachShader(program, fsId);
+  glLinkProgram(program);
+
+  GLint ok = 0;
+  glGetProgramiv(program, GL_LINK_STATUS, &ok);
+  if (ok == GL_TRUE) return program;
+
+  GLint logLen = 0;
+  glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLen);
+  std::string log;
+  log.resize(static_cast<std::size_t>(std::max(0, logLen)));
+  if (logLen > 0) glGetProgramInfoLog(program, logLen, nullptr, log.data());
+  glDeleteProgram(program);
+  if (outError) *outError = std::move(log);
+  return 0;
+}
+
 static void pushQuad(std::vector<OverlayVert>& verts,
                      float x0,
                      float y0,
@@ -270,6 +308,8 @@ bool OpenGlRenderer::start(int width, int height, const char* title) {
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
 
+  m_textures.start();
+
   // Cache GPU strings (available after context creation).
   if (const auto* s = glGetString(GL_VENDOR)) m_gpuVendor = reinterpret_cast<const char*>(s);
   if (const auto* s = glGetString(GL_RENDERER)) m_gpuRenderer = reinterpret_cast<const char*>(s);
@@ -290,25 +330,25 @@ bool OpenGlRenderer::start(int width, int height, const char* title) {
         "void main(){ o_Color=v_Color; }\n";
 
     std::string err;
-    const GLuint vs = compileShader(GL_VERTEX_SHADER, vsSrc, &err);
+    const GLuint vs = compileGlShader(GL_VERTEX_SHADER, vsSrc, &err);
     if (!vs) {
       std::cerr << "Overlay vertex shader compile failed:\n" << err << "\n";
       return true;
     }
-    const GLuint fs = compileShader(GL_FRAGMENT_SHADER, fsSrc, &err);
+    const GLuint fs = compileGlShader(GL_FRAGMENT_SHADER, fsSrc, &err);
     if (!fs) {
       std::cerr << "Overlay fragment shader compile failed:\n" << err << "\n";
       glDeleteShader(vs);
       return true;
     }
-    Program p = linkProgram(vs, fs, &err);
+    const GLuint prog = linkGlProgram(vs, fs, &err);
     glDeleteShader(vs);
     glDeleteShader(fs);
-    if (!p.programId) {
+    if (!prog) {
       std::cerr << "Overlay program link failed:\n" << err << "\n";
       return true;
     }
-    m_overlayProgram = p.programId;
+    m_overlayProgram = prog;
 
     glGenVertexArrays(1, &m_overlayVao);
     glGenBuffers(1, &m_overlayVbo);
@@ -328,20 +368,24 @@ bool OpenGlRenderer::start(int width, int height, const char* title) {
 }
 
 void OpenGlRenderer::stop() {
-  for (auto& [_, p] : m_programs) {
-    destroyProgram(p);
-  }
-  m_programs.clear();
+  m_shaders.clear();
 
   for (auto& [_, m] : m_terrainMeshes) {
     destroyTerrainMesh(m);
   }
   m_terrainMeshes.clear();
 
-  for (auto& [_, m] : m_grassMeshes) {
-    destroyGrassMesh(m);
+  for (auto& [_, m] : m_rockMeshes) {
+    destroyRockMesh(m);
   }
-  m_grassMeshes.clear();
+  m_rockMeshes.clear();
+
+  if (m_window) {
+    glfwMakeContextCurrent(m_window);
+    m_textures.destroyAllGlTextures();
+    glfwMakeContextCurrent(nullptr);
+  }
+  m_textures.stop();
 
   if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
   if (m_overlayVao) glDeleteVertexArrays(1, &m_overlayVao);
@@ -366,113 +410,6 @@ void OpenGlRenderer::pollEvents() {
   getFramebufferSize(m_window, &m_fbWidth, &m_fbHeight);
 }
 
-std::string OpenGlRenderer::readTextFile(const std::string& path) {
-  std::ifstream f(path);
-  if (!f.is_open()) return {};
-  std::stringstream ss;
-  ss << f.rdbuf();
-  return ss.str();
-}
-
-std::string OpenGlRenderer::readShaderSourceWithIncludes(const std::string& path) {
-  std::unordered_set<std::string> seen;
-
-  std::function<std::string(const std::string&)> expand = [&](const std::string& p) -> std::string {
-    if (seen.count(p)) {
-      std::cerr << "Shader include cycle detected at: " << p << "\n";
-      return {};
-    }
-    seen.insert(p);
-
-    const std::string src = readTextFile(p);
-    if (src.empty()) return {};
-
-    // Directory for relative includes.
-    std::string dir;
-    if (auto slash = p.find_last_of("/\\"); slash != std::string::npos) {
-      dir = p.substr(0, slash + 1);
-    }
-
-    std::stringstream in(src);
-    std::stringstream out;
-    std::string line;
-    while (std::getline(in, line)) {
-      const std::string includePrefix = "#include \"";
-      if (line.rfind(includePrefix, 0) == 0) {
-        const auto endQuote = line.find("\"", includePrefix.size());
-        if (endQuote != std::string::npos) {
-          const std::string includePathRaw = line.substr(includePrefix.size(), endQuote - includePrefix.size());
-          const bool isAbsoluteLike = (!includePathRaw.empty() && (includePathRaw[0] == '/' || includePathRaw[0] == '\\'));
-          const std::string includePath = isAbsoluteLike ? includePathRaw : (dir + includePathRaw);
-          out << expand(includePath) << "\n";
-          continue;
-        }
-      }
-      out << line << "\n";
-    }
-
-    return out.str();
-  };
-
-  return expand(path);
-}
-
-std::uint32_t OpenGlRenderer::compileShader(std::uint32_t type, const std::string& source, std::string* outError) {
-  const GLuint id = glCreateShader(type);
-  const char* src = source.c_str();
-  const GLint len = static_cast<GLint>(source.size());
-  glShaderSource(id, 1, &src, &len);
-  glCompileShader(id);
-
-  GLint ok = 0;
-  glGetShaderiv(id, GL_COMPILE_STATUS, &ok);
-  if (ok == GL_TRUE) return id;
-
-  GLint logLen = 0;
-  glGetShaderiv(id, GL_INFO_LOG_LENGTH, &logLen);
-  std::string log;
-  log.resize(static_cast<std::size_t>(std::max(0, logLen)));
-  if (logLen > 0) {
-    glGetShaderInfoLog(id, logLen, nullptr, log.data());
-  }
-  glDeleteShader(id);
-  if (outError) *outError = std::move(log);
-  return 0;
-}
-
-OpenGlRenderer::Program OpenGlRenderer::linkProgram(std::uint32_t vsId, std::uint32_t fsId, std::string* outError) {
-  Program p{};
-  p.vsId = vsId;
-  p.fsId = fsId;
-  p.programId = glCreateProgram();
-  glAttachShader(p.programId, vsId);
-  glAttachShader(p.programId, fsId);
-  glLinkProgram(p.programId);
-
-  GLint ok = 0;
-  glGetProgramiv(p.programId, GL_LINK_STATUS, &ok);
-  if (ok == GL_TRUE) return p;
-
-  GLint logLen = 0;
-  glGetProgramiv(p.programId, GL_INFO_LOG_LENGTH, &logLen);
-  std::string log;
-  log.resize(static_cast<std::size_t>(std::max(0, logLen)));
-  if (logLen > 0) {
-    glGetProgramInfoLog(p.programId, logLen, nullptr, log.data());
-  }
-
-  destroyProgram(p);
-  if (outError) *outError = std::move(log);
-  return {};
-}
-
-void OpenGlRenderer::destroyProgram(Program& p) {
-  if (p.programId) glDeleteProgram(p.programId);
-  if (p.vsId) glDeleteShader(p.vsId);
-  if (p.fsId) glDeleteShader(p.fsId);
-  p = {};
-}
-
 void OpenGlRenderer::destroyTerrainMesh(TerrainMesh& m) {
   if (m.ebo) glDeleteBuffers(1, &m.ebo);
   if (m.vbo) glDeleteBuffers(1, &m.vbo);
@@ -480,54 +417,12 @@ void OpenGlRenderer::destroyTerrainMesh(TerrainMesh& m) {
   m = {};
 }
 
-void OpenGlRenderer::destroyGrassMesh(GrassMesh& m) {
+void OpenGlRenderer::destroyRockMesh(RockMesh& m) {
   if (m.instanceVbo) glDeleteBuffers(1, &m.instanceVbo);
+  if (m.ebo) glDeleteBuffers(1, &m.ebo);
   if (m.vbo) glDeleteBuffers(1, &m.vbo);
   if (m.vao) glDeleteVertexArrays(1, &m.vao);
   m = {};
-}
-
-OpenGlRenderer::Program* OpenGlRenderer::getOrCreateProgram(const std::string& shaderKey) {
-  auto it = m_programs.find(shaderKey);
-  if (it != m_programs.end()) return &it->second;
-
-  const std::string vsPath = shaderKey + ".vert.glsl";
-  const std::string fsPath = shaderKey + ".frag.glsl";
-  const std::string vsSrc = readShaderSourceWithIncludes(vsPath);
-  const std::string fsSrc = readShaderSourceWithIncludes(fsPath);
-  if (vsSrc.empty() || fsSrc.empty()) {
-    std::cerr << "Shader files missing for key \"" << shaderKey << "\" (expected " << vsPath << ", " << fsPath << ")\n";
-    m_programs.emplace(shaderKey, Program{});
-    return &m_programs.find(shaderKey)->second;
-  }
-
-  std::string err;
-  const GLuint vs = compileShader(GL_VERTEX_SHADER, vsSrc, &err);
-  if (!vs) {
-    std::cerr << "Vertex shader compile failed (" << vsPath << "):\n" << err << "\n";
-    m_programs.emplace(shaderKey, Program{});
-    return &m_programs.find(shaderKey)->second;
-  }
-
-  const GLuint fs = compileShader(GL_FRAGMENT_SHADER, fsSrc, &err);
-  if (!fs) {
-    std::cerr << "Fragment shader compile failed (" << fsPath << "):\n" << err << "\n";
-    glDeleteShader(vs);
-    m_programs.emplace(shaderKey, Program{});
-    return &m_programs.find(shaderKey)->second;
-  }
-
-  Program p = linkProgram(vs, fs, &err);
-  if (!p.programId) {
-    std::cerr << "Program link failed (" << shaderKey << "):\n" << err << "\n";
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    m_programs.emplace(shaderKey, Program{});
-    return &m_programs.find(shaderKey)->second;
-  }
-
-  auto [insIt, _] = m_programs.emplace(shaderKey, p);
-  return &insIt->second;
 }
 
 OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::systems::GraphicsSystem::TerrainDraw& t) {
@@ -650,92 +545,125 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
   return &insIt->second;
 }
 
-OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
-    const ecs::systems::GraphicsSystem::FrameSnapshot::GrassDraw& g,
-    const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain,
-    const ecs::systems::GraphicsSystem::ActiveCamera&) {
-  const std::uint32_t id = static_cast<std::uint32_t>(g.entity);
-  auto it = m_grassMeshes.find(id);
+OpenGlRenderer::RockMesh* OpenGlRenderer::getOrCreateRockMesh(
+    const ecs::systems::GraphicsSystem::FrameSnapshot::RockDraw& r,
+    const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain) {
+  const std::uint32_t id = static_cast<std::uint32_t>(r.entity);
+  auto it = m_rockMeshes.find(id);
 
-  auto needsRebuild = [&](const GrassMesh& m) {
-    return m.seed != g.seed || m.area.x != g.area.x || m.area.z != g.area.z || m.density != g.density ||
-           m.minScale != g.minScale || m.maxScale != g.maxScale || m.jitter != g.jitter;
+  auto needsRebuild = [&](const RockMesh& m) {
+    return m.seed != r.seed || m.area.x != r.area.x || m.area.z != r.area.z || m.density != r.density ||
+           m.minScale != r.minScale || m.maxScale != r.maxScale || m.clumpiness != r.clumpiness ||
+           m.patchScale != r.patchScale;
   };
 
-  if (it != m_grassMeshes.end() && !needsRebuild(it->second)) {
-    return &it->second;
+  if (it != m_rockMeshes.end() && !needsRebuild(it->second)) return &it->second;
+
+  if (it != m_rockMeshes.end()) {
+    destroyRockMesh(it->second);
+    m_rockMeshes.erase(it);
   }
 
-  if (it != m_grassMeshes.end()) {
-    destroyGrassMesh(it->second);
-    m_grassMeshes.erase(it);
-  }
+  RockMesh mesh{};
+  mesh.seed = r.seed;
+  mesh.area = r.area;
+  mesh.density = r.density;
+  mesh.minScale = r.minScale;
+  mesh.maxScale = r.maxScale;
+  mesh.clumpiness = r.clumpiness;
+  mesh.patchScale = r.patchScale;
+  mesh.chunkSizeMeters = 3.0f;
 
-  GrassMesh mesh{};
-  mesh.seed = g.seed;
-  mesh.area = g.area;
-  mesh.density = g.density;
-  mesh.minScale = g.minScale;
-  mesh.maxScale = g.maxScale;
-  mesh.jitter = g.jitter;
-  mesh.chunkSizeMeters = 6.0f;
+  struct RockVert {
+    float px, py, pz;
+    float nx, ny, nz;
+  };
 
-  // Base blade geometry (single triangle, very low poly).
-  struct BladeVert {
-    float x, y;      // local in-plane (x) and height (y)
-    float u, v;      // uv for shaping
+  // Low-poly "rock" (icosahedron-ish) as a simple sphere-ish mesh.
+  static const RockVert verts[] = {
+      {-0.525731f, 0.000000f, 0.850651f, 0, 0, 1},   {0.525731f, 0.000000f, 0.850651f, 0, 0, 1},
+      {-0.525731f, 0.000000f, -0.850651f, 0, 0, -1}, {0.525731f, 0.000000f, -0.850651f, 0, 0, -1},
+      {0.000000f, 0.850651f, 0.525731f, 0, 1, 0},    {0.000000f, 0.850651f, -0.525731f, 0, 1, 0},
+      {0.000000f, -0.850651f, 0.525731f, 0, -1, 0},  {0.000000f, -0.850651f, -0.525731f, 0, -1, 0},
+      {0.850651f, 0.525731f, 0.000000f, 1, 0, 0},    {-0.850651f, 0.525731f, 0.000000f, -1, 0, 0},
+      {0.850651f, -0.525731f, 0.000000f, 1, 0, 0},   {-0.850651f, -0.525731f, 0.000000f, -1, 0, 0},
   };
-  const BladeVert bladeVerts[] = {
-      {-0.02f, 0.0f, 0.0f, 0.0f},
-      {+0.02f, 0.0f, 1.0f, 0.0f},
-      {0.00f, 1.0f, 0.5f, 1.0f},
+
+  static const std::uint32_t idxs[] = {
+      0, 4, 1, 0, 9, 4, 9, 5, 4, 4, 5, 8, 4, 8, 1, 8, 10, 1, 8, 3, 10, 5, 3, 8,
+      5, 2, 3, 2, 7, 3, 7, 10, 3, 7, 6, 10, 7, 11, 6, 11, 0, 6, 0, 1, 6, 6, 1, 10,
+      9, 0, 11, 9, 11, 2, 9, 2, 5, 7, 2, 11,
   };
-  mesh.vertCount = 3;
+
+  mesh.indexCount = static_cast<std::uint32_t>(sizeof(idxs) / sizeof(idxs[0]));
 
   glGenVertexArrays(1, &mesh.vao);
   glGenBuffers(1, &mesh.vbo);
+  glGenBuffers(1, &mesh.ebo);
   glGenBuffers(1, &mesh.instanceVbo);
 
   glBindVertexArray(mesh.vao);
   glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(bladeVerts), bladeVerts, GL_STATIC_DRAW);
-  glEnableVertexAttribArray(0);
-  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(BladeVert), reinterpret_cast<void*>(0));
-  glEnableVertexAttribArray(1);
-  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(BladeVert), reinterpret_cast<void*>(sizeof(float) * 2));
+  glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(idxs), idxs, GL_STATIC_DRAW);
 
-  // Instance attributes.
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RockVert), reinterpret_cast<void*>(0));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(RockVert), reinterpret_cast<void*>(sizeof(float) * 3));
+
   glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
   glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(0));
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(RockInstance), reinterpret_cast<void*>(0));
   glVertexAttribDivisor(2, 1);
   glEnableVertexAttribArray(3);
-  glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 3));
+  glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(RockInstance), reinterpret_cast<void*>(sizeof(float) * 3));
   glVertexAttribDivisor(3, 1);
   glEnableVertexAttribArray(4);
-  glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 4));
+  glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(RockInstance), reinterpret_cast<void*>(sizeof(float) * 4));
   glVertexAttribDivisor(4, 1);
 
   glBindVertexArray(0);
 
-  // Generate instances (clumpy patches).
-  const float areaM2 = std::max(0.0f, g.area.x) * std::max(0.0f, g.area.z);
+  // Instance generation (clumpy).
+  const float areaM2 = std::max(0.0f, r.area.x) * std::max(0.0f, r.area.z);
   const std::uint32_t maxInstances =
-      static_cast<std::uint32_t>(std::min(20000.0f, std::max(0.0f, areaM2 * std::max(0.0f, g.density))));
+      static_cast<std::uint32_t>(std::min(8000.0f, std::max(0.0f, areaM2 * std::max(0.0f, r.density))));
+
+  terrain::PerlinNoise2D patchNoise(r.seed ^ 0xA341316Cu);
+  terrain::PerlinNoise2D heightNoise(groundTerrain ? groundTerrain->noiseSeed : r.seed);
+  const terrain::NoiseConfig groundCfg = groundTerrain ? groundTerrain->noise : terrain::NoiseConfig{};
+  const float groundHeightScale = groundTerrain ? groundTerrain->heightScaleMeters : 0.0f;
+
+  const float terrainSizeX =
+      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridWidth)) * groundTerrain->cellSizeMeters) : 0.0f;
+  const float terrainSizeZ =
+      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridHeight)) * groundTerrain->cellSizeMeters) : 0.0f;
+  const float terrainHalfW = terrainSizeX * 0.5f;
+  const float terrainHalfD = terrainSizeZ * 0.5f;
+
+  auto rand01 = [&](std::uint32_t n) {
+    n ^= n >> 16;
+    n *= 0x7feb352dU;
+    n ^= n >> 15;
+    n *= 0x846ca68bU;
+    n ^= n >> 16;
+    return (n & 0x00FFFFFFu) / 16777216.0f;
+  };
 
   const float chunkSize = std::max(2.0f, mesh.chunkSizeMeters);
-  const int chunkCountX = std::max(1, static_cast<int>(std::ceil(std::max(0.0f, g.area.x) / chunkSize)));
-  const int chunkCountZ = std::max(1, static_cast<int>(std::ceil(std::max(0.0f, g.area.z) / chunkSize)));
+  const int chunkCountX = std::max(1, static_cast<int>(std::ceil(std::max(0.0f, r.area.x) / chunkSize)));
+  const int chunkCountZ = std::max(1, static_cast<int>(std::ceil(std::max(0.0f, r.area.z) / chunkSize)));
   const int chunkCount = chunkCountX * chunkCountZ;
-
-  const float halfW = g.area.x * 0.5f;
-  const float halfD = g.area.z * 0.5f;
+  const float halfW = r.area.x * 0.5f;
+  const float halfD = r.area.z * 0.5f;
 
   struct ChunkBuild final {
     math::Vec3 center{};
     float radius = 0.0f;
-    std::vector<GrassInstance> instances;
+    std::vector<RockInstance> instances;
   };
 
   std::vector<ChunkBuild> chunkBuilds;
@@ -748,100 +676,71 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
       const float z0 = -halfD + static_cast<float>(cz) * chunkSize;
       const float x1 = std::min(x0 + chunkSize, halfW);
       const float z1 = std::min(z0 + chunkSize, halfD);
-      cb.center = {g.position.x + (x0 + x1) * 0.5f, g.position.y, g.position.z + (z0 + z1) * 0.5f};
+      cb.center = {r.position.x + (x0 + x1) * 0.5f, r.position.y, r.position.z + (z0 + z1) * 0.5f};
       const float rx = (x1 - x0) * 0.5f;
       const float rz = (z1 - z0) * 0.5f;
-      cb.radius = std::sqrt(rx * rx + rz * rz) + 2.0f;
+      cb.radius = std::sqrt(rx * rx + rz * rz) + 1.2f;
       cb.instances.reserve(static_cast<std::size_t>(maxInstances / std::max(1, chunkCount)));
     }
   }
 
-  terrain::PerlinNoise2D patchNoise(g.seed ^ 0x9E3779B9u);
-  // Match the terrain mesh noise exactly (same seed and coordinates).
-  terrain::PerlinNoise2D heightNoise(groundTerrain ? groundTerrain->noiseSeed : g.seed);
-  const terrain::NoiseConfig groundCfg = groundTerrain ? groundTerrain->noise : terrain::NoiseConfig{};
-  const float groundHeightScale = groundTerrain ? groundTerrain->heightScaleMeters : 0.0f;
   terrain::NoiseConfig clumpCfg;
-  clumpCfg.frequency = 0.03f;
-  clumpCfg.octaves = 3;
-  clumpCfg.lacunarity = 2.1f;
+  clumpCfg.frequency = std::max(0.01f, r.patchScale);
+  clumpCfg.octaves = 2;
   clumpCfg.persistence = 0.55f;
-
-  auto rand01 = [&](std::uint32_t n) {
-    // Xorshift-ish hash to float.
-    n ^= n >> 16;
-    n *= 0x7feb352dU;
-    n ^= n >> 15;
-    n *= 0x846ca68bU;
-    n ^= n >> 16;
-    return (n & 0x00FFFFFFu) / 16777216.0f;
-  };
-
-  const float terrainSizeX =
-      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridWidth)) * groundTerrain->cellSizeMeters) : 0.0f;
-  const float terrainSizeZ =
-      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridHeight)) * groundTerrain->cellSizeMeters)
-                   : 0.0f;
-  const float terrainHalfW = terrainSizeX * 0.5f;
-  const float terrainHalfD = terrainSizeZ * 0.5f;
+  clumpCfg.lacunarity = 2.0f;
 
   std::uint32_t attempts = 0;
-  const std::uint32_t maxAttempts = maxInstances * 6u + 1024u;
-  std::size_t generatedCount = 0;
-  while (generatedCount < static_cast<std::size_t>(maxInstances) && attempts < maxAttempts) {
+  const std::uint32_t maxAttempts = maxInstances * 8u + 512u;
+  std::size_t generated = 0;
+  while (generated < static_cast<std::size_t>(maxInstances) && attempts < maxAttempts) {
     const std::uint32_t idx = attempts++;
-    const float rx = rand01(g.seed + idx * 9781u);
-    const float rz = rand01(g.seed + idx * 6271u);
-    const float rScale = rand01(g.seed + idx * 3137u);
-    const float rRot = rand01(g.seed + idx * 1951u);
+    const float rx = rand01(r.seed + idx * 9781u);
+    const float rz = rand01(r.seed + idx * 6271u);
+    const float rScale = rand01(r.seed + idx * 3137u);
+    const float rRot = rand01(r.seed + idx * 1951u);
 
     const float x = (rx * 2.0f - 1.0f) * halfW;
     const float z = (rz * 2.0f - 1.0f) * halfD;
 
-    // Clump mask: low-frequency noise decides where grass appears.
-    const float clump =
-        (patchNoise.sampleFractal((g.position.x + x), (g.position.z + z), clumpCfg) + 1.0f) * 0.5f;
-    const float threshold = 0.50f;  // denser overall, still clumped
-    if (clump < threshold) continue;
-    const float clumpWeight = std::clamp((clump - threshold) / (1.0f - threshold), 0.0f, 1.0f);
-    const float acceptChance = clumpWeight * clumpWeight;  // concentrate, but allow more fill
-    if (rand01(g.seed ^ (idx * 7919u)) > acceptChance) continue;
+    const float worldX = r.position.x + x;
+    const float worldZ = r.position.z + z;
+    const float cl = (patchNoise.sampleFractal(worldX, worldZ, clumpCfg) + 1.0f) * 0.5f;
+    const float threshold = std::clamp(0.62f + (1.0f - r.clumpiness) * 0.2f, 0.55f, 0.82f);
+    if (cl < threshold) continue;
 
-    GrassInstance inst{};
-    inst.px = g.position.x + x;
-    inst.pz = g.position.z + z;
+    RockInstance inst{};
+    inst.px = worldX;
+    inst.pz = worldZ;
 
-    float groundY = groundTerrain ? groundTerrain->position.y : g.position.y;
+    float groundY = groundTerrain ? groundTerrain->position.y : r.position.y;
     if (groundHeightScale != 0.0f) {
-      // Terrain noise is sampled in terrain-local (positive) coordinates (0..width, 0..depth).
       float localX = (inst.px - groundTerrain->position.x) + terrainHalfW;
       float localZ = (inst.pz - groundTerrain->position.z) + terrainHalfD;
       localX = std::clamp(localX, 0.0f, terrainSizeX);
       localZ = std::clamp(localZ, 0.0f, terrainSizeZ);
-      const float n = heightNoise.sampleFractal(localX, localZ, groundCfg);
-      groundY += n * groundHeightScale;
+      groundY += heightNoise.sampleFractal(localX, localZ, groundCfg) * groundHeightScale;
     }
-    // Sink slightly so it doesn't look like it's hovering.
-    inst.py = groundY - 0.02f;
+    inst.py = groundY - 0.01f;
 
-    const float s = g.minScale + (g.maxScale - g.minScale) * std::pow(rScale, 0.65f);
+    const float s = r.minScale + (r.maxScale - r.minScale) * std::pow(rScale, 1.8f);
     inst.scale = s;
     inst.rot = rRot * 6.2831853f;
 
     const int cx = std::clamp(static_cast<int>((x + halfW) / chunkSize), 0, chunkCountX - 1);
     const int cz = std::clamp(static_cast<int>((z + halfD) / chunkSize), 0, chunkCountZ - 1);
     chunkBuilds[static_cast<std::size_t>(cz * chunkCountX + cx)].instances.push_back(inst);
-    generatedCount += 1;
+    generated += 1;
   }
 
-  std::vector<GrassInstance> allInstances;
+  std::vector<RockInstance> allInstances;
   allInstances.reserve(maxInstances);
   mesh.chunks.clear();
   mesh.chunks.reserve(chunkBuilds.size());
 
   for (const auto& cb : chunkBuilds) {
     if (cb.instances.empty()) continue;
-    GrassMesh::Chunk c;
+    RockMesh::Chunk c;
     c.center = cb.center;
     c.radius = cb.radius;
     c.instanceOffset = static_cast<std::uint32_t>(allInstances.size());
@@ -852,10 +751,10 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
 
   mesh.instanceCapacity = static_cast<std::uint32_t>(allInstances.size());
   glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
-  glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(allInstances.size() * sizeof(GrassInstance)),
+  glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(allInstances.size() * sizeof(RockInstance)),
                allInstances.empty() ? nullptr : allInstances.data(), GL_DYNAMIC_DRAW);
 
-  auto [insIt, _] = m_grassMeshes.emplace(id, mesh);
+  auto [insIt, _] = m_rockMeshes.emplace(id, mesh);
   return &insIt->second;
 }
 
@@ -869,6 +768,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   const double renderStart = glfwGetTime();
 
   pollEvents();
+  m_textures.flushUploads(4);
   glViewport(0, 0, m_fbWidth, m_fbHeight);
 
   // Basic clear.
@@ -881,11 +781,6 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   const math::Mat4 view =
       math::lookAt(frame.camera.position, frame.camera.position + frame.camera.forward, math::Vec3{0.0f, 1.0f, 0.0f});
   const math::Mat4 viewProj = math::mul(proj, view);
-
-  // Camera basis for billboards.
-  const math::Vec3 up{0.0f, 1.0f, 0.0f};
-  const math::Vec3 camRight = math::normalize(math::cross(frame.camera.forward, up));
-  const math::Vec3 camFwdFlat = math::normalize(math::cross(up, camRight));
 
   // Lights: pack (clamp to 16).
   constexpr int kMaxLights = 16;
@@ -913,7 +808,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   }
 
   for (const auto& t : frame.terrains) {
-    Program* program = getOrCreateProgram(t.shader.key);
+    const ShaderService::Program* program = m_shaders.getOrCreate(t.shader.key);
     if (!program || !program->programId) continue;
 
     TerrainMesh* mesh = getOrCreateTerrainMesh(t);
@@ -954,25 +849,9 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locSinkScale >= 0) glUniform1f(locSinkScale, t.dirtSinkScale);
     if (locSinkDensity >= 0) glUniform1f(locSinkDensity, t.dirtSinkDensity);
 
-    // Far grass tint when any grass patches exist.
-    const bool hasGrass = !frame.grasses.empty();
+    // Far grass tint (disabled for now).
     const GLint locGtOn = glGetUniformLocation(program->programId, "u_GrassTintEnabled");
-    if (locGtOn >= 0) glUniform1i(locGtOn, hasGrass ? 1 : 0);
-    if (hasGrass) {
-      const GLint locGtCol = glGetUniformLocation(program->programId, "u_GrassTintColor");
-      const GLint locGtNear = glGetUniformLocation(program->programId, "u_GrassTintNear");
-      const GLint locGtFar = glGetUniformLocation(program->programId, "u_GrassTintFar");
-      const GLint locGtStr = glGetUniformLocation(program->programId, "u_GrassTintStrength");
-      if (locGtCol >= 0) glUniform3f(locGtCol, 0.18f, 0.34f, 0.16f);
-      if (locGtNear >= 0) glUniform1f(locGtNear, 22.0f);
-      if (locGtFar >= 0) glUniform1f(locGtFar, 65.0f);
-      float strength = 0.45f;
-      if (!frame.grasses.empty()) {
-        const float d = frame.grasses[0].density;
-        strength = std::clamp(0.25f + d * 0.03f, 0.25f, 0.7f);
-      }
-      if (locGtStr >= 0) glUniform1f(locGtStr, strength);
-    }
+    if (locGtOn >= 0) glUniform1i(locGtOn, 0);
 
     const GLint locBase = glGetUniformLocation(program->programId, "u_BaseColor");
     if (locBase >= 0) glUniform4f(locBase, t.baseColorR, t.baseColorG, t.baseColorB, 1.0f);
@@ -983,26 +862,141 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     const GLint locSpec = glGetUniformLocation(program->programId, "u_SpecularIntensity");
     if (locSpec >= 0) glUniform1f(locSpec, t.specularIntensity);
 
-    const GLint locUseAlbedo = glGetUniformLocation(program->programId, "u_UseAlbedo");
-    if (locUseAlbedo >= 0) glUniform1i(locUseAlbedo, 0);
+    const GLint locUv = glGetUniformLocation(program->programId, "u_UvTiling");
+    if (locUv >= 0) glUniform2f(locUv, t.uvTilingX, t.uvTilingY);
+    const GLint locNormStrength = glGetUniformLocation(program->programId, "u_NormalStrength");
+    if (locNormStrength >= 0) glUniform1f(locNormStrength, t.normalStrength);
+    const GLint locAoStrength = glGetUniformLocation(program->programId, "u_AOStrength");
+    if (locAoStrength >= 0) glUniform1f(locAoStrength, t.aoStrength);
+    const GLint locDispStrength = glGetUniformLocation(program->programId, "u_DisplacementStrength");
+    if (locDispStrength >= 0) glUniform1f(locDispStrength, t.displacementStrength);
 
-    // Pebbles layer uniforms (optional).
-    const GLint locPebOn = glGetUniformLocation(program->programId, "u_PebblesEnabled");
-    if (locPebOn >= 0) glUniform1i(locPebOn, t.pebblesEnabled ? 1 : 0);
-    const GLint locPebCol = glGetUniformLocation(program->programId, "u_PebbleColor");
-    if (locPebCol >= 0) glUniform3f(locPebCol, t.pebbleColorR, t.pebbleColorG, t.pebbleColorB);
-    const GLint locPebR = glGetUniformLocation(program->programId, "u_PebbleRoughness");
-    if (locPebR >= 0) glUniform1f(locPebR, t.pebbleRoughness);
-    const GLint locPebScale = glGetUniformLocation(program->programId, "u_PebbleScale");
-    if (locPebScale >= 0) glUniform1f(locPebScale, t.pebbleScale);
-    const GLint locPebDen = glGetUniformLocation(program->programId, "u_PebbleDensity");
-    if (locPebDen >= 0) glUniform1f(locPebDen, t.pebbleDensity);
-    const GLint locPebBlend = glGetUniformLocation(program->programId, "u_PebbleBlend");
-    if (locPebBlend >= 0) glUniform1f(locPebBlend, t.pebbleBlend);
-    const GLint locPebNs = glGetUniformLocation(program->programId, "u_PebbleNormalStrength");
-    if (locPebNs >= 0) glUniform1f(locPebNs, t.pebbleNormalStrength);
-    const GLint locPebH = glGetUniformLocation(program->programId, "u_PebbleHeight");
-    if (locPebH >= 0) glUniform1f(locPebH, t.pebbleHeight);
+    // Textures (async loaded).
+    const GLuint albedoId = (t.hasAlbedoTex) ? m_textures.requestTexture(t.albedoTex.key, true) : 0;
+    const GLuint normalId = (t.hasNormalTex) ? m_textures.requestTexture(t.normalTex.key, false) : 0;
+    const GLuint roughId = (t.hasRoughnessTex) ? m_textures.requestTexture(t.roughnessTex.key, false) : 0;
+    const GLuint aoId = (t.hasAoTex) ? m_textures.requestTexture(t.aoTex.key, false) : 0;
+    const GLuint dispId = (t.hasDisplacementTex) ? m_textures.requestTexture(t.displacementTex.key, false) : 0;
+
+    const bool useAlbedo = albedoId != 0;
+    const bool useNormal = normalId != 0;
+    const bool useRough = roughId != 0;
+    const bool useAo = aoId != 0;
+    const bool useDisp = dispId != 0;
+
+    const GLint locUseAlbedo = glGetUniformLocation(program->programId, "u_UseAlbedo");
+    if (locUseAlbedo >= 0) glUniform1i(locUseAlbedo, useAlbedo ? 1 : 0);
+    const GLint locUseNormal = glGetUniformLocation(program->programId, "u_UseNormal");
+    if (locUseNormal >= 0) glUniform1i(locUseNormal, useNormal ? 1 : 0);
+    const GLint locUseRough = glGetUniformLocation(program->programId, "u_UseRoughness");
+    if (locUseRough >= 0) glUniform1i(locUseRough, useRough ? 1 : 0);
+    const GLint locUseAo = glGetUniformLocation(program->programId, "u_UseAO");
+    if (locUseAo >= 0) glUniform1i(locUseAo, useAo ? 1 : 0);
+    const GLint locUseDisp = glGetUniformLocation(program->programId, "u_UseDisplacement");
+    if (locUseDisp >= 0) glUniform1i(locUseDisp, useDisp ? 1 : 0);
+
+    if (useAlbedo) {
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, albedoId);
+      const GLint loc = glGetUniformLocation(program->programId, "u_Albedo");
+      if (loc >= 0) glUniform1i(loc, 0);
+    }
+    if (useNormal) {
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, normalId);
+      const GLint loc = glGetUniformLocation(program->programId, "u_NormalTex");
+      if (loc >= 0) glUniform1i(loc, 1);
+    }
+    if (useRough) {
+      glActiveTexture(GL_TEXTURE2);
+      glBindTexture(GL_TEXTURE_2D, roughId);
+      const GLint loc = glGetUniformLocation(program->programId, "u_RoughnessTex");
+      if (loc >= 0) glUniform1i(loc, 2);
+    }
+    if (useAo) {
+      glActiveTexture(GL_TEXTURE3);
+      glBindTexture(GL_TEXTURE_2D, aoId);
+      const GLint loc = glGetUniformLocation(program->programId, "u_AOTex");
+      if (loc >= 0) glUniform1i(loc, 3);
+    }
+    if (useDisp) {
+      glActiveTexture(GL_TEXTURE4);
+      glBindTexture(GL_TEXTURE_2D, dispId);
+      const GLint loc = glGetUniformLocation(program->programId, "u_DisplacementTex");
+      if (loc >= 0) glUniform1i(loc, 4);
+    }
+
+    // Rock layer (optional)
+    const bool rockEnabled = t.rockLayerEnabled;
+    const GLuint rockAlbedoId = (rockEnabled && t.hasRockAlbedoTex) ? m_textures.requestTexture(t.rockAlbedoTex.key, true) : 0;
+    const GLuint rockNormalId = (rockEnabled && t.hasRockNormalTex) ? m_textures.requestTexture(t.rockNormalTex.key, false) : 0;
+    const GLuint rockRoughId = (rockEnabled && t.hasRockRoughnessTex) ? m_textures.requestTexture(t.rockRoughnessTex.key, false) : 0;
+    const GLuint rockAoId = (rockEnabled && t.hasRockAoTex) ? m_textures.requestTexture(t.rockAoTex.key, false) : 0;
+    const GLuint rockDispId = (rockEnabled && t.hasRockDisplacementTex) ? m_textures.requestTexture(t.rockDisplacementTex.key, false) : 0;
+
+    const GLint locRockOn = glGetUniformLocation(program->programId, "u_RockLayerEnabled");
+    if (locRockOn >= 0) glUniform1i(locRockOn, rockEnabled ? 1 : 0);
+    if (rockEnabled) {
+      const GLint locRockUv = glGetUniformLocation(program->programId, "u_RockUvTiling");
+      if (locRockUv >= 0) glUniform2f(locRockUv, t.rockUvTilingX, t.rockUvTilingY);
+      const GLint locRockNorm = glGetUniformLocation(program->programId, "u_RockNormalStrength");
+      if (locRockNorm >= 0) glUniform1f(locRockNorm, t.rockNormalStrength);
+      const GLint locRockDisp = glGetUniformLocation(program->programId, "u_RockDisplacementStrength");
+      if (locRockDisp >= 0) glUniform1f(locRockDisp, t.rockDisplacementStrength);
+      const GLint locRockBlend = glGetUniformLocation(program->programId, "u_RockBlendStrength");
+      if (locRockBlend >= 0) glUniform1f(locRockBlend, t.rockBlendStrength);
+      const GLint locRockNoise = glGetUniformLocation(program->programId, "u_RockNoiseScale");
+      if (locRockNoise >= 0) glUniform1f(locRockNoise, t.rockNoiseScale);
+
+      const bool useRockAlbedo = rockAlbedoId != 0;
+      const bool useRockNormal = rockNormalId != 0;
+      const bool useRockRough = rockRoughId != 0;
+      const bool useRockAo = rockAoId != 0;
+      const bool useRockDisp = rockDispId != 0;
+
+      const GLint l0 = glGetUniformLocation(program->programId, "u_UseRockAlbedo");
+      if (l0 >= 0) glUniform1i(l0, useRockAlbedo ? 1 : 0);
+      const GLint l1 = glGetUniformLocation(program->programId, "u_UseRockNormal");
+      if (l1 >= 0) glUniform1i(l1, useRockNormal ? 1 : 0);
+      const GLint l2 = glGetUniformLocation(program->programId, "u_UseRockRoughness");
+      if (l2 >= 0) glUniform1i(l2, useRockRough ? 1 : 0);
+      const GLint l3 = glGetUniformLocation(program->programId, "u_UseRockAO");
+      if (l3 >= 0) glUniform1i(l3, useRockAo ? 1 : 0);
+      const GLint l4 = glGetUniformLocation(program->programId, "u_UseRockDisplacement");
+      if (l4 >= 0) glUniform1i(l4, useRockDisp ? 1 : 0);
+
+      if (useRockAlbedo) {
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D, rockAlbedoId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_RockAlbedo");
+        if (loc >= 0) glUniform1i(loc, 5);
+      }
+      if (useRockNormal) {
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, rockNormalId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_RockNormalTex");
+        if (loc >= 0) glUniform1i(loc, 6);
+      }
+      if (useRockRough) {
+        glActiveTexture(GL_TEXTURE7);
+        glBindTexture(GL_TEXTURE_2D, rockRoughId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_RockRoughnessTex");
+        if (loc >= 0) glUniform1i(loc, 7);
+      }
+      if (useRockAo) {
+        glActiveTexture(GL_TEXTURE8);
+        glBindTexture(GL_TEXTURE_2D, rockAoId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_RockAOTex");
+        if (loc >= 0) glUniform1i(loc, 8);
+      }
+      if (useRockDisp) {
+        glActiveTexture(GL_TEXTURE9);
+        glBindTexture(GL_TEXTURE_2D, rockDispId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_RockDisplacementTex");
+        if (loc >= 0) glUniform1i(loc, 9);
+      }
+    }
+    glActiveTexture(GL_TEXTURE0);
 
     const GLint locLc = glGetUniformLocation(program->programId, "u_LightCount");
     if (locLc >= 0) glUniform1i(locLc, lightCount);
@@ -1019,42 +1013,57 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locLi >= 0) glUniform1fv(locLi, lightCount, intensity);
     if (locLr >= 0) glUniform1fv(locLr, lightCount, range);
 
+    // Terrain tessellation (if the shader key provides TCS+TES).
+    if (program->hasTessellation) {
+      glPatchParameteri(GL_PATCH_VERTICES, 3);
+      const GLint locTessNear = glGetUniformLocation(program->programId, "u_TessNear");
+      const GLint locTessFar = glGetUniformLocation(program->programId, "u_TessFar");
+      const GLint locTessMin = glGetUniformLocation(program->programId, "u_TessMin");
+      const GLint locTessMax = glGetUniformLocation(program->programId, "u_TessMax");
+      if (locTessNear >= 0) glUniform1f(locTessNear, 8.0f);
+      if (locTessFar >= 0) glUniform1f(locTessFar, 80.0f);
+      if (locTessMin >= 0) glUniform1f(locTessMin, 2.0f);
+      if (locTessMax >= 0) glUniform1f(locTessMax, 12.0f);
+
+      const GLint locNormDispBoost = glGetUniformLocation(program->programId, "u_NormalDisplacementBoost");
+      if (locNormDispBoost >= 0) glUniform1f(locNormDispBoost, 0.35f);
+    }
+
     glBindVertexArray(mesh->vao);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh->indexCount), GL_UNSIGNED_INT, nullptr);
+    const GLenum mode = program->hasTessellation ? GL_PATCHES : GL_TRIANGLES;
+    glDrawElements(mode, static_cast<GLsizei>(mesh->indexCount), GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
   }
 
   // Choose a ground terrain to anchor grass height (first terrain for now).
   const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain = frame.terrains.empty() ? nullptr : &frame.terrains[0];
 
-  // Grass pass (alpha cutout).
-  for (const auto& g : frame.grasses) {
-    Program* program = getOrCreateProgram(g.shader.key);
+  // Rocks pass (true 3D instances).
+  for (const auto& r : frame.rocks) {
+    const ShaderService::Program* program = m_shaders.getOrCreate(r.shader.key);
     if (!program || !program->programId) continue;
 
-    GrassMesh* mesh = getOrCreateGrassMesh(g, groundTerrain, frame.camera);
+    RockMesh* mesh = getOrCreateRockMesh(r, groundTerrain);
     if (!mesh || !mesh->vao || mesh->instanceCapacity == 0 || mesh->chunks.empty()) continue;
 
     glUseProgram(program->programId);
-
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
-    glDisable(GL_CULL_FACE);  // billboard blades
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
 
     const GLint locViewProj = glGetUniformLocation(program->programId, "u_ViewProj");
     if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
-    const GLint locCamRight = glGetUniformLocation(program->programId, "u_CamRight");
-    if (locCamRight >= 0) glUniform3f(locCamRight, camRight.x, camRight.y, camRight.z);
-    const GLint locCamFwd = glGetUniformLocation(program->programId, "u_CamForward");
-    if (locCamFwd >= 0) glUniform3f(locCamFwd, camFwdFlat.x, camFwdFlat.y, camFwdFlat.z);
+    const GLint locCam = glGetUniformLocation(program->programId, "u_CameraPos");
+    if (locCam >= 0) glUniform3f(locCam, frame.camera.position.x, frame.camera.position.y, frame.camera.position.z);
 
-    // Simple single directional light (first enabled directional).
+    // Simple single directional light.
     math::Vec3 sunDir{-0.2f, -1.0f, -0.3f};
     math::Vec3 sunCol{1.0f, 1.0f, 1.0f};
     float sunIntensity = 1.0f;
     for (const auto& l : frame.lights) {
-      if (l.type == 0) {  // directional
+      if (l.type == 0) {
         sunDir = math::normalize(l.direction);
         sunCol = l.color;
         sunIntensity = l.intensity;
@@ -1069,43 +1078,26 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locSunI >= 0) glUniform1f(locSunI, sunIntensity);
 
     glBindVertexArray(mesh->vao);
-
-    // Chunked draw with distance-based density LOD (Mac-safe; no indirect/base-instance needed).
-    const float lodBias = std::max(0.25f, g.lodBias);
-    const float nearD = 14.0f / lodBias;
-    const float midD = 32.0f / lodBias;
-    const float farD = 60.0f / lodBias;
-
     glBindBuffer(GL_ARRAY_BUFFER, mesh->instanceVbo);
+
+    const float lodBias = std::max(0.25f, r.lodBias);
+    const float maxDist = 120.0f / lodBias;
     for (const auto& c : mesh->chunks) {
       const math::Vec3 d = frame.camera.position - c.center;
       const float dist = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z) - c.radius;
+      if (dist > maxDist) continue;
 
-      float factor = 0.0f;
-      if (dist <= nearD) {
-        factor = 1.0f;
-      } else if (dist <= midD) {
-        const float t = (dist - nearD) / (midD - nearD);
-        factor = 1.0f - t * 0.55f;  // 1 -> 0.45
-      } else if (dist <= farD) {
-        const float t = (dist - midD) / (farD - midD);
-        factor = 0.45f * (1.0f - t);  // 0.45 -> 0
-      } else {
-        factor = 0.0f;
-      }
-
-      const std::uint32_t drawCount = static_cast<std::uint32_t>(static_cast<float>(c.instanceCount) * factor);
-      if (drawCount == 0) continue;
-
-      const std::size_t baseByte = static_cast<std::size_t>(c.instanceOffset) * sizeof(GrassInstance);
-      glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
-                            reinterpret_cast<void*>(baseByte + 0));
-      glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
+      const std::size_t baseByte = static_cast<std::size_t>(c.instanceOffset) * sizeof(RockInstance);
+      glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(RockInstance), reinterpret_cast<void*>(baseByte + 0));
+      glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(RockInstance),
                             reinterpret_cast<void*>(baseByte + sizeof(float) * 3));
-      glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
+      glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(RockInstance),
                             reinterpret_cast<void*>(baseByte + sizeof(float) * 4));
-
-      glDrawArraysInstanced(GL_TRIANGLES, 0, static_cast<GLsizei>(mesh->vertCount), static_cast<GLsizei>(drawCount));
+      glDrawElementsInstanced(GL_TRIANGLES,
+                              static_cast<GLsizei>(mesh->indexCount),
+                              GL_UNSIGNED_INT,
+                              nullptr,
+                              static_cast<GLsizei>(c.instanceCount));
     }
 
     glBindVertexArray(0);

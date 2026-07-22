@@ -6,11 +6,11 @@
 
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/LightComponent.h"
-#include "ecs/components/GrassPatchComponent.h"
+#include "ecs/components/RockScatterComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
-#include "materials/presets/PebblyDirt.h"
+#include "materials/presets/HighQualityDirtRockLayer.h"
 
 #include <iostream>
 
@@ -28,8 +28,8 @@ void GameplayDemoGame::onStart() {
 
   m_camera = m_registry.createEntity("camera");
   auto& camTr = m_registry.emplace<ecs::TransformComponent>(m_camera);
-  camTr.position = {6.0f, 5.5f, -14.5f};
-  camTr.rotation = {22.0f, 340.0f, 0.0f};  // pitch/yaw/roll (deg)
+  camTr.position = {10.0f, 1.7f, -26.0f};
+  camTr.rotation = {10.0f, 343.0f, 0.0f};  // pitch/yaw/roll (deg)
   m_registry.emplace<ecs::CameraComponent>(m_camera);
 
   m_terrain = m_registry.createEntity("terrain");
@@ -39,12 +39,19 @@ void GameplayDemoGame::onStart() {
     terrain.gridWidth = 96;
     terrain.gridHeight = 96;
     terrain.cellSizeMeters = 1.0f;
-    terrain.heightScaleMeters = 35.0f;
+    terrain.heightScaleMeters = 10.0f;
+    terrain.noise.frequency = 0.015f;
+    terrain.noise.octaves = 3;
+    terrain.noise.persistence = 0.5f;
+    terrain.noise.lacunarity = 2.0f;
 
-    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::PebblyDirt());
+    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::HighQualityDirtRockLayer());
     // Render using the current OpenGL demo shader (textures are ignored for now).
     shader.shader.key = "graphics/shaders/terrain";
     shader.depthWrite = true;
+
+    // Scene override: remove the circular "sink" patches (often mistaken for pebbles).
+    shader.parameters.push_back({"dirtSinksEnabled", false});
   }
 
   m_light = m_registry.createEntity("sun");
@@ -58,23 +65,24 @@ void GameplayDemoGame::onStart() {
     light.castShadows = true;
   }
 
-  // Grass patches (sparse clumps).
+  // Small 3D rocks scattered on the terrain.
   {
-    const auto grass = m_registry.createEntity("grass_patch");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(grass);
+    const auto rocks = m_registry.createEntity("rocks");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(rocks);
     tr.position = {0.0f, 0.0f, 0.0f};
 
-    auto& patch = m_registry.emplace<ecs::GrassPatchComponent>(grass);
-    patch.area = {46.0f, 0.0f, 46.0f};
-    patch.density = 14.0f;
-    patch.seed = 9001;
-    patch.minScale = 0.7f;
-    patch.maxScale = 1.35f;
-    patch.jitter = 1.0f;
-    patch.lodBias = 1.0f;
+    auto& scatter = m_registry.emplace<ecs::RockScatterComponent>(rocks);
+    scatter.area = {42.0f, 0.0f, 42.0f};
+    scatter.density = 0.9f;
+    scatter.seed = 133742u;
+    scatter.minScale = 0.02f;
+    scatter.maxScale = 0.07f;
+    scatter.clumpiness = 0.9f;
+    scatter.patchScale = 0.05f;
+    scatter.lodBias = 1.0f;
 
-    auto& shader = m_registry.emplace<ecs::ShaderComponent>(grass);
-    shader.shader.key = "graphics/shaders/grass";
+    auto& shader = m_registry.emplace<ecs::ShaderComponent>(rocks);
+    shader.shader.key = "graphics/shaders/rocks";
     shader.depthWrite = true;
   }
 
