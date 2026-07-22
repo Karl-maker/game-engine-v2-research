@@ -94,6 +94,21 @@ class GraphicsSystem final {
   struct FrameSnapshot final {
     ActiveCamera camera;
     std::vector<TerrainDraw> terrains;
+    struct GrassDraw final {
+      EntityId entity = kInvalidEntityId;
+      math::Vec3 position{};
+      math::Vec3 area{10.0f, 0.0f, 10.0f};
+      float density = 4.0f;
+      std::uint32_t seed = 12345;
+      float minScale = 0.8f;
+      float maxScale = 1.2f;
+      float jitter = 1.0f;
+      float lodBias = 1.0f;
+      bool castShadows = false;
+      bool receiveShadows = true;
+      render::AssetRef shader{};
+    };
+    std::vector<GrassDraw> grasses;
     std::vector<LightDraw> lights;
   };
 

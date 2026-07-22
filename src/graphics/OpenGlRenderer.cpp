@@ -13,6 +13,7 @@
 #include <unordered_set>
 #include <sstream>
 #include <vector>
+#include <cmath>
 
 #define GL_SILENCE_DEPRECATION
 #define GLFW_INCLUDE_NONE
@@ -32,6 +33,12 @@ struct Vertex final {
   float px, py, pz;
   float nx, ny, nz;
   float u, v;
+};
+
+struct GrassInstance final {
+  float px, py, pz;
+  float scale;
+  float rot;
 };
 
 static void glfwErrorCallback(int code, const char* desc) {
@@ -331,6 +338,11 @@ void OpenGlRenderer::stop() {
   }
   m_terrainMeshes.clear();
 
+  for (auto& [_, m] : m_grassMeshes) {
+    destroyGrassMesh(m);
+  }
+  m_grassMeshes.clear();
+
   if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
   if (m_overlayVao) glDeleteVertexArrays(1, &m_overlayVao);
   if (m_overlayProgram) glDeleteProgram(m_overlayProgram);
@@ -463,6 +475,13 @@ void OpenGlRenderer::destroyProgram(Program& p) {
 
 void OpenGlRenderer::destroyTerrainMesh(TerrainMesh& m) {
   if (m.ebo) glDeleteBuffers(1, &m.ebo);
+  if (m.vbo) glDeleteBuffers(1, &m.vbo);
+  if (m.vao) glDeleteVertexArrays(1, &m.vao);
+  m = {};
+}
+
+void OpenGlRenderer::destroyGrassMesh(GrassMesh& m) {
+  if (m.instanceVbo) glDeleteBuffers(1, &m.instanceVbo);
   if (m.vbo) glDeleteBuffers(1, &m.vbo);
   if (m.vao) glDeleteVertexArrays(1, &m.vao);
   m = {};
@@ -631,6 +650,215 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
   return &insIt->second;
 }
 
+OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
+    const ecs::systems::GraphicsSystem::FrameSnapshot::GrassDraw& g,
+    const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain,
+    const ecs::systems::GraphicsSystem::ActiveCamera&) {
+  const std::uint32_t id = static_cast<std::uint32_t>(g.entity);
+  auto it = m_grassMeshes.find(id);
+
+  auto needsRebuild = [&](const GrassMesh& m) {
+    return m.seed != g.seed || m.area.x != g.area.x || m.area.z != g.area.z || m.density != g.density ||
+           m.minScale != g.minScale || m.maxScale != g.maxScale || m.jitter != g.jitter;
+  };
+
+  if (it != m_grassMeshes.end() && !needsRebuild(it->second)) {
+    return &it->second;
+  }
+
+  if (it != m_grassMeshes.end()) {
+    destroyGrassMesh(it->second);
+    m_grassMeshes.erase(it);
+  }
+
+  GrassMesh mesh{};
+  mesh.seed = g.seed;
+  mesh.area = g.area;
+  mesh.density = g.density;
+  mesh.minScale = g.minScale;
+  mesh.maxScale = g.maxScale;
+  mesh.jitter = g.jitter;
+  mesh.chunkSizeMeters = 6.0f;
+
+  // Base blade geometry (single triangle, very low poly).
+  struct BladeVert {
+    float x, y;      // local in-plane (x) and height (y)
+    float u, v;      // uv for shaping
+  };
+  const BladeVert bladeVerts[] = {
+      {-0.02f, 0.0f, 0.0f, 0.0f},
+      {+0.02f, 0.0f, 1.0f, 0.0f},
+      {0.00f, 1.0f, 0.5f, 1.0f},
+  };
+  mesh.vertCount = 3;
+
+  glGenVertexArrays(1, &mesh.vao);
+  glGenBuffers(1, &mesh.vbo);
+  glGenBuffers(1, &mesh.instanceVbo);
+
+  glBindVertexArray(mesh.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(bladeVerts), bladeVerts, GL_STATIC_DRAW);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(BladeVert), reinterpret_cast<void*>(0));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(BladeVert), reinterpret_cast<void*>(sizeof(float) * 2));
+
+  // Instance attributes.
+  glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
+  glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(0));
+  glVertexAttribDivisor(2, 1);
+  glEnableVertexAttribArray(3);
+  glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 3));
+  glVertexAttribDivisor(3, 1);
+  glEnableVertexAttribArray(4);
+  glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 4));
+  glVertexAttribDivisor(4, 1);
+
+  glBindVertexArray(0);
+
+  // Generate instances (clumpy patches).
+  const float areaM2 = std::max(0.0f, g.area.x) * std::max(0.0f, g.area.z);
+  const std::uint32_t maxInstances =
+      static_cast<std::uint32_t>(std::min(20000.0f, std::max(0.0f, areaM2 * std::max(0.0f, g.density))));
+
+  const float chunkSize = std::max(2.0f, mesh.chunkSizeMeters);
+  const int chunkCountX = std::max(1, static_cast<int>(std::ceil(std::max(0.0f, g.area.x) / chunkSize)));
+  const int chunkCountZ = std::max(1, static_cast<int>(std::ceil(std::max(0.0f, g.area.z) / chunkSize)));
+  const int chunkCount = chunkCountX * chunkCountZ;
+
+  const float halfW = g.area.x * 0.5f;
+  const float halfD = g.area.z * 0.5f;
+
+  struct ChunkBuild final {
+    math::Vec3 center{};
+    float radius = 0.0f;
+    std::vector<GrassInstance> instances;
+  };
+
+  std::vector<ChunkBuild> chunkBuilds;
+  chunkBuilds.resize(static_cast<std::size_t>(chunkCount));
+  for (int cz = 0; cz < chunkCountZ; ++cz) {
+    for (int cx = 0; cx < chunkCountX; ++cx) {
+      const int idx = cz * chunkCountX + cx;
+      auto& cb = chunkBuilds[static_cast<std::size_t>(idx)];
+      const float x0 = -halfW + static_cast<float>(cx) * chunkSize;
+      const float z0 = -halfD + static_cast<float>(cz) * chunkSize;
+      const float x1 = std::min(x0 + chunkSize, halfW);
+      const float z1 = std::min(z0 + chunkSize, halfD);
+      cb.center = {g.position.x + (x0 + x1) * 0.5f, g.position.y, g.position.z + (z0 + z1) * 0.5f};
+      const float rx = (x1 - x0) * 0.5f;
+      const float rz = (z1 - z0) * 0.5f;
+      cb.radius = std::sqrt(rx * rx + rz * rz) + 2.0f;
+      cb.instances.reserve(static_cast<std::size_t>(maxInstances / std::max(1, chunkCount)));
+    }
+  }
+
+  terrain::PerlinNoise2D patchNoise(g.seed ^ 0x9E3779B9u);
+  // Match the terrain mesh noise exactly (same seed and coordinates).
+  terrain::PerlinNoise2D heightNoise(groundTerrain ? groundTerrain->noiseSeed : g.seed);
+  const terrain::NoiseConfig groundCfg = groundTerrain ? groundTerrain->noise : terrain::NoiseConfig{};
+  const float groundHeightScale = groundTerrain ? groundTerrain->heightScaleMeters : 0.0f;
+  terrain::NoiseConfig clumpCfg;
+  clumpCfg.frequency = 0.03f;
+  clumpCfg.octaves = 3;
+  clumpCfg.lacunarity = 2.1f;
+  clumpCfg.persistence = 0.55f;
+
+  auto rand01 = [&](std::uint32_t n) {
+    // Xorshift-ish hash to float.
+    n ^= n >> 16;
+    n *= 0x7feb352dU;
+    n ^= n >> 15;
+    n *= 0x846ca68bU;
+    n ^= n >> 16;
+    return (n & 0x00FFFFFFu) / 16777216.0f;
+  };
+
+  const float terrainSizeX =
+      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridWidth)) * groundTerrain->cellSizeMeters) : 0.0f;
+  const float terrainSizeZ =
+      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridHeight)) * groundTerrain->cellSizeMeters)
+                   : 0.0f;
+  const float terrainHalfW = terrainSizeX * 0.5f;
+  const float terrainHalfD = terrainSizeZ * 0.5f;
+
+  std::uint32_t attempts = 0;
+  const std::uint32_t maxAttempts = maxInstances * 6u + 1024u;
+  std::size_t generatedCount = 0;
+  while (generatedCount < static_cast<std::size_t>(maxInstances) && attempts < maxAttempts) {
+    const std::uint32_t idx = attempts++;
+    const float rx = rand01(g.seed + idx * 9781u);
+    const float rz = rand01(g.seed + idx * 6271u);
+    const float rScale = rand01(g.seed + idx * 3137u);
+    const float rRot = rand01(g.seed + idx * 1951u);
+
+    const float x = (rx * 2.0f - 1.0f) * halfW;
+    const float z = (rz * 2.0f - 1.0f) * halfD;
+
+    // Clump mask: low-frequency noise decides where grass appears.
+    const float clump =
+        (patchNoise.sampleFractal((g.position.x + x), (g.position.z + z), clumpCfg) + 1.0f) * 0.5f;
+    const float threshold = 0.50f;  // denser overall, still clumped
+    if (clump < threshold) continue;
+    const float clumpWeight = std::clamp((clump - threshold) / (1.0f - threshold), 0.0f, 1.0f);
+    const float acceptChance = clumpWeight * clumpWeight;  // concentrate, but allow more fill
+    if (rand01(g.seed ^ (idx * 7919u)) > acceptChance) continue;
+
+    GrassInstance inst{};
+    inst.px = g.position.x + x;
+    inst.pz = g.position.z + z;
+
+    float groundY = groundTerrain ? groundTerrain->position.y : g.position.y;
+    if (groundHeightScale != 0.0f) {
+      // Terrain noise is sampled in terrain-local (positive) coordinates (0..width, 0..depth).
+      float localX = (inst.px - groundTerrain->position.x) + terrainHalfW;
+      float localZ = (inst.pz - groundTerrain->position.z) + terrainHalfD;
+      localX = std::clamp(localX, 0.0f, terrainSizeX);
+      localZ = std::clamp(localZ, 0.0f, terrainSizeZ);
+      const float n = heightNoise.sampleFractal(localX, localZ, groundCfg);
+      groundY += n * groundHeightScale;
+    }
+    // Sink slightly so it doesn't look like it's hovering.
+    inst.py = groundY - 0.02f;
+
+    const float s = g.minScale + (g.maxScale - g.minScale) * std::pow(rScale, 0.65f);
+    inst.scale = s;
+    inst.rot = rRot * 6.2831853f;
+
+    const int cx = std::clamp(static_cast<int>((x + halfW) / chunkSize), 0, chunkCountX - 1);
+    const int cz = std::clamp(static_cast<int>((z + halfD) / chunkSize), 0, chunkCountZ - 1);
+    chunkBuilds[static_cast<std::size_t>(cz * chunkCountX + cx)].instances.push_back(inst);
+    generatedCount += 1;
+  }
+
+  std::vector<GrassInstance> allInstances;
+  allInstances.reserve(maxInstances);
+  mesh.chunks.clear();
+  mesh.chunks.reserve(chunkBuilds.size());
+
+  for (const auto& cb : chunkBuilds) {
+    if (cb.instances.empty()) continue;
+    GrassMesh::Chunk c;
+    c.center = cb.center;
+    c.radius = cb.radius;
+    c.instanceOffset = static_cast<std::uint32_t>(allInstances.size());
+    c.instanceCount = static_cast<std::uint32_t>(cb.instances.size());
+    allInstances.insert(allInstances.end(), cb.instances.begin(), cb.instances.end());
+    mesh.chunks.push_back(c);
+  }
+
+  mesh.instanceCapacity = static_cast<std::uint32_t>(allInstances.size());
+  glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
+  glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(allInstances.size() * sizeof(GrassInstance)),
+               allInstances.empty() ? nullptr : allInstances.data(), GL_DYNAMIC_DRAW);
+
+  auto [insIt, _] = m_grassMeshes.emplace(id, mesh);
+  return &insIt->second;
+}
+
 void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& frame,
                             bool debugHudEnabled,
                             float fpsEstimate,
@@ -653,6 +881,11 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   const math::Mat4 view =
       math::lookAt(frame.camera.position, frame.camera.position + frame.camera.forward, math::Vec3{0.0f, 1.0f, 0.0f});
   const math::Mat4 viewProj = math::mul(proj, view);
+
+  // Camera basis for billboards.
+  const math::Vec3 up{0.0f, 1.0f, 0.0f};
+  const math::Vec3 camRight = math::normalize(math::cross(frame.camera.forward, up));
+  const math::Vec3 camFwdFlat = math::normalize(math::cross(up, camRight));
 
   // Lights: pack (clamp to 16).
   constexpr int kMaxLights = 16;
@@ -721,6 +954,26 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locSinkScale >= 0) glUniform1f(locSinkScale, t.dirtSinkScale);
     if (locSinkDensity >= 0) glUniform1f(locSinkDensity, t.dirtSinkDensity);
 
+    // Far grass tint when any grass patches exist.
+    const bool hasGrass = !frame.grasses.empty();
+    const GLint locGtOn = glGetUniformLocation(program->programId, "u_GrassTintEnabled");
+    if (locGtOn >= 0) glUniform1i(locGtOn, hasGrass ? 1 : 0);
+    if (hasGrass) {
+      const GLint locGtCol = glGetUniformLocation(program->programId, "u_GrassTintColor");
+      const GLint locGtNear = glGetUniformLocation(program->programId, "u_GrassTintNear");
+      const GLint locGtFar = glGetUniformLocation(program->programId, "u_GrassTintFar");
+      const GLint locGtStr = glGetUniformLocation(program->programId, "u_GrassTintStrength");
+      if (locGtCol >= 0) glUniform3f(locGtCol, 0.18f, 0.34f, 0.16f);
+      if (locGtNear >= 0) glUniform1f(locGtNear, 22.0f);
+      if (locGtFar >= 0) glUniform1f(locGtFar, 65.0f);
+      float strength = 0.45f;
+      if (!frame.grasses.empty()) {
+        const float d = frame.grasses[0].density;
+        strength = std::clamp(0.25f + d * 0.03f, 0.25f, 0.7f);
+      }
+      if (locGtStr >= 0) glUniform1f(locGtStr, strength);
+    }
+
     const GLint locBase = glGetUniformLocation(program->programId, "u_BaseColor");
     if (locBase >= 0) glUniform4f(locBase, t.baseColorR, t.baseColorG, t.baseColorB, 1.0f);
     const GLint locRough = glGetUniformLocation(program->programId, "u_Roughness");
@@ -768,6 +1021,93 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
     glBindVertexArray(mesh->vao);
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh->indexCount), GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
+  }
+
+  // Choose a ground terrain to anchor grass height (first terrain for now).
+  const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain = frame.terrains.empty() ? nullptr : &frame.terrains[0];
+
+  // Grass pass (alpha cutout).
+  for (const auto& g : frame.grasses) {
+    Program* program = getOrCreateProgram(g.shader.key);
+    if (!program || !program->programId) continue;
+
+    GrassMesh* mesh = getOrCreateGrassMesh(g, groundTerrain, frame.camera);
+    if (!mesh || !mesh->vao || mesh->instanceCapacity == 0 || mesh->chunks.empty()) continue;
+
+    glUseProgram(program->programId);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);  // billboard blades
+
+    const GLint locViewProj = glGetUniformLocation(program->programId, "u_ViewProj");
+    if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
+    const GLint locCamRight = glGetUniformLocation(program->programId, "u_CamRight");
+    if (locCamRight >= 0) glUniform3f(locCamRight, camRight.x, camRight.y, camRight.z);
+    const GLint locCamFwd = glGetUniformLocation(program->programId, "u_CamForward");
+    if (locCamFwd >= 0) glUniform3f(locCamFwd, camFwdFlat.x, camFwdFlat.y, camFwdFlat.z);
+
+    // Simple single directional light (first enabled directional).
+    math::Vec3 sunDir{-0.2f, -1.0f, -0.3f};
+    math::Vec3 sunCol{1.0f, 1.0f, 1.0f};
+    float sunIntensity = 1.0f;
+    for (const auto& l : frame.lights) {
+      if (l.type == 0) {  // directional
+        sunDir = math::normalize(l.direction);
+        sunCol = l.color;
+        sunIntensity = l.intensity;
+        break;
+      }
+    }
+    const GLint locSunDir = glGetUniformLocation(program->programId, "u_SunDir");
+    if (locSunDir >= 0) glUniform3f(locSunDir, sunDir.x, sunDir.y, sunDir.z);
+    const GLint locSunCol = glGetUniformLocation(program->programId, "u_SunColor");
+    if (locSunCol >= 0) glUniform3f(locSunCol, sunCol.x, sunCol.y, sunCol.z);
+    const GLint locSunI = glGetUniformLocation(program->programId, "u_SunIntensity");
+    if (locSunI >= 0) glUniform1f(locSunI, sunIntensity);
+
+    glBindVertexArray(mesh->vao);
+
+    // Chunked draw with distance-based density LOD (Mac-safe; no indirect/base-instance needed).
+    const float lodBias = std::max(0.25f, g.lodBias);
+    const float nearD = 14.0f / lodBias;
+    const float midD = 32.0f / lodBias;
+    const float farD = 60.0f / lodBias;
+
+    glBindBuffer(GL_ARRAY_BUFFER, mesh->instanceVbo);
+    for (const auto& c : mesh->chunks) {
+      const math::Vec3 d = frame.camera.position - c.center;
+      const float dist = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z) - c.radius;
+
+      float factor = 0.0f;
+      if (dist <= nearD) {
+        factor = 1.0f;
+      } else if (dist <= midD) {
+        const float t = (dist - nearD) / (midD - nearD);
+        factor = 1.0f - t * 0.55f;  // 1 -> 0.45
+      } else if (dist <= farD) {
+        const float t = (dist - midD) / (farD - midD);
+        factor = 0.45f * (1.0f - t);  // 0.45 -> 0
+      } else {
+        factor = 0.0f;
+      }
+
+      const std::uint32_t drawCount = static_cast<std::uint32_t>(static_cast<float>(c.instanceCount) * factor);
+      if (drawCount == 0) continue;
+
+      const std::size_t baseByte = static_cast<std::size_t>(c.instanceOffset) * sizeof(GrassInstance);
+      glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
+                            reinterpret_cast<void*>(baseByte + 0));
+      glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
+                            reinterpret_cast<void*>(baseByte + sizeof(float) * 3));
+      glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
+                            reinterpret_cast<void*>(baseByte + sizeof(float) * 4));
+
+      glDrawArraysInstanced(GL_TRIANGLES, 0, static_cast<GLsizei>(mesh->vertCount), static_cast<GLsizei>(drawCount));
+    }
+
     glBindVertexArray(0);
   }
 

@@ -32,6 +32,13 @@ uniform float u_DirtSinkStrength;
 uniform float u_DirtSinkScale;
 uniform float u_DirtSinkDensity;
 
+// Far grass tint (cheap distant "field" look)
+uniform int u_GrassTintEnabled;
+uniform vec3 u_GrassTintColor;
+uniform float u_GrassTintNear;
+uniform float u_GrassTintFar;
+uniform float u_GrassTintStrength;
+
 // Pebbles layer controls.
 uniform int u_PebblesEnabled;
 uniform vec3 u_PebbleColor;
@@ -299,6 +306,15 @@ void main() {
   }
 
   vec3 color = shadePbrish(albedo, N, V, roughness, metallic);
+
+  if (u_GrassTintEnabled != 0) {
+    float dist = length(u_CameraPos.xz - v_WorldPos.xz);
+    float t = saturate((dist - u_GrassTintNear) / max(0.001, (u_GrassTintFar - u_GrassTintNear)));
+    // Coverage mask (patchy).
+    float cov = saturate((fbm(v_WorldPos.xz * 0.06) - 0.5) * 2.0);
+    vec3 tint = mix(color, u_GrassTintColor, cov * u_GrassTintStrength);
+    color = mix(color, tint, t);
+  }
 
   // Simple tonemap-ish curve + gamma for display.
   color = color / (color + vec3(1.0));

@@ -14,7 +14,8 @@ inline ecs::ShaderComponent PebblyDirt() {
 
   // Enable the pebble layer in the OpenGL demo shader.
   s.parameters.push_back({"pebblesEnabled", true});
-  s.parameters.push_back({"pebbleColor", render::Color{0.42f, 0.40f, 0.36f, 1.0f}});
+  // Keep close to dirt (slightly warmer/lighter).
+  s.parameters.push_back({"pebbleColor", render::Color{0.58f, 0.52f, 0.44f, 1.0f}});
   s.parameters.push_back({"pebbleRoughness", 0.7f});
   // Bigger scale => smaller pebbles (more cells per meter).
   s.parameters.push_back({"pebbleScale", 3.25f});

@@ -90,14 +90,16 @@ void applyPebbles(inout vec3 albedo,
   if (mask <= 0.0001) return;
 
   // Slight grime around edges.
-  albedo *= 1.0 - edge * 0.14 * blend;
+  albedo *= 1.0 - edge * 0.06 * blend;
 
   // Blend albedo/roughness toward pebble properties.
-  albedo = mix(albedo, pebbleColor, mask * blend);
+  // Keep pebbles close to the underlying dirt so they don't read as black spots.
+  vec3 targetColor = mix(albedo, pebbleColor, 0.65);
+  albedo = mix(albedo, targetColor, mask * blend);
   roughness = mix(roughness, pebbleRoughness, mask * blend);
 
   // Tiny sparkly highlight variation on pebbles.
-  float sparkle = pow(valueNoise(worldPos.xz * 13.0 + viewDir.xz * 0.5), 12.0) * 0.15;
+  float sparkle = pow(valueNoise(worldPos.xz * 13.0 + viewDir.xz * 0.5), 12.0) * 0.08;
   albedo += sparkle * mask * blend;
 
   // Bump pebbles: build a pseudo height field normal from mask gradient.

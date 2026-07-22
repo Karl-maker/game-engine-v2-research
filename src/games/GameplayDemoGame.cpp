@@ -6,6 +6,7 @@
 
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/LightComponent.h"
+#include "ecs/components/GrassPatchComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
@@ -27,8 +28,8 @@ void GameplayDemoGame::onStart() {
 
   m_camera = m_registry.createEntity("camera");
   auto& camTr = m_registry.emplace<ecs::TransformComponent>(m_camera);
-  camTr.position = {10.0f, 14.0f, -26.0f};
-  camTr.rotation = {28.0f, 335.0f, 0.0f};  // pitch/yaw/roll (deg)
+  camTr.position = {6.0f, 5.5f, -14.5f};
+  camTr.rotation = {22.0f, 340.0f, 0.0f};  // pitch/yaw/roll (deg)
   m_registry.emplace<ecs::CameraComponent>(m_camera);
 
   m_terrain = m_registry.createEntity("terrain");
@@ -55,6 +56,26 @@ void GameplayDemoGame::onStart() {
     light.intensity = 3.0f;
     light.color = {1.0f, 0.98f, 0.92f};
     light.castShadows = true;
+  }
+
+  // Grass patches (sparse clumps).
+  {
+    const auto grass = m_registry.createEntity("grass_patch");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(grass);
+    tr.position = {0.0f, 0.0f, 0.0f};
+
+    auto& patch = m_registry.emplace<ecs::GrassPatchComponent>(grass);
+    patch.area = {46.0f, 0.0f, 46.0f};
+    patch.density = 14.0f;
+    patch.seed = 9001;
+    patch.minScale = 0.7f;
+    patch.maxScale = 1.35f;
+    patch.jitter = 1.0f;
+    patch.lodBias = 1.0f;
+
+    auto& shader = m_registry.emplace<ecs::ShaderComponent>(grass);
+    shader.shader.key = "graphics/shaders/grass";
+    shader.depthWrite = true;
   }
 
   // Force a snapshot on the first tick.

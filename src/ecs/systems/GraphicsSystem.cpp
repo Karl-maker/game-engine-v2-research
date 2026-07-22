@@ -4,6 +4,7 @@
 
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/LightComponent.h"
+#include "ecs/components/GrassPatchComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
@@ -91,6 +92,7 @@ bool readColorParam(const ecs::ShaderComponent& shader, const char* name, float&
 const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& registry) {
   m_frame.camera = {};
   m_frame.terrains.clear();
+  m_frame.grasses.clear();
   m_frame.lights.clear();
 
   // --- Camera (pick the first available) ---
@@ -168,6 +170,30 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.range = light.range;
         draw.castShadows = light.castShadows;
         m_frame.lights.push_back(std::move(draw));
+      });
+
+  // --- Grass patches with shaders ---
+  registry.view<ecs::GrassPatchComponent, ecs::ShaderComponent, ecs::TransformComponent>(
+      [&](ecs::EntityId id,
+          const ecs::GrassPatchComponent& grass,
+          const ecs::ShaderComponent& shader,
+          const ecs::TransformComponent& tr) {
+        if (!grass.enabled) return;
+        if (!shader.enabled) return;
+        FrameSnapshot::GrassDraw draw;
+        draw.entity = id;
+        draw.position = tr.position;
+        draw.area = grass.area;
+        draw.density = grass.density;
+        draw.seed = grass.seed;
+        draw.minScale = grass.minScale;
+        draw.maxScale = grass.maxScale;
+        draw.jitter = grass.jitter;
+        draw.lodBias = grass.lodBias;
+        draw.castShadows = grass.castShadows;
+        draw.receiveShadows = grass.receiveShadows;
+        draw.shader = shader.shader;
+        m_frame.grasses.push_back(std::move(draw));
       });
 
   return m_frame;
