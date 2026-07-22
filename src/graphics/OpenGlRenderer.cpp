@@ -476,6 +476,7 @@ bool OpenGlRenderer::start(int width, int height, const char* title) {
 
 void OpenGlRenderer::stop() {
   m_shaders.clear();
+  m_terrainLodState.clear();
 
   for (auto& [_, m] : m_terrainMeshes) {
     destroyTerrainMesh(m);
@@ -932,6 +933,95 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       math::lookAt(frame.camera.position, frame.camera.position + frame.camera.forward, math::Vec3{0.0f, 1.0f, 0.0f});
   const math::Mat4 viewProj = math::mul(proj, view);
 
+  const math::Vec3 camPos = frame.camera.position;
+  const math::Vec3 camFwd = math::normalize(frame.camera.forward);
+  const math::Vec3 camFwdXZ = math::normalize(math::Vec3{camFwd.x, 0.0f, camFwd.z});
+
+  const auto mulPoint = [](const math::Mat4& m, const math::Vec3& p) -> math::Vec3 {
+    // Column-major: out = M * vec4(p,1)
+    return math::Vec3{
+        m.m[0] * p.x + m.m[4] * p.y + m.m[8] * p.z + m.m[12],
+        m.m[1] * p.x + m.m[5] * p.y + m.m[9] * p.z + m.m[13],
+        m.m[2] * p.x + m.m[6] * p.y + m.m[10] * p.z + m.m[14],
+    };
+  };
+
+  const auto clampf = [](float v, float lo, float hi) -> float { return (v < lo) ? lo : (v > hi) ? hi : v; };
+
+  // --- Terrain LOD state update (shared by shadow + main passes) ---
+  for (const auto& t : frame.terrains) {
+    auto& st = m_terrainLodState[static_cast<std::uint32_t>(t.entity)];
+    if (st.lodStep <= 0) st.lodStep = 1;
+
+    // Distance-to-terrain for LOD: use nearest point on the terrain XZ rectangle (not the terrain center).
+    const float sizeX = static_cast<float>(std::max(2, t.gridWidth)) * t.cellSizeMeters;
+    const float sizeZ = static_cast<float>(std::max(2, t.gridHeight)) * t.cellSizeMeters;
+    const float halfX = 0.5f * sizeX;
+    const float halfZ = 0.5f * sizeZ;
+
+    const float nearestX = clampf(camPos.x, t.position.x - halfX, t.position.x + halfX);
+    const float nearestZ = clampf(camPos.z, t.position.z - halfZ, t.position.z + halfZ);
+    const float dx = nearestX - camPos.x;
+    const float dz = nearestZ - camPos.z;
+    const float distHoriz = std::sqrt(dx * dx + dz * dz);
+
+    float viewDot = 1.0f;
+    if (distHoriz > 1e-4f) {
+      const float inv = 1.0f / distHoriz;
+      const math::Vec3 dirXZ{dx * inv, 0.0f, dz * inv};
+      // Use yaw-only dot so pitching the camera doesn't cause popping.
+      viewDot = (camFwdXZ.x * dirXZ.x + camFwdXZ.z * dirXZ.z);
+    }
+
+    // --- Tessellation decision (hysteresis) ---
+    const bool tessAllowed = (t.tessQuality > 0);
+    const float lockDist = std::max(10.0f, t.tessNear * 2.0f);  // never disable right in front of the camera
+    const float enableDist = t.tessFar * 0.78f;
+    const float disableDist = t.tessFar * 1.18f;
+    const float enableDot = 0.15f;
+    const float disableDot = 0.02f;
+
+    if (!tessAllowed) {
+      st.wantTess = false;
+    } else if (distHoriz < lockDist) {
+      st.wantTess = true;
+    } else if (st.wantTess) {
+      if (distHoriz > disableDist || viewDot < disableDot) st.wantTess = false;
+    } else {
+      if (distHoriz < enableDist && viewDot > enableDot) st.wantTess = true;
+    }
+
+    // --- Geometry LOD (hysteresis) ---
+    const float t12_in = 30.0f;
+    const float t12_out = 24.0f;
+    const float t24_in = 66.0f;
+    const float t24_out = 56.0f;
+    const float t48_in = 105.0f;
+    const float t48_out = 92.0f;
+
+    int lodStep = st.lodStep;
+    if (lodStep <= 1) {
+      if (distHoriz > t12_in || viewDot < -0.10f) lodStep = 2;
+    } else if (lodStep == 2) {
+      if (distHoriz < t12_out && viewDot > 0.05f) lodStep = 1;
+      else if (distHoriz > t24_in || viewDot < -0.15f) lodStep = 4;
+    } else if (lodStep == 4) {
+      if (distHoriz < t24_out && viewDot > 0.05f) lodStep = 2;
+      else if (distHoriz > t48_in || viewDot < -0.20f) lodStep = 8;
+    } else {
+      if (distHoriz < t48_out && viewDot > 0.05f) lodStep = 4;
+      else lodStep = 8;
+    }
+
+    // Lock near-camera detail so it doesn't pop right in front of you.
+    if (distHoriz < 14.0f) lodStep = 1;
+    else if (distHoriz < 28.0f) lodStep = std::min(lodStep, 2);
+
+    // If tess is off, bias toward coarser geo LOD (still stable via hysteresis above).
+    if (!st.wantTess) lodStep = std::max(lodStep, 2);
+    st.lodStep = lodStep;
+  }
+
   // --- Shadow map pass (optional; off by default via RenderSettingsComponent) ---
   bool shadowOn = false;
   math::Mat4 lightViewProj{};
@@ -966,8 +1056,6 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       shadowLightDir = math::normalize(sun->direction);
 
       const float dist = std::max(10.0f, sun->shadowDistance);
-      const math::Vec3 camPos = frame.camera.position;
-      const math::Vec3 camFwd = math::normalize(frame.camera.forward);
 
       // Focus the shadow frustum slightly ahead of the camera (better use of resolution).
       const math::Vec3 center = camPos + camFwd * (dist * 0.35f);
@@ -978,7 +1066,16 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       const math::Vec3 up = (upDot > 0.95f) ? math::Vec3{0.0f, 0.0f, 1.0f} : up0;
 
       const math::Vec3 eye = center - shadowLightDir * dist;
-      const math::Mat4 lView = math::lookAt(eye, center, up);
+      math::Mat4 lView = math::lookAt(eye, center, up);
+
+      // Stabilize the shadow map to the texel grid to reduce shimmering/flicker as the camera moves.
+      const float texelWorld = (2.0f * radius) / static_cast<float>(std::max(1, m_shadowRes));
+      const math::Vec3 centerLS = mulPoint(lView, center);
+      const float snappedX = std::floor(centerLS.x / texelWorld + 0.5f) * texelWorld;
+      const float snappedY = std::floor(centerLS.y / texelWorld + 0.5f) * texelWorld;
+      const float dx = snappedX - centerLS.x;
+      const float dy = snappedY - centerLS.y;
+      lView = math::mul(math::translate(math::Vec3{-dx, -dy, 0.0f}), lView);
       const math::Mat4 lProj = ortho(-radius, radius, -radius, radius, 0.1f, dist * 2.2f);
       lightViewProj = math::mul(lProj, lView);
 
@@ -996,19 +1093,15 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       for (const auto& t : frame.terrains) {
         if (!t.castShadows) continue;
 
-        const math::Vec3 toCenter = t.position - camPos;
-        const float d = math::length(toCenter);
-        const float viewDot = (d > 1e-5f) ? math::dot(toCenter * (1.0f / d), camFwd) : 1.0f;
-
-        const bool wantTess = frame.settings.shadowUseTessellation && (t.tessQuality > 0) && (d < (t.tessFar * 0.9f)) &&
-                              (viewDot > 0.10f);
+        auto it = m_terrainLodState.find(static_cast<std::uint32_t>(t.entity));
+        const TerrainLodState st = (it != m_terrainLodState.end()) ? it->second : TerrainLodState{};
+        const bool wantTess = frame.settings.shadowUseTessellation && st.wantTess;
         const char* key = wantTess ? "graphics/shaders/terrain_shadow" : "graphics/shaders/terrain_shadow_notess";
         const ShaderService::Program* program = m_shaders.getOrCreate(key);
         if (!program || !program->programId) continue;
 
-        int lodStep = 2;
-        if (d > 55.0f) lodStep = 4;
-        if (!wantTess && d > 85.0f) lodStep = 8;
+        int lodStep = std::max(1, st.lodStep);
+        if (!wantTess) lodStep = std::max(lodStep, 2);
 
         TerrainMesh* mesh = getOrCreateTerrainMesh(t, lodStep);
         if (!mesh || !mesh->vao) continue;
@@ -1249,25 +1342,11 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   glCullFace(GL_BACK);
 
   for (const auto& t : frame.terrains) {
-    const math::Vec3 camPos = frame.camera.position;
-    const math::Vec3 camFwd = math::normalize(frame.camera.forward);
+    auto it = m_terrainLodState.find(static_cast<std::uint32_t>(t.entity));
+    const TerrainLodState st = (it != m_terrainLodState.end()) ? it->second : TerrainLodState{};
 
-    // Terrain is centered around its transform; approximate bounds for cheap LOD decisions.
-    const float sizeX = static_cast<float>(std::max(2, t.gridWidth)) * t.cellSizeMeters;
-    const float sizeZ = static_cast<float>(std::max(2, t.gridHeight)) * t.cellSizeMeters;
-    const math::Vec3 terrainCenter = t.position;
-    const math::Vec3 toCenter = terrainCenter - camPos;
-    const float distSq = toCenter.x * toCenter.x + toCenter.y * toCenter.y + toCenter.z * toCenter.z;
-    const float invDist = 1.0f / std::sqrt(std::max(1e-6f, distSq));
-    const float distMeters = distSq * invDist;
-    const float viewDot = (toCenter.x * invDist) * camFwd.x + (toCenter.y * invDist) * camFwd.y + (toCenter.z * invDist) * camFwd.z;
-
-    // Choose shader variant: use tessellation only when close and within a forward cone.
     std::string shaderKey = t.shader.key;
-    const bool wantTess = (distMeters < (t.tessFar * 0.9f)) && (viewDot > 0.10f) && (t.tessQuality > 0);
-    if (!wantTess) {
-      shaderKey += "_notess";
-    }
+    if (!st.wantTess) shaderKey += "_notess";
 
     const ShaderService::Program* program = m_shaders.getOrCreate(shaderKey);
     if (!program || !program->programId) continue;
@@ -1275,13 +1354,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog =
         frame.fogVolumes.empty() ? nullptr : &frame.fogVolumes[0];
 
-    // Geometry LOD (reduces triangle count). Tessellation can still add detail on top when enabled.
-    int lodStep = 1;
-    if (distMeters > 55.0f) lodStep = 4;
-    else if (distMeters > 25.0f) lodStep = 2;
-    if (viewDot < 0.10f) lodStep = std::max(lodStep, 4);
-    if (t.tessQuality <= 0) lodStep = std::max(lodStep, 2);
-    if (!wantTess && distMeters > 85.0f) lodStep = std::max(lodStep, 8);
+    const int lodStep = std::max(1, st.lodStep);
 
     TerrainMesh* mesh = getOrCreateTerrainMesh(t, lodStep);
     if (!mesh || !mesh->vao) continue;

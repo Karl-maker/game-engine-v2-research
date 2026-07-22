@@ -13,11 +13,11 @@ struct RenderSettingsComponent final {
   // Shadows
   // Default is disabled to preserve the current look (no shadow maps yet in the demo scenes).
   bool shadowsEnabled = true;
-  int shadowQuality = 1;  // 0=Low,1=Medium,2=High (renderer-defined)
-  float shadowStrength = 1.0f;
+  int shadowQuality = 0;  // 0=Low,1=Medium,2=High (renderer-defined)
+  float shadowStrength = 0.3f;
 
   // If true, the shadow caster pass may use tessellation for terrain when available.
-  bool shadowUseTessellation = true;
+  bool shadowUseTessellation = false;
 };
 
 }  // namespace ecs

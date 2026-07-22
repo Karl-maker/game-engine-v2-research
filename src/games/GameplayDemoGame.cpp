@@ -47,8 +47,8 @@ void GameplayDemoGame::onStart() {
   }
   {
     auto& stats = m_registry.emplace<ecs::StatsComponent>(m_camera);
-    stats.walkingSpeed = 6.0f;
-    stats.runningSpeed = 10.0f;
+    stats.walkingSpeed = 10.0f;
+    stats.runningSpeed = 20.0f;
   }
 
   m_terrain = m_registry.createEntity("terrain");
@@ -59,7 +59,7 @@ void GameplayDemoGame::onStart() {
     terrain.gridHeight = 96;
     terrain.cellSizeMeters = 1.0f;
     // Flatter terrain (less "mountainy").
-    terrain.heightScaleMeters = 4.6f;
+    terrain.heightScaleMeters = 2.6f;
     terrain.noise.frequency = 0.030f;
     terrain.noise.octaves = 2;
     terrain.noise.persistence = 0.45f;
@@ -98,7 +98,7 @@ void GameplayDemoGame::onStart() {
     skyc.linkedDirectionalLightEntity = m_light;
     skyc.cloudType = ecs::SkyComponent::CloudType::Scattered;
     skyc.quality = ecs::SkyComponent::Quality::High;
-    skyc.cloudCoverage = 0.38f;
+    skyc.cloudCoverage = 0.78f;
     skyc.cloudDensity = 0.65f;
     skyc.cloudScale = 1.0f;
     skyc.cloudSpeed = 0.020f;
@@ -131,11 +131,12 @@ void GameplayDemoGame::onStart() {
     f.sizeMeters = {w * 1.25f, 80.0f, d * 1.25f};
     // Placeholder values; SkyPresetSystem will drive these when linked from SkyComponent.
     f.color = {0.55f, 0.62f, 0.72f, 1.0f};
-    f.density = 0.060f;
+    f.density = 0.0f;
     f.startDistance = 6.0f;
     f.endDistance = 160.0f;
     f.heightFalloff = 0.045f;
     f.baseHeightOffset = -4.0f;
+    f.enabled = false;
   }
 
   if (skyEntity != ecs::kInvalidEntityId && fogEntity != ecs::kInvalidEntityId) {
@@ -148,14 +149,10 @@ void GameplayDemoGame::onStart() {
   // Force a snapshot on the first tick.
   m_printTimer = 0.5;
 
-  // Global render switches (disabled by default to preserve current look).
+  // Global render switches (tweakable).
   {
     const auto rs = m_registry.createEntity("render_settings");
-    auto& s = m_registry.emplace<ecs::RenderSettingsComponent>(rs);
-    s.shadowsEnabled = false;
-    s.shadowQuality = 1;
-    s.shadowStrength = 1.0f;
-    s.shadowUseTessellation = false;
+    (void)m_registry.emplace<ecs::RenderSettingsComponent>(rs);
   }
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
