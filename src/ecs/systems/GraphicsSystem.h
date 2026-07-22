@@ -14,6 +14,7 @@
 #include "ecs/EntityRegistry.h"
 #include "math/Vec3.h"
 #include "render/AssetRef.h"
+#include "render/Color.h"
 #include "terrain/NoiseConfig.h"
 
 #include <cstddef>
@@ -122,6 +123,54 @@ class GraphicsSystem final {
   struct FrameSnapshot final {
     ActiveCamera camera;
     std::vector<TerrainDraw> terrains;
+
+    struct FogDraw final {
+      EntityId entity = kInvalidEntityId;
+      math::Vec3 center{};
+      math::Vec3 sizeMeters{100.0f, 50.0f, 100.0f};
+      render::Color color{0.70f, 0.78f, 0.92f, 1.0f};
+      float density = 0.012f;
+      float startDistance = 18.0f;
+      float endDistance = 220.0f;
+      float heightFalloff = 0.06f;
+      float baseHeightOffset = 0.0f;
+    };
+    std::vector<FogDraw> fogVolumes;
+
+    struct SkyDraw final {
+      EntityId entity = kInvalidEntityId;
+      render::AssetRef shader{};
+      render::Color horizonColor{0.65f, 0.75f, 0.95f, 1.0f};
+      render::Color zenithColor{0.12f, 0.22f, 0.45f, 1.0f};
+      bool sunEnabled = true;
+      math::Vec3 sunDirection{0.2f, 0.9f, 0.2f};
+      render::Color sunTint{1.0f, 0.95f, 0.85f, 1.0f};
+      float sunDiscIntensity = 1.0f;
+      float sunDiscSize = 1.0f;
+      bool cloudsEnabled = true;
+      int skyType = 0;       // ecs::SkyComponent::SkyType
+      int cloudType = 0;     // ecs::SkyComponent::CloudType
+      int quality = 1;       // ecs::SkyComponent::Quality
+      float cloudCoverage = 0.35f;
+      float cloudDensity = 0.6f;
+      float cloudSpeed = 0.02f;
+      float cloudWindX = 1.0f;
+      float cloudWindZ = 0.6f;
+      float cloudTimeScale = 1.0f;
+      float cloudTurbulence = 0.35f;
+      float cloudScale = 1.0f;
+      float cloudLightAbsorption = 0.4f;
+      float cloudHeightMeters = 150.0f;
+
+      bool starsEnabled = true;
+      float starsIntensity = 0.75f;
+      float starsDensity = 0.55f;
+      float starsSize = 0.9f;
+      float starsTwinkleStrength = 0.25f;
+      float starsTwinkleSpeed = 0.6f;
+      std::uint32_t starsSeed = 1337u;
+    };
+    std::vector<SkyDraw> skies;
 
     struct RockDraw final {
       EntityId entity = kInvalidEntityId;

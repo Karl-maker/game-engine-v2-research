@@ -9,8 +9,11 @@
 // A rendering/sky system can interpret this component and configure the sky shader/material.
 
 #include "math/Vec3.h"
+#include "math/Vec2.h"
 #include "render/AssetRef.h"
 #include "render/Color.h"
+
+#include <cstdint>
 
 namespace ecs {
 
@@ -20,8 +23,35 @@ struct SkyComponent {
     Skybox,  // cubemap/texture-based
   };
 
+  enum class SkyType {
+    Day,
+    Sunset,
+    Night,
+    Overcast,
+    Storm,
+  };
+
+  enum class CloudType {
+    None,
+    Wispy,
+    Scattered,
+    Broken,
+    Overcast,
+    Storm,
+  };
+
+  enum class Quality {
+    Low,
+    Medium,
+    High,
+    Ultra,
+  };
+
   bool enabled = true;
   Mode mode = Mode::Procedural;
+  SkyType skyType = SkyType::Day;
+  CloudType cloudType = CloudType::Scattered;
+  Quality quality = Quality::Medium;
 
   // Optional material/shader preset reference used by the sky renderer.
   // Example key: "materials/sky/day"
@@ -43,9 +73,23 @@ struct SkyComponent {
   float cloudCoverage = 0.35f;    // 0..1
   float cloudDensity = 0.6f;      // 0..1
   float cloudSpeed = 0.02f;       // units/sec (system-defined)
+  math::Vec2 cloudWindDirection{1.0f, 0.6f};  // XZ wind dir
+  float cloudTimeScale = 1.0f;    // animation multiplier
+  float cloudTurbulence = 0.35f;  // 0..1, affects warping/detail
   float cloudScale = 1.0f;        // tiling
   float cloudLightAbsorption = 0.4f;
+
+  // Cloud layer height (world units, meters).
+  float cloudHeightMeters = 150.0f;
+
+  // Stars (procedural).
+  bool starsEnabled = true;
+  float starsIntensity = 0.75f;   // brightness multiplier
+  float starsDensity = 0.55f;     // 0..1, how many stars
+  float starsSize = 0.9f;         // 0..2-ish, bigger = fatter points
+  float starsTwinkleStrength = 0.25f; // 0..1
+  float starsTwinkleSpeed = 0.6f; // Hz-ish
+  std::uint32_t starsSeed = 1337u;
 };
 
 }  // namespace ecs
-

@@ -421,6 +421,9 @@ bool OpenGlRenderer::start(int width, int height, const char* title) {
     m_overlayCapacityVerts = 0;
   }
 
+  // Sky VAO (core profile requires a VAO even for gl_VertexID fullscreen triangles).
+  glGenVertexArrays(1, &m_skyVao);
+
   return true;
 }
 
@@ -439,6 +442,7 @@ void OpenGlRenderer::stop() {
 
   if (m_window) {
     glfwMakeContextCurrent(m_window);
+    if (m_skyVao) glDeleteVertexArrays(1, &m_skyVao);
     m_textures.destroyAllGlTextures();
     glfwMakeContextCurrent(nullptr);
   }
@@ -451,6 +455,7 @@ void OpenGlRenderer::stop() {
   m_overlayVao = 0;
   m_overlayProgram = 0;
   m_overlayCapacityVerts = 0;
+  m_skyVao = 0;
 
   if (m_window) {
     glfwDestroyWindow(m_window);
@@ -854,6 +859,129 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       math::lookAt(frame.camera.position, frame.camera.position + frame.camera.forward, math::Vec3{0.0f, 1.0f, 0.0f});
   const math::Mat4 viewProj = math::mul(proj, view);
 
+  // Sky pass (fullscreen procedural).
+  if (!frame.skies.empty() && m_skyVao) {
+    const auto& sky = frame.skies[0];
+    const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog =
+        frame.fogVolumes.empty() ? nullptr : &frame.fogVolumes[0];
+    const ShaderService::Program* program = m_shaders.getOrCreate(sky.shader.key);
+    if (program && program->programId) {
+      glUseProgram(program->programId);
+      glDisable(GL_DEPTH_TEST);
+      glDepthMask(GL_FALSE);
+      glDisable(GL_CULL_FACE);
+      glDisable(GL_BLEND);
+
+      const float timeSeconds = static_cast<float>(glfwGetTime());
+
+      // Camera basis for ray generation.
+      const math::Vec3 up{0.0f, 1.0f, 0.0f};
+      math::Vec3 fwd = math::normalize(frame.camera.forward);
+      math::Vec3 right = math::normalize(math::cross(fwd, up));
+      if (math::lengthSq(right) < 1e-6f) right = {1.0f, 0.0f, 0.0f};
+      math::Vec3 camUp = math::normalize(math::cross(right, fwd));
+      const float tanHalfFov = std::tan(frame.camera.fovYRadians * 0.5f);
+
+      const GLint locCamPos = glGetUniformLocation(program->programId, "u_CameraPos");
+      if (locCamPos >= 0) glUniform3f(locCamPos, frame.camera.position.x, frame.camera.position.y, frame.camera.position.z);
+      const GLint locFwd = glGetUniformLocation(program->programId, "u_CamForward");
+      if (locFwd >= 0) glUniform3f(locFwd, fwd.x, fwd.y, fwd.z);
+      const GLint locRight = glGetUniformLocation(program->programId, "u_CamRight");
+      if (locRight >= 0) glUniform3f(locRight, right.x, right.y, right.z);
+      const GLint locUp = glGetUniformLocation(program->programId, "u_CamUp");
+      if (locUp >= 0) glUniform3f(locUp, camUp.x, camUp.y, camUp.z);
+      const GLint locAspect = glGetUniformLocation(program->programId, "u_Aspect");
+      if (locAspect >= 0) glUniform1f(locAspect, aspect);
+      const GLint locTan = glGetUniformLocation(program->programId, "u_TanHalfFov");
+      if (locTan >= 0) glUniform1f(locTan, tanHalfFov);
+      const GLint locTime = glGetUniformLocation(program->programId, "u_Time");
+      if (locTime >= 0) glUniform1f(locTime, timeSeconds);
+
+      const GLint locH = glGetUniformLocation(program->programId, "u_HorizonColor");
+      if (locH >= 0) glUniform3f(locH, sky.horizonColor.r, sky.horizonColor.g, sky.horizonColor.b);
+      const GLint locZ = glGetUniformLocation(program->programId, "u_ZenithColor");
+      if (locZ >= 0) glUniform3f(locZ, sky.zenithColor.r, sky.zenithColor.g, sky.zenithColor.b);
+      const GLint locSunOn = glGetUniformLocation(program->programId, "u_SunEnabled");
+      if (locSunOn >= 0) glUniform1i(locSunOn, sky.sunEnabled ? 1 : 0);
+      const GLint locSunDir = glGetUniformLocation(program->programId, "u_SunDir");
+      if (locSunDir >= 0) glUniform3f(locSunDir, sky.sunDirection.x, sky.sunDirection.y, sky.sunDirection.z);
+      const GLint locSunTint = glGetUniformLocation(program->programId, "u_SunTint");
+      if (locSunTint >= 0) glUniform3f(locSunTint, sky.sunTint.r, sky.sunTint.g, sky.sunTint.b);
+      const GLint locSunI = glGetUniformLocation(program->programId, "u_SunDiscIntensity");
+      if (locSunI >= 0) glUniform1f(locSunI, sky.sunDiscIntensity);
+      const GLint locSunS = glGetUniformLocation(program->programId, "u_SunDiscSize");
+      if (locSunS >= 0) glUniform1f(locSunS, sky.sunDiscSize);
+
+      const GLint locSkyType = glGetUniformLocation(program->programId, "u_SkyType");
+      if (locSkyType >= 0) glUniform1i(locSkyType, sky.skyType);
+      const GLint locCloudOn = glGetUniformLocation(program->programId, "u_CloudsEnabled");
+      if (locCloudOn >= 0) glUniform1i(locCloudOn, sky.cloudsEnabled ? 1 : 0);
+      const GLint locCloudType = glGetUniformLocation(program->programId, "u_CloudType");
+      if (locCloudType >= 0) glUniform1i(locCloudType, sky.cloudType);
+      const GLint locQual = glGetUniformLocation(program->programId, "u_CloudQuality");
+      if (locQual >= 0) glUniform1i(locQual, sky.quality);
+      const GLint locCov = glGetUniformLocation(program->programId, "u_CloudCoverage");
+      if (locCov >= 0) glUniform1f(locCov, sky.cloudCoverage);
+      const GLint locDen = glGetUniformLocation(program->programId, "u_CloudDensity");
+      if (locDen >= 0) glUniform1f(locDen, sky.cloudDensity);
+      const GLint locSpd = glGetUniformLocation(program->programId, "u_CloudSpeed");
+      if (locSpd >= 0) glUniform1f(locSpd, sky.cloudSpeed);
+      const GLint locWind = glGetUniformLocation(program->programId, "u_CloudWindDir");
+      if (locWind >= 0) glUniform2f(locWind, sky.cloudWindX, sky.cloudWindZ);
+      const GLint locTs = glGetUniformLocation(program->programId, "u_CloudTimeScale");
+      if (locTs >= 0) glUniform1f(locTs, sky.cloudTimeScale);
+      const GLint locTurb = glGetUniformLocation(program->programId, "u_CloudTurbulence");
+      if (locTurb >= 0) glUniform1f(locTurb, sky.cloudTurbulence);
+      const GLint locScale = glGetUniformLocation(program->programId, "u_CloudScale");
+      if (locScale >= 0) glUniform1f(locScale, sky.cloudScale);
+      const GLint locAbs = glGetUniformLocation(program->programId, "u_CloudAbsorption");
+      if (locAbs >= 0) glUniform1f(locAbs, sky.cloudLightAbsorption);
+      const GLint locCH = glGetUniformLocation(program->programId, "u_CloudHeightMeters");
+      if (locCH >= 0) glUniform1f(locCH, sky.cloudHeightMeters);
+
+      const GLint locStarsOn = glGetUniformLocation(program->programId, "u_StarsEnabled");
+      if (locStarsOn >= 0) glUniform1i(locStarsOn, sky.starsEnabled ? 1 : 0);
+      const GLint locStarsI = glGetUniformLocation(program->programId, "u_StarsIntensity");
+      if (locStarsI >= 0) glUniform1f(locStarsI, sky.starsIntensity);
+      const GLint locStarsD = glGetUniformLocation(program->programId, "u_StarsDensity");
+      if (locStarsD >= 0) glUniform1f(locStarsD, sky.starsDensity);
+      const GLint locStarsS = glGetUniformLocation(program->programId, "u_StarsSize");
+      if (locStarsS >= 0) glUniform1f(locStarsS, sky.starsSize);
+      const GLint locTwS = glGetUniformLocation(program->programId, "u_StarsTwinkleStrength");
+      if (locTwS >= 0) glUniform1f(locTwS, sky.starsTwinkleStrength);
+      const GLint locTwSpd = glGetUniformLocation(program->programId, "u_StarsTwinkleSpeed");
+      if (locTwSpd >= 0) glUniform1f(locTwSpd, sky.starsTwinkleSpeed);
+      const GLint locSeed = glGetUniformLocation(program->programId, "u_StarsSeed");
+      if (locSeed >= 0) glUniform1ui(locSeed, sky.starsSeed);
+
+      const GLint locFogOn = glGetUniformLocation(program->programId, "u_FogEnabled");
+      if (locFogOn >= 0) glUniform1i(locFogOn, fog ? 1 : 0);
+      if (fog) {
+        const math::Vec3 half = fog->sizeMeters * 0.5f;
+        const GLint locFogCenter = glGetUniformLocation(program->programId, "u_FogCenter");
+        if (locFogCenter >= 0) glUniform3f(locFogCenter, fog->center.x, fog->center.y, fog->center.z);
+        const GLint locFogHalf = glGetUniformLocation(program->programId, "u_FogHalfSize");
+        if (locFogHalf >= 0) glUniform3f(locFogHalf, half.x, half.y, half.z);
+        const GLint locFogCol = glGetUniformLocation(program->programId, "u_FogColor");
+        if (locFogCol >= 0) glUniform3f(locFogCol, fog->color.r, fog->color.g, fog->color.b);
+        const GLint locFogDen = glGetUniformLocation(program->programId, "u_FogDensity");
+        if (locFogDen >= 0) glUniform1f(locFogDen, fog->density);
+        const GLint locFogStart = glGetUniformLocation(program->programId, "u_FogStart");
+        if (locFogStart >= 0) glUniform1f(locFogStart, fog->startDistance);
+        const GLint locFogEnd = glGetUniformLocation(program->programId, "u_FogEnd");
+        if (locFogEnd >= 0) glUniform1f(locFogEnd, fog->endDistance);
+        const GLint locFogHf = glGetUniformLocation(program->programId, "u_FogHeightFalloff");
+        if (locFogHf >= 0) glUniform1f(locFogHf, fog->heightFalloff);
+        const GLint locFogBase = glGetUniformLocation(program->programId, "u_FogBaseHeight");
+        if (locFogBase >= 0) glUniform1f(locFogBase, fog->baseHeightOffset);
+      }
+
+      glBindVertexArray(m_skyVao);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
+      glBindVertexArray(0);
+    }
+  }
+
   // Lights: pack (clamp to 16).
   constexpr int kMaxLights = 16;
   const int lightCount = static_cast<int>(std::min<std::size_t>(frame.lights.size(), kMaxLights));
@@ -882,6 +1010,9 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   for (const auto& t : frame.terrains) {
     const ShaderService::Program* program = m_shaders.getOrCreate(t.shader.key);
     if (!program || !program->programId) continue;
+
+    const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog =
+        frame.fogVolumes.empty() ? nullptr : &frame.fogVolumes[0];
 
     TerrainMesh* mesh = getOrCreateTerrainMesh(t);
     if (!mesh || !mesh->vao) continue;
@@ -920,6 +1051,29 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locSinkStrength >= 0) glUniform1f(locSinkStrength, t.dirtSinkStrength);
     if (locSinkScale >= 0) glUniform1f(locSinkScale, t.dirtSinkScale);
     if (locSinkDensity >= 0) glUniform1f(locSinkDensity, t.dirtSinkDensity);
+
+    // Fog uniforms.
+    const GLint locFogOn = glGetUniformLocation(program->programId, "u_FogEnabled");
+    if (locFogOn >= 0) glUniform1i(locFogOn, fog ? 1 : 0);
+    if (fog) {
+      const math::Vec3 half = fog->sizeMeters * 0.5f;
+      const GLint locFogCenter = glGetUniformLocation(program->programId, "u_FogCenter");
+      if (locFogCenter >= 0) glUniform3f(locFogCenter, fog->center.x, fog->center.y, fog->center.z);
+      const GLint locFogHalf = glGetUniformLocation(program->programId, "u_FogHalfSize");
+      if (locFogHalf >= 0) glUniform3f(locFogHalf, half.x, half.y, half.z);
+      const GLint locFogCol = glGetUniformLocation(program->programId, "u_FogColor");
+      if (locFogCol >= 0) glUniform3f(locFogCol, fog->color.r, fog->color.g, fog->color.b);
+      const GLint locFogDen = glGetUniformLocation(program->programId, "u_FogDensity");
+      if (locFogDen >= 0) glUniform1f(locFogDen, fog->density);
+      const GLint locFogStart = glGetUniformLocation(program->programId, "u_FogStart");
+      if (locFogStart >= 0) glUniform1f(locFogStart, fog->startDistance);
+      const GLint locFogEnd = glGetUniformLocation(program->programId, "u_FogEnd");
+      if (locFogEnd >= 0) glUniform1f(locFogEnd, fog->endDistance);
+      const GLint locFogHf = glGetUniformLocation(program->programId, "u_FogHeightFalloff");
+      if (locFogHf >= 0) glUniform1f(locFogHf, fog->heightFalloff);
+      const GLint locFogBase = glGetUniformLocation(program->programId, "u_FogBaseHeight");
+      if (locFogBase >= 0) glUniform1f(locFogBase, fog->baseHeightOffset);
+    }
 
     // Far grass tint (disabled for now).
     const GLint locGtOn = glGetUniformLocation(program->programId, "u_GrassTintEnabled");
@@ -1092,13 +1246,19 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       const GLint locTessFar = glGetUniformLocation(program->programId, "u_TessFar");
       const GLint locTessMin = glGetUniformLocation(program->programId, "u_TessMin");
       const GLint locTessMax = glGetUniformLocation(program->programId, "u_TessMax");
-      if (locTessNear >= 0) glUniform1f(locTessNear, 8.0f);
-      if (locTessFar >= 0) glUniform1f(locTessFar, 80.0f);
+      if (locTessNear >= 0) glUniform1f(locTessNear, 6.0f);
+      if (locTessFar >= 0) glUniform1f(locTessFar, 120.0f);
       if (locTessMin >= 0) glUniform1f(locTessMin, 2.0f);
-      if (locTessMax >= 0) glUniform1f(locTessMax, 12.0f);
+      if (locTessMax >= 0) glUniform1f(locTessMax, 18.0f);
 
       const GLint locNormDispBoost = glGetUniformLocation(program->programId, "u_NormalDisplacementBoost");
-      if (locNormDispBoost >= 0) glUniform1f(locNormDispBoost, 0.35f);
+      if (locNormDispBoost >= 0) glUniform1f(locNormDispBoost, 0.85f);
+
+      // Use normal maps as additional displacement (micro-height).
+      const GLint locNormDerived = glGetUniformLocation(program->programId, "u_NormalDerivedDisplacementStrength");
+      if (locNormDerived >= 0) glUniform1f(locNormDerived, 0.55f * t.displacementStrength);
+      const GLint locRockNormDerived = glGetUniformLocation(program->programId, "u_RockNormalDerivedDisplacementStrength");
+      if (locRockNormDerived >= 0) glUniform1f(locRockNormDerived, 0.75f * t.rockDisplacementStrength);
     }
 
     glBindVertexArray(mesh->vao);

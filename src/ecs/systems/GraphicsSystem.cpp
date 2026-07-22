@@ -3,9 +3,11 @@
 // Author: Karl-Johan Bailey
 
 #include "ecs/components/CameraComponent.h"
+#include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/RockScatterComponent.h"
 #include "ecs/components/ShaderComponent.h"
+#include "ecs/components/SkyComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
 
@@ -139,6 +141,8 @@ void extractRockLayerTextures(const ecs::ShaderComponent& shader, GraphicsSystem
 const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& registry) {
   m_frame.camera = {};
   m_frame.terrains.clear();
+  m_frame.fogVolumes.clear();
+  m_frame.skies.clear();
   m_frame.rocks.clear();
   m_frame.lights.clear();
 
@@ -222,6 +226,65 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.range = light.range;
         draw.castShadows = light.castShadows;
         m_frame.lights.push_back(std::move(draw));
+      });
+
+  // --- Fog volumes (pick the first enabled) ---
+  registry.view<ecs::FogVolumeComponent, ecs::TransformComponent>(
+      [&](ecs::EntityId id, const ecs::FogVolumeComponent& fog, const ecs::TransformComponent& tr) {
+        if (!fog.enabled) return;
+        if (!m_frame.fogVolumes.empty()) return;
+        FrameSnapshot::FogDraw draw;
+        draw.entity = id;
+        draw.center = tr.position;
+        draw.sizeMeters = fog.sizeMeters;
+        draw.color = fog.color;
+        draw.density = fog.density;
+        draw.startDistance = fog.startDistance;
+        draw.endDistance = fog.endDistance;
+        draw.heightFalloff = fog.heightFalloff;
+        draw.baseHeightOffset = fog.baseHeightOffset;
+        m_frame.fogVolumes.push_back(std::move(draw));
+      });
+
+  // --- Skies (pick the first enabled) ---
+  registry.view<ecs::SkyComponent, ecs::ShaderComponent>(
+      [&](ecs::EntityId id, const ecs::SkyComponent& sky, const ecs::ShaderComponent& shader) {
+        if (!sky.enabled) return;
+        if (!shader.enabled) return;
+        if (!m_frame.skies.empty()) return;
+        FrameSnapshot::SkyDraw draw;
+        draw.entity = id;
+        draw.shader = shader.shader;
+        draw.horizonColor = sky.horizonColor;
+        draw.zenithColor = sky.zenithColor;
+        draw.sunEnabled = sky.sunEnabled;
+        draw.sunDirection = sky.sunDirection;
+        draw.sunTint = sky.sunTint;
+        draw.sunDiscIntensity = sky.sunDiscIntensity;
+        draw.sunDiscSize = sky.sunDiscSize;
+        draw.cloudsEnabled = sky.cloudsEnabled;
+        draw.skyType = static_cast<int>(sky.skyType);
+        draw.cloudType = static_cast<int>(sky.cloudType);
+        draw.quality = static_cast<int>(sky.quality);
+        draw.cloudCoverage = sky.cloudCoverage;
+        draw.cloudDensity = sky.cloudDensity;
+        draw.cloudSpeed = sky.cloudSpeed;
+        draw.cloudWindX = sky.cloudWindDirection.x;
+        draw.cloudWindZ = sky.cloudWindDirection.y;
+        draw.cloudTimeScale = sky.cloudTimeScale;
+        draw.cloudTurbulence = sky.cloudTurbulence;
+        draw.cloudScale = sky.cloudScale;
+        draw.cloudLightAbsorption = sky.cloudLightAbsorption;
+        draw.cloudHeightMeters = sky.cloudHeightMeters;
+
+        draw.starsEnabled = sky.starsEnabled;
+        draw.starsIntensity = sky.starsIntensity;
+        draw.starsDensity = sky.starsDensity;
+        draw.starsSize = sky.starsSize;
+        draw.starsTwinkleStrength = sky.starsTwinkleStrength;
+        draw.starsTwinkleSpeed = sky.starsTwinkleSpeed;
+        draw.starsSeed = sky.starsSeed;
+        m_frame.skies.push_back(std::move(draw));
       });
 
   // --- Rock scatters with shaders ---
