@@ -67,6 +67,8 @@ Files:
 - `src/ecs/components/TerrainComponent.h`
 - `src/ecs/components/ColliderComponent.h`
 - `src/ecs/components/MeshRendererComponent.h`
+- `src/ecs/components/SensorComponent.h`
+- `src/ecs/components/HierarchyComponent.h`
 
 Key ideas:
 - `createEntity(name)` allocates a monotonic `EntityId` (+1) and attaches `IdentityComponent`.
