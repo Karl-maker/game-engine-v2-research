@@ -22,10 +22,10 @@ inline ecs::ShaderComponent HighQualityDirtRockGrassLayer() {
   s.parameters.push_back({"grassLayerEnabled", true});
   s.parameters.push_back({"grassUvTiling", math::Vec2{22.0f, 22.0f}});
   s.parameters.push_back({"grassNormalScale", 1.6f});
-  s.parameters.push_back({"grassDisplacementStrength", 0.35f});
-  s.parameters.push_back({"grassBlendStrength", 1.15f});
+  s.parameters.push_back({"grassDisplacementStrength", 0.75f});
+  s.parameters.push_back({"grassBlendStrength", 10.15f});
   s.parameters.push_back({"grassNoiseScale", 0.07f});
-  s.parameters.push_back({"grassSlopeBias", 0.35f});  // higher => less grass on slopes
+  s.parameters.push_back({"grassSlopeBias", 0.15f});  // higher => less grass on slopes
 
   return s;
 }

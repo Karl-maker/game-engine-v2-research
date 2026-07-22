@@ -16,6 +16,8 @@
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "materials/presets/HighQualityDirtRockLayer.h"
+#include "materials/presets/StoneGrass.h"
+#include "materials/presets/HighQualityDirtRockGrassLayer.h"
 #include "materials/presets/RealisticSkyClouds.h"
 
 #include <iostream>
@@ -65,7 +67,7 @@ void GameplayDemoGame::onStart() {
     terrain.noise.persistence = 0.45f;
     terrain.noise.lacunarity = 2.0f;
 
-    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::HighQualityDirtRockLayer());
+    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::HighQualityDirtRockGrassLayer());
     // Render using the current OpenGL demo shader (textures are ignored for now).
     shader.shader.key = "graphics/shaders/terrain";
     shader.depthWrite = true;
