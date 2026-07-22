@@ -10,6 +10,8 @@
 
 #version 410 core
 
+#include "fog.glsl"
+
 in vec3 v_WorldPos;
 in vec3 v_WorldNormal;
 in vec2 v_Uv;
@@ -415,6 +417,10 @@ void main() {
     vec3 tint = mix(color, u_GrassTintColor, cov * u_GrassTintStrength);
     color = mix(color, tint, t);
   }
+
+  // Fog in linear space (more visible than applying after tonemap/gamma).
+  float fogF = fogFactorAt(u_CameraPos, v_WorldPos);
+  color = mix(color, u_FogColor, fogF);
 
   // Simple tonemap-ish curve + gamma for display.
   color = color / (color + vec3(1.0));

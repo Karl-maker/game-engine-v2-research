@@ -114,6 +114,9 @@ class OpenGlRenderer final {
   std::string m_gpuRenderer;
   std::string m_glVersion;
 
+  // Sky fullscreen triangle VAO.
+  std::uint32_t m_skyVao = 0;
+
   // Input state (GLFW callbacks write, game drains once per tick).
   bool m_keyW = false;
   bool m_keyA = false;

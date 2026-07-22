@@ -6,13 +6,16 @@
 
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/ControllerComponent.h"
+#include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/MotionComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/StatsComponent.h"
+#include "ecs/components/SkyComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "materials/presets/HighQualityDirtRockLayer.h"
+#include "materials/presets/RealisticSkyClouds.h"
 
 #include <iostream>
 
@@ -75,10 +78,68 @@ void GameplayDemoGame::onStart() {
   {
     auto& light = m_registry.emplace<ecs::LightComponent>(m_light);
     light.type = ecs::LightComponent::Type::Directional;
-    light.direction = math::normalize(math::Vec3{-0.2f, -1.0f, -0.3f});
-    light.intensity = 3.0f;
-    light.color = {1.0f, 0.98f, 0.92f};
+    // Moonlight.
+    light.direction = math::normalize(math::Vec3{-0.25f, -1.0f, -0.35f});
+    light.intensity = 1.45f;
+    light.color = {0.78f, 0.86f, 1.0f};
     light.castShadows = true;
+  }
+
+  // Sky (procedural clouds).
+  {
+    const auto sky = m_registry.createEntity("sky");
+    m_registry.emplace<ecs::TransformComponent>(sky);
+
+    auto& skyc = m_registry.emplace<ecs::SkyComponent>(sky);
+    skyc.skyType = ecs::SkyComponent::SkyType::Night;
+    skyc.cloudType = ecs::SkyComponent::CloudType::Scattered;
+    skyc.quality = ecs::SkyComponent::Quality::High;
+    skyc.cloudCoverage = 0.38f;
+    skyc.cloudDensity = 0.65f;
+    skyc.cloudScale = 1.0f;
+    skyc.cloudSpeed = 0.020f;
+    skyc.cloudWindDirection = {1.0f, 0.35f};
+    skyc.cloudTimeScale = 1.0f;
+    skyc.cloudTurbulence = 0.45f;
+    skyc.cloudLightAbsorption = 0.55f;
+    skyc.cloudHeightMeters = 220.0f;
+    // Use sun disc visuals as a moon at night.
+    skyc.sunDirection = math::normalize(math::Vec3{-0.15f, 0.9f, -0.15f});
+    skyc.sunTint = {0.72f, 0.80f, 1.0f, 1.0f};
+    skyc.sunDiscIntensity = 0.75f;
+    skyc.sunDiscSize = 0.65f;
+    skyc.horizonColor = {0.04f, 0.06f, 0.13f, 1.0f};
+    skyc.zenithColor = {0.015f, 0.03f, 0.09f, 1.0f};
+
+    skyc.starsEnabled = true;
+    skyc.starsSeed = 4242u;
+    skyc.starsIntensity = 2.1f;
+    skyc.starsDensity = 0.70f;
+    skyc.starsSize = 1.05f;
+    skyc.starsTwinkleStrength = 0.22f;
+    skyc.starsTwinkleSpeed = 0.55f;
+
+    auto& sh = m_registry.emplace<ecs::ShaderComponent>(sky, materials::presets::RealisticSkyClouds());
+    sh.shader.key = "graphics/shaders/sky";
+  }
+
+  // Fog/mist volume (hide terrain edge).
+  {
+    const auto fog = m_registry.createEntity("mist");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(fog);
+    tr.position = {0.0f, 6.0f, 0.0f};
+
+    const float w = 96.0f * 1.0f;
+    const float d = 96.0f * 1.0f;
+    auto& f = m_registry.emplace<ecs::FogVolumeComponent>(fog);
+    f.sizeMeters = {w * 1.25f, 80.0f, d * 1.25f};
+    f.color = {0.05f, 0.07f, 0.12f, 1.0f};
+    // Thicker mist to hide terrain edge.
+    f.density = 0.070f;
+    f.startDistance = 4.0f;
+    f.endDistance = 140.0f;
+    f.heightFalloff = 0.030f;
+    f.baseHeightOffset = -4.0f;
   }
 
   // Force a snapshot on the first tick.
