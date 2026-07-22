@@ -26,7 +26,7 @@ struct MotionComponent {
     Physics,  // driven primarily by a physics simulation
   };
 
-  enum class MovementState {
+  enum class MovementPhase {
     Idle,
     Starting,
     Moving,
@@ -34,7 +34,7 @@ struct MotionComponent {
   };
 
   Mode mode = Mode::Walking;
-  MovementState movementState = MovementState::Idle;
+  MovementPhase movementPhase = MovementPhase::Idle;
 
   // Input/intent (unit-ish vector; system decides how to interpret).
   math::Vec3 desiredDirection{0.0f, 0.0f, 0.0f};
@@ -51,4 +51,3 @@ struct MotionComponent {
 };
 
 }  // namespace ecs
-

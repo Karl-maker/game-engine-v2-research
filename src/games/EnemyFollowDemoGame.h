@@ -248,11 +248,11 @@ class EnemyFollowDemoGame final : public core::IGame {
           if (ctrl.moveRequest.hasRequest && ctrl.moveRequest.hasDirection) {
             motion.desiredDirection = ctrl.moveRequest.direction;
             motion.isMoving = true;
-            motion.movementState = ecs::MotionComponent::MovementState::Moving;
+            motion.movementPhase = ecs::MotionComponent::MovementPhase::Moving;
           } else {
             motion.desiredDirection = {0.0f, 0.0f, 0.0f};
             motion.isMoving = false;
-            motion.movementState = ecs::MotionComponent::MovementState::Idle;
+            motion.movementPhase = ecs::MotionComponent::MovementPhase::Idle;
           }
         });
   }
@@ -273,11 +273,11 @@ class EnemyFollowDemoGame final : public core::IGame {
       if (d > 0.8f) {
         motion->desiredDirection = normalize2D(toPlayer);
         motion->isMoving = true;
-        motion->movementState = ecs::MotionComponent::MovementState::Moving;
+        motion->movementPhase = ecs::MotionComponent::MovementPhase::Moving;
       } else {
         motion->desiredDirection = {0.0f, 0.0f, 0.0f};
         motion->isMoving = false;
-        motion->movementState = ecs::MotionComponent::MovementState::Idle;
+        motion->movementPhase = ecs::MotionComponent::MovementPhase::Idle;
       }
     }
   }
