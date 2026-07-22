@@ -21,6 +21,16 @@ namespace graphics {
 
 class OpenGlRenderer final {
  public:
+  struct RealtimeInput final {
+    float moveX = 0.0f;   // -1..1 (A/D)
+    float moveZ = 0.0f;   // -1..1 (S/W)
+    bool sprint = false;  // Shift
+    bool crouch = false;  // Ctrl
+    float mouseDx = 0.0f; // pixels since last drain (only when RMB held)
+    float mouseDy = 0.0f; // pixels since last drain (only when RMB held)
+    bool lookActive = false;
+  };
+
   OpenGlRenderer() = default;
   ~OpenGlRenderer();
 
@@ -30,6 +40,8 @@ class OpenGlRenderer final {
   bool isOpen() const;
   void pollEvents();
 
+  RealtimeInput drainRealtimeInput();
+
   void render(const ecs::systems::GraphicsSystem::FrameSnapshot& frame,
               bool debugHudEnabled,
               float fpsEstimate,
@@ -37,6 +49,10 @@ class OpenGlRenderer final {
               float cpuWorkMs);
 
  private:
+  static OpenGlRenderer* selfFrom(GLFWwindow* w);
+  static void glfwKeyCallback(GLFWwindow* w, int key, int scancode, int action, int mods);
+  static void glfwCursorPosCallback(GLFWwindow* w, double x, double y);
+
   struct TerrainMesh final {
     std::uint32_t vao = 0;
     std::uint32_t vbo = 0;
@@ -97,6 +113,20 @@ class OpenGlRenderer final {
   std::string m_gpuVendor;
   std::string m_gpuRenderer;
   std::string m_glVersion;
+
+  // Input state (GLFW callbacks write, game drains once per tick).
+  bool m_keyW = false;
+  bool m_keyA = false;
+  bool m_keyS = false;
+  bool m_keyD = false;
+  bool m_keyShift = false;
+  bool m_keyCtrl = false;
+  bool m_cursorCaptured = false;
+  bool m_hasMousePos = false;
+  double m_lastMouseX = 0.0;
+  double m_lastMouseY = 0.0;
+  double m_accumMouseDx = 0.0;
+  double m_accumMouseDy = 0.0;
 
   ShaderService m_shaders;
   std::unordered_map<std::uint32_t, TerrainMesh> m_terrainMeshes;  // key: entity id

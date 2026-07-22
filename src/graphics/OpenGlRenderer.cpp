@@ -270,6 +270,54 @@ static void buildTextQuads(std::vector<OverlayVert>& verts,
 
 }  // namespace
 
+OpenGlRenderer* OpenGlRenderer::selfFrom(GLFWwindow* w) {
+  return w ? static_cast<OpenGlRenderer*>(glfwGetWindowUserPointer(w)) : nullptr;
+}
+
+void OpenGlRenderer::glfwKeyCallback(GLFWwindow* w, int key, int, int action, int mods) {
+  auto* self = selfFrom(w);
+  if (!self) return;
+  const bool down = (action != GLFW_RELEASE);
+  if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+    self->m_cursorCaptured = !self->m_cursorCaptured;
+    glfwSetInputMode(w, GLFW_CURSOR, self->m_cursorCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    if (glfwRawMouseMotionSupported()) {
+      glfwSetInputMode(w, GLFW_RAW_MOUSE_MOTION, self->m_cursorCaptured ? GLFW_TRUE : GLFW_FALSE);
+    }
+    self->m_hasMousePos = false;
+    self->m_accumMouseDx = 0.0;
+    self->m_accumMouseDy = 0.0;
+  }
+  switch (key) {
+    case GLFW_KEY_W: self->m_keyW = down; break;
+    case GLFW_KEY_A: self->m_keyA = down; break;
+    case GLFW_KEY_S: self->m_keyS = down; break;
+    case GLFW_KEY_D: self->m_keyD = down; break;
+    default: break;
+  }
+  self->m_keyShift = (mods & GLFW_MOD_SHIFT) != 0;
+  self->m_keyCtrl = (mods & GLFW_MOD_CONTROL) != 0;
+}
+
+void OpenGlRenderer::glfwCursorPosCallback(GLFWwindow* w, double x, double y) {
+  auto* self = selfFrom(w);
+  if (!self) return;
+  if (!self->m_cursorCaptured) return;
+  if (!self->m_hasMousePos) {
+    self->m_hasMousePos = true;
+    self->m_lastMouseX = x;
+    self->m_lastMouseY = y;
+    return;
+  }
+  const double dx = x - self->m_lastMouseX;
+  const double dy = y - self->m_lastMouseY;
+  self->m_lastMouseX = x;
+  self->m_lastMouseY = y;
+
+  self->m_accumMouseDx += dx;
+  self->m_accumMouseDy += dy;
+}
+
 OpenGlRenderer::~OpenGlRenderer() { stop(); }
 
 bool OpenGlRenderer::start(int width, int height, const char* title) {
@@ -299,6 +347,15 @@ bool OpenGlRenderer::start(int width, int height, const char* title) {
   glfwMakeContextCurrent(m_window);
   glfwSwapInterval(1);
   glfwSetWindowUserPointer(m_window, this);
+  glfwSetKeyCallback(m_window, &OpenGlRenderer::glfwKeyCallback);
+  glfwSetCursorPosCallback(m_window, &OpenGlRenderer::glfwCursorPosCallback);
+
+  // Capture mouse for FPS-style look by default.
+  m_cursorCaptured = true;
+  glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+  if (glfwRawMouseMotionSupported()) {
+    glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+  }
 
   getFramebufferSize(m_window, &m_fbWidth, &m_fbHeight);
   glViewport(0, 0, m_fbWidth, m_fbHeight);
@@ -408,6 +465,22 @@ void OpenGlRenderer::pollEvents() {
   if (!m_window) return;
   glfwPollEvents();
   getFramebufferSize(m_window, &m_fbWidth, &m_fbHeight);
+}
+
+OpenGlRenderer::RealtimeInput OpenGlRenderer::drainRealtimeInput() {
+  RealtimeInput out{};
+  if (!m_window) return out;
+
+  out.moveX = (m_keyD ? 1.0f : 0.0f) + (m_keyA ? -1.0f : 0.0f);
+  out.moveZ = (m_keyW ? 1.0f : 0.0f) + (m_keyS ? -1.0f : 0.0f);
+  out.sprint = m_keyShift;
+  out.crouch = m_keyCtrl;
+  out.lookActive = m_cursorCaptured;
+  out.mouseDx = static_cast<float>(m_accumMouseDx);
+  out.mouseDy = static_cast<float>(m_accumMouseDy);
+  m_accumMouseDx = 0.0;
+  m_accumMouseDy = 0.0;
+  return out;
 }
 
 void OpenGlRenderer::destroyTerrainMesh(TerrainMesh& m) {
@@ -767,7 +840,6 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
   const double renderStart = glfwGetTime();
 
-  pollEvents();
   m_textures.flushUploads(4);
   glViewport(0, 0, m_fbWidth, m_fbHeight);
 
