@@ -5,6 +5,7 @@
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/LightComponent.h"
+#include "ecs/components/RenderSettingsComponent.h"
 #include "ecs/components/RockScatterComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/SkyComponent.h"
@@ -80,6 +81,18 @@ bool readBoolParam(const ecs::ShaderComponent& shader, const char* name, bool& o
   return found;
 }
 
+bool readIntParam(const ecs::ShaderComponent& shader, const char* name, int& out) {
+  bool found = false;
+  for (const auto& p : shader.parameters) {
+    if (p.name != name) continue;
+    if (const auto* v = std::get_if<int>(&p.value)) {
+      out = *v;
+      found = true;
+    }
+  }
+  return found;
+}
+
 bool readVec2Param(const ecs::ShaderComponent& shader, const char* name, float& x, float& y) {
   bool found = false;
   for (const auto& p : shader.parameters) {
@@ -145,6 +158,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
   m_frame.skies.clear();
   m_frame.rocks.clear();
   m_frame.lights.clear();
+  m_frame.settings = {};
 
   // --- Camera (pick the first available) ---
   registry.view<ecs::CameraComponent, ecs::TransformComponent>(
@@ -202,6 +216,13 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(shader, "aoStrength", draw.aoStrength);
         (void)readFloatParam(shader, "displacementStrength", draw.displacementStrength);
 
+        // Tessellation controls (if present on the material).
+        (void)readFloatParam(shader, "tessNear", draw.tessNear);
+        (void)readFloatParam(shader, "tessFar", draw.tessFar);
+        (void)readFloatParam(shader, "tessMin", draw.tessMin);
+        (void)readFloatParam(shader, "tessMax", draw.tessMax);
+        (void)readIntParam(shader, "tessQuality", draw.tessQuality);
+
         (void)readBoolParam(shader, "rockLayerEnabled", draw.rockLayerEnabled);
         extractRockLayerTextures(shader, draw);
         (void)readVec2Param(shader, "rockUvTiling", draw.rockUvTilingX, draw.rockUvTilingY);
@@ -225,8 +246,22 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.intensity = light.intensity;
         draw.range = light.range;
         draw.castShadows = light.castShadows;
+        draw.shadowResolution = light.shadowResolution;
+        draw.shadowBias = light.shadowBias;
+        draw.shadowDistance = light.shadowDistance;
         m_frame.lights.push_back(std::move(draw));
       });
+
+  // --- Render settings (pick the first enabled) ---
+  registry.view<ecs::RenderSettingsComponent>([&](ecs::EntityId, const ecs::RenderSettingsComponent& s) {
+    if (!s.enabled) return;
+    if (m_frame.settings.present) return;
+    m_frame.settings.present = true;
+    m_frame.settings.shadowsEnabled = s.shadowsEnabled;
+    m_frame.settings.shadowQuality = s.shadowQuality;
+    m_frame.settings.shadowStrength = s.shadowStrength;
+    m_frame.settings.shadowUseTessellation = s.shadowUseTessellation;
+  });
 
   // --- Fog volumes (pick the first enabled) ---
   registry.view<ecs::FogVolumeComponent, ecs::TransformComponent>(

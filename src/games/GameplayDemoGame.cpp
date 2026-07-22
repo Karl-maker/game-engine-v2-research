@@ -9,6 +9,7 @@
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/MotionComponent.h"
+#include "ecs/components/RenderSettingsComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/StatsComponent.h"
 #include "ecs/components/SkyComponent.h"
@@ -58,8 +59,8 @@ void GameplayDemoGame::onStart() {
     terrain.gridHeight = 96;
     terrain.cellSizeMeters = 1.0f;
     // Flatter terrain (less "mountainy").
-    terrain.heightScaleMeters = 2.6f;
-    terrain.noise.frequency = 0.010f;
+    terrain.heightScaleMeters = 4.6f;
+    terrain.noise.frequency = 0.030f;
     terrain.noise.octaves = 2;
     terrain.noise.persistence = 0.45f;
     terrain.noise.lacunarity = 2.0f;
@@ -78,20 +79,23 @@ void GameplayDemoGame::onStart() {
   {
     auto& light = m_registry.emplace<ecs::LightComponent>(m_light);
     light.type = ecs::LightComponent::Type::Directional;
-    // Moonlight.
-    light.direction = math::normalize(math::Vec3{-0.25f, -1.0f, -0.35f});
-    light.intensity = 1.45f;
-    light.color = {0.78f, 0.86f, 1.0f};
+    // Placeholder values; SkyPresetSystem will drive these when linked from SkyComponent.
+    light.direction = math::normalize(math::Vec3{-0.35f, -1.0f, -0.15f});
+    light.intensity = 3.25f;
+    light.color = {1.0f, 0.96f, 0.88f};
     light.castShadows = true;
   }
 
   // Sky (procedural clouds).
+  ecs::EntityId skyEntity = ecs::kInvalidEntityId;
   {
-    const auto sky = m_registry.createEntity("sky");
-    m_registry.emplace<ecs::TransformComponent>(sky);
+    skyEntity = m_registry.createEntity("sky");
+    m_registry.emplace<ecs::TransformComponent>(skyEntity);
 
-    auto& skyc = m_registry.emplace<ecs::SkyComponent>(sky);
+    auto& skyc = m_registry.emplace<ecs::SkyComponent>(skyEntity);
     skyc.skyType = ecs::SkyComponent::SkyType::Night;
+    skyc.useSkyTypePreset = true;
+    skyc.linkedDirectionalLightEntity = m_light;
     skyc.cloudType = ecs::SkyComponent::CloudType::Scattered;
     skyc.quality = ecs::SkyComponent::Quality::High;
     skyc.cloudCoverage = 0.38f;
@@ -103,15 +107,6 @@ void GameplayDemoGame::onStart() {
     skyc.cloudTurbulence = 0.45f;
     skyc.cloudLightAbsorption = 0.55f;
     skyc.cloudHeightMeters = 220.0f;
-    // Use sun disc visuals as a moon at night.
-    skyc.sunDirection = math::normalize(math::Vec3{-0.15f, 0.9f, -0.15f});
-    skyc.sunTint = {0.72f, 0.80f, 1.0f, 1.0f};
-    skyc.sunDiscIntensity = 0.75f;
-    skyc.sunDiscSize = 0.65f;
-    skyc.horizonColor = {0.04f, 0.06f, 0.13f, 1.0f};
-    skyc.zenithColor = {0.015f, 0.03f, 0.09f, 1.0f};
-
-    skyc.starsEnabled = true;
     skyc.starsSeed = 4242u;
     skyc.starsIntensity = 2.1f;
     skyc.starsDensity = 0.70f;
@@ -119,31 +114,49 @@ void GameplayDemoGame::onStart() {
     skyc.starsTwinkleStrength = 0.22f;
     skyc.starsTwinkleSpeed = 0.55f;
 
-    auto& sh = m_registry.emplace<ecs::ShaderComponent>(sky, materials::presets::RealisticSkyClouds());
+    auto& sh = m_registry.emplace<ecs::ShaderComponent>(skyEntity, materials::presets::RealisticSkyClouds());
     sh.shader.key = "graphics/shaders/sky";
   }
 
   // Fog/mist volume (hide terrain edge).
+  ecs::EntityId fogEntity = ecs::kInvalidEntityId;
   {
-    const auto fog = m_registry.createEntity("mist");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(fog);
+    fogEntity = m_registry.createEntity("mist");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(fogEntity);
     tr.position = {0.0f, 6.0f, 0.0f};
 
     const float w = 96.0f * 1.0f;
     const float d = 96.0f * 1.0f;
-    auto& f = m_registry.emplace<ecs::FogVolumeComponent>(fog);
+    auto& f = m_registry.emplace<ecs::FogVolumeComponent>(fogEntity);
     f.sizeMeters = {w * 1.25f, 80.0f, d * 1.25f};
-    f.color = {0.05f, 0.07f, 0.12f, 1.0f};
-    // Thicker mist to hide terrain edge.
-    f.density = 0.070f;
-    f.startDistance = 4.0f;
-    f.endDistance = 140.0f;
-    f.heightFalloff = 0.030f;
+    // Placeholder values; SkyPresetSystem will drive these when linked from SkyComponent.
+    f.color = {0.55f, 0.62f, 0.72f, 1.0f};
+    f.density = 0.060f;
+    f.startDistance = 6.0f;
+    f.endDistance = 160.0f;
+    f.heightFalloff = 0.045f;
     f.baseHeightOffset = -4.0f;
   }
 
+  if (skyEntity != ecs::kInvalidEntityId && fogEntity != ecs::kInvalidEntityId) {
+    m_registry.get<ecs::SkyComponent>(skyEntity).linkedFogVolumeEntity = fogEntity;
+  }
+
+  // Apply once so the very first frame matches the chosen SkyType.
+  m_skyPresets.tick(m_registry);
+
   // Force a snapshot on the first tick.
   m_printTimer = 0.5;
+
+  // Global render switches (disabled by default to preserve current look).
+  {
+    const auto rs = m_registry.createEntity("render_settings");
+    auto& s = m_registry.emplace<ecs::RenderSettingsComponent>(rs);
+    s.shadowsEnabled = false;
+    s.shadowQuality = 1;
+    s.shadowStrength = 1.0f;
+    s.shadowUseTessellation = false;
+  }
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   if (!m_renderer.start(1280, 720, "Duppy - Gameplay Demo")) {
@@ -187,6 +200,9 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
 
   // --- Motion intent -> transform movement ---
   m_movementSystem.tick(m_registry, m_events, ctx.deltaSeconds);
+
+  // --- Environment presets (SkyType -> sky/light/fog) ---
+  m_skyPresets.tick(m_registry);
 
   const auto& frame = m_graphics.tick(m_registry);
 

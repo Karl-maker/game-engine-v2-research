@@ -8,6 +8,7 @@
 //
 // A rendering/sky system can interpret this component and configure the sky shader/material.
 
+#include "ecs/EntityId.h"
 #include "math/Vec3.h"
 #include "math/Vec2.h"
 #include "render/AssetRef.h"
@@ -52,6 +53,16 @@ struct SkyComponent {
   SkyType skyType = SkyType::Day;
   CloudType cloudType = CloudType::Scattered;
   Quality quality = Quality::Medium;
+
+  // If enabled, a system can treat `skyType` as a high-level preset and drive related visuals
+  // (colors, sun disc, stars, etc).
+  bool useSkyTypePreset = true;
+
+  // Optional: link other environment components so presets can keep the scene coherent.
+  // - linkedDirectionalLightEntity: updates a directional LightComponent to match sun/moon.
+  // - linkedFogVolumeEntity: updates fog density/color to match the sky type.
+  EntityId linkedDirectionalLightEntity = kInvalidEntityId;
+  EntityId linkedFogVolumeEntity = kInvalidEntityId;
 
   // Optional material/shader preset reference used by the sky renderer.
   // Example key: "materials/sky/day"

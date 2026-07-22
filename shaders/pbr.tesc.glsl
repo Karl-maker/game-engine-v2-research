@@ -15,6 +15,7 @@ out vec3 tc_WorldNormal[];
 out vec2 tc_Uv[];
 
 uniform vec3 u_CameraPos;
+uniform vec3 u_CameraForward;
 
 // Distance-based tessellation.
 uniform float u_TessNear;  // meters
@@ -32,10 +33,20 @@ void main() {
 
   if (gl_InvocationID == 0) {
     vec3 center = (v_WorldPos[0] + v_WorldPos[1] + v_WorldPos[2]) * (1.0 / 3.0);
-    float distMeters = distance(u_CameraPos, center);
+    vec3 toCenter = center - u_CameraPos;
+    float distSq = dot(toCenter, toCenter);
+    float invDist = inversesqrt(max(distSq, 1e-6));
+    float distMeters = distSq * invDist;
+
+    vec3 viewDir = normalize(u_CameraForward);
+    float viewDot = dot(toCenter * invDist, viewDir);
+    float viewW = smoothstep(0.15, 0.45, viewDot);
+
     float denom = max(0.001, (u_TessFar - u_TessNear));
     float t = saturate((distMeters - u_TessNear) / denom);
     float tess = mix(u_TessMax, u_TessMin, t);
+    tess *= viewW;
+    tess = max(1.0, tess);
     tess = clamp(tess, 1.0, 64.0);
 
     gl_TessLevelOuter[0] = tess;
@@ -44,4 +55,3 @@ void main() {
     gl_TessLevelInner[0] = tess;
   }
 }
-
