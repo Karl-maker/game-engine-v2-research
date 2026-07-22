@@ -39,6 +39,9 @@ struct MotionComponent {
   // Input/intent (unit-ish vector; system decides how to interpret).
   math::Vec3 desiredDirection{0.0f, 0.0f, 0.0f};
 
+  // Intent expressed as an explicit velocity target (units/sec). Movement integrates toward this.
+  math::Vec3 desiredVelocity{0.0f, 0.0f, 0.0f};
+
   // Runtime kinematics (system-integrated).
   math::Vec3 velocity{0.0f, 0.0f, 0.0f};
   math::Vec3 acceleration{0.0f, 0.0f, 0.0f};

@@ -9,11 +9,15 @@ add_executable(duppy
   src/main.cpp
   src/ecs/EntityRegistry.cpp
   src/ecs/systems/AttachmentSystem.cpp
+  src/ecs/systems/ControllerSystem.cpp
   src/ecs/systems/GraphicsSystem.cpp
+  src/ecs/systems/MotionSystem.cpp
+  src/ecs/systems/MovementSystem.cpp
   src/ecs/systems/TargetSystem.cpp
   src/ecs/services/RaycastConeFactoryService.cpp
   src/terrain/PerlinNoise2D.cpp
   src/core/ConsoleInputService.cpp
+  src/core/ControlService.cpp
   src/core/GameLoopService.cpp
   src/core/SteadyTimeSource.cpp
   src/games/AttachmentDemoGame.cpp

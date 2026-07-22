@@ -7,10 +7,15 @@
 // - Runs GraphicsSystem each tick and prints a small render snapshot periodically.
 
 #include "core/IGame.h"
+#include "core/ControlService.h"
 
 #include "ecs/EntityId.h"
 #include "ecs/EntityRegistry.h"
+#include "ecs/services/EventService.h"
+#include "ecs/systems/ControllerSystem.h"
 #include "ecs/systems/GraphicsSystem.h"
+#include "ecs/systems/MotionSystem.h"
+#include "ecs/systems/MovementSystem.h"
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
 #include "graphics/OpenGlRenderer.h"
@@ -25,7 +30,12 @@ class GameplayDemoGame final : public core::IGame {
   void onStop() override;
 
  private:
-  ecs::EntityRegistry m_registry;
+ ecs::EntityRegistry m_registry;
+  core::ControlService m_controls;
+  ecs::services::EventService m_events;
+  ecs::systems::ControllerSystem m_controllerSystem;
+  ecs::systems::MotionSystem m_motionSystem;
+  ecs::systems::MovementSystem m_movementSystem;
   ecs::systems::GraphicsSystem m_graphics;
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL

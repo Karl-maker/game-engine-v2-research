@@ -5,9 +5,11 @@
 #include "core/TickContext.h"
 
 #include "ecs/components/CameraComponent.h"
+#include "ecs/components/ControllerComponent.h"
 #include "ecs/components/LightComponent.h"
-#include "ecs/components/RockScatterComponent.h"
+#include "ecs/components/MotionComponent.h"
 #include "ecs/components/ShaderComponent.h"
+#include "ecs/components/StatsComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "materials/presets/HighQualityDirtRockLayer.h"
@@ -19,6 +21,8 @@ namespace games {
 void GameplayDemoGame::onStart() {
   std::cout << "Gameplay demo (graphics snapshot)\n";
   std::cout << "- Creates camera + terrain(shader) + light\n";
+  std::cout << "- Camera is driven by Controller/Motion/Movement systems\n";
+  std::cout << "Controls (type then Enter): w/a/s/d, move x y z, look pitch yaw, sprint/walk/crouch, stop\n";
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   std::cout << "- Opens an OpenGL window and renders the terrain\n";
 #else
@@ -31,6 +35,17 @@ void GameplayDemoGame::onStart() {
   camTr.position = {10.0f, 1.7f, -26.0f};
   camTr.rotation = {10.0f, 343.0f, 0.0f};  // pitch/yaw/roll (deg)
   m_registry.emplace<ecs::CameraComponent>(m_camera);
+  m_registry.emplace<ecs::ControllerComponent>(m_camera);
+  {
+    auto& motion = m_registry.emplace<ecs::MotionComponent>(m_camera);
+    motion.mode = ecs::MotionComponent::Mode::Flying;
+    motion.isGrounded = false;
+  }
+  {
+    auto& stats = m_registry.emplace<ecs::StatsComponent>(m_camera);
+    stats.walkingSpeed = 6.0f;
+    stats.runningSpeed = 10.0f;
+  }
 
   m_terrain = m_registry.createEntity("terrain");
   m_registry.emplace<ecs::TransformComponent>(m_terrain);
@@ -39,10 +54,11 @@ void GameplayDemoGame::onStart() {
     terrain.gridWidth = 96;
     terrain.gridHeight = 96;
     terrain.cellSizeMeters = 1.0f;
-    terrain.heightScaleMeters = 10.0f;
-    terrain.noise.frequency = 0.015f;
-    terrain.noise.octaves = 3;
-    terrain.noise.persistence = 0.5f;
+    // Flatter terrain (less "mountainy").
+    terrain.heightScaleMeters = 2.6f;
+    terrain.noise.frequency = 0.010f;
+    terrain.noise.octaves = 2;
+    terrain.noise.persistence = 0.45f;
     terrain.noise.lacunarity = 2.0f;
 
     auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::HighQualityDirtRockLayer());
@@ -65,27 +81,6 @@ void GameplayDemoGame::onStart() {
     light.castShadows = true;
   }
 
-  // Small 3D rocks scattered on the terrain.
-  {
-    const auto rocks = m_registry.createEntity("rocks");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(rocks);
-    tr.position = {0.0f, 0.0f, 0.0f};
-
-    auto& scatter = m_registry.emplace<ecs::RockScatterComponent>(rocks);
-    scatter.area = {42.0f, 0.0f, 42.0f};
-    scatter.density = 0.9f;
-    scatter.seed = 133742u;
-    scatter.minScale = 0.02f;
-    scatter.maxScale = 0.07f;
-    scatter.clumpiness = 0.9f;
-    scatter.patchScale = 0.05f;
-    scatter.lodBias = 1.0f;
-
-    auto& shader = m_registry.emplace<ecs::ShaderComponent>(rocks);
-    shader.shader.key = "graphics/shaders/rocks";
-    shader.depthWrite = true;
-  }
-
   // Force a snapshot on the first tick.
   m_printTimer = 0.5;
 
@@ -104,11 +99,33 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
     }
   }
 
-  // Slowly orbit the camera yaw so the facing direction changes over time.
-  if (auto* tr = m_registry.tryGet<ecs::TransformComponent>(m_camera)) {
-    tr->rotation.y += static_cast<float>(15.0 * ctx.deltaSeconds);
-    if (tr->rotation.y > 360.0f) tr->rotation.y -= 360.0f;
+  // --- Input -> Controller requests ---
+  m_events.clear();
+  core::ControlService::RealtimeInput rt{};
+#if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
+  if (m_renderer.isOpen()) {
+    // Poll first so GLFW callbacks update key/mouse state before we drain it.
+    m_renderer.pollEvents();
+    const auto in = m_renderer.drainRealtimeInput();
+    rt.hasInput = true;
+    rt.moveX = in.moveX;
+    rt.moveZ = in.moveZ;
+    rt.sprint = in.sprint;
+    rt.crouch = in.crouch;
+    rt.lookActive = in.lookActive;
+    constexpr float kMouseToDeg = 0.08f;
+    rt.lookDeltaYawDeg = in.mouseDx * kMouseToDeg;
+    rt.lookDeltaPitchDeg = in.mouseDy * kMouseToDeg;
   }
+#endif
+  m_controls.update(ctx, rt.hasInput ? &rt : nullptr);
+  m_controllerSystem.tick(m_registry, m_controls);
+
+  // --- Controller requests -> motion intent ---
+  m_motionSystem.tick(m_registry);
+
+  // --- Motion intent -> transform movement ---
+  m_movementSystem.tick(m_registry, m_events, ctx.deltaSeconds);
 
   const auto& frame = m_graphics.tick(m_registry);
 
