@@ -69,6 +69,9 @@ Files:
 - `src/ecs/components/MeshRendererComponent.h`
 - `src/ecs/components/SensorComponent.h`
 - `src/ecs/components/HierarchyComponent.h`
+- `src/ecs/components/ShaderComponent.h`
+- `src/ecs/components/GrassPatchComponent.h`
+- `src/ecs/components/SkyComponent.h`
 
 Key ideas:
 - `createEntity(name)` allocates a monotonic `EntityId` (+1) and attaches `IdentityComponent`.
