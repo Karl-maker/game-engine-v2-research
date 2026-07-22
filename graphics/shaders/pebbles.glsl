@@ -56,14 +56,18 @@ vec3 pebbleMask(vec2 worldXZ, float scale, float density) {
   float present = step(1.0 - density, bestId);
 
   float d = sqrt(bestDist);
-  float core = 1.0 - smoothstep(r * 0.8, r, d);
+  float core = 1.0 - smoothstep(r * 0.78, r, d);
   float mask = present * core;
   float edge = present * smoothstep(r * 0.55, r * 0.98, d);
 
   // Height: a rounded profile with slight randomness.
-  float height = present * pow(saturate(core), mix(0.8, 1.6, bestId));
+  float height = present * pow(saturate(core), mix(0.55, 1.35, bestId));
 
   return vec3(mask, edge, height);
+}
+
+float pebbleHeightAt(vec2 worldXZ, float scale, float density) {
+  return pebbleMask(worldXZ, scale, density).z;
 }
 
 void applyPebbles(inout vec3 albedo,
@@ -78,12 +82,26 @@ void applyPebbles(inout vec3 albedo,
                   float blend,
                   float normalStrength,
                   float heightStrength) {
-  // Tiny parallax-ish shift so pebbles feel raised when viewed at an angle.
-  vec2 v = normalize(viewDir.xz + vec2(1e-4));
-  vec3 m0 = pebbleMask(worldPos.xz, pebbleScale, pebbleDensity);
-  vec2 shiftedXZ = worldPos.xz - v * (m0.z * heightStrength) * 0.35;
+  // Parallax occlusion (very small step count) to make pebbles feel like 3D clumps.
+  vec2 xz = worldPos.xz;
+  float vy = max(0.15, abs(viewDir.y));
+  vec2 vdir = normalize(viewDir.xz + vec2(1e-4));
+  float parallax = (0.10 * heightStrength) / vy;
+  vec2 stepDir = vdir * parallax;
 
-  vec3 m = pebbleMask(shiftedXZ, pebbleScale, pebbleDensity);
+  vec2 p = xz;
+  // 6-step search from top layer down.
+  for (int i = 0; i < 6; ++i) {
+    float t = float(i) / 5.0;
+    vec2 q = xz - stepDir * t;
+    float h = pebbleHeightAt(q, pebbleScale, pebbleDensity);
+    if (h > (1.0 - t)) {
+      p = q;
+      break;
+    }
+  }
+
+  vec3 m = pebbleMask(p, pebbleScale, pebbleDensity);
   float mask = m.x;
   float edge = m.y;
   float height = m.z;
@@ -98,15 +116,17 @@ void applyPebbles(inout vec3 albedo,
   albedo = mix(albedo, targetColor, mask * blend);
   roughness = mix(roughness, pebbleRoughness, mask * blend);
 
-  // Tiny sparkly highlight variation on pebbles.
-  float sparkle = pow(valueNoise(worldPos.xz * 13.0 + viewDir.xz * 0.5), 12.0) * 0.08;
-  albedo += sparkle * mask * blend;
+  // Height-based cavity darkening and subtle rim highlight to read as clumps.
+  float cavity = (1.0 - height) * (0.12 * blend);
+  albedo *= 1.0 - cavity;
+  float rim = pow(1.0 - saturate(dot(normalize(viewDir), normal)), 3.5) * 0.10;
+  albedo += rim * mask * blend;
 
   // Bump pebbles: build a pseudo height field normal from mask gradient.
-  float eps = 0.15;
-  float hx = pebbleMask(shiftedXZ + vec2(eps, 0.0), pebbleScale, pebbleDensity).z;
-  float hz = pebbleMask(shiftedXZ + vec2(0.0, eps), pebbleScale, pebbleDensity).z;
+  float eps = 0.08;
+  float hx = pebbleHeightAt(p + vec2(eps, 0.0), pebbleScale, pebbleDensity);
+  float hz = pebbleHeightAt(p + vec2(0.0, eps), pebbleScale, pebbleDensity);
   vec2 grad = vec2(hx - height, hz - height) / eps;
-  vec3 bump = normalize(vec3(-grad.x * heightStrength, 1.0, -grad.y * heightStrength));
+  vec3 bump = normalize(vec3(-grad.x * (2.2 * heightStrength), 1.0, -grad.y * (2.2 * heightStrength)));
   normal = normalize(mix(normal, bump, mask * blend * normalStrength));
 }

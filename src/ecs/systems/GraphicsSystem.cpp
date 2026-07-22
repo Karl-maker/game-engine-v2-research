@@ -4,13 +4,14 @@
 
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/LightComponent.h"
-#include "ecs/components/GrassPatchComponent.h"
+#include "ecs/components/RockScatterComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
 
 #include "math/Vec3.h"
 #include "render/Color.h"
+#include "render/TextureBinding.h"
 
 #include <cmath>
 #include <variant>
@@ -40,51 +41,97 @@ math::Vec3 forwardFromPitchYawDeg(const ecs::TransformComponent& tr) {
 }
 
 bool readFloatParam(const ecs::ShaderComponent& shader, const char* name, float& out) {
+  bool found = false;
   for (const auto& p : shader.parameters) {
     if (p.name != name) continue;
     if (const auto* v = std::get_if<float>(&p.value)) {
       out = *v;
-      return true;
+      found = true;
     }
   }
-  return false;
+  return found;
 }
 
 bool readBaseColorParam(const ecs::ShaderComponent& shader, float& r, float& g, float& b) {
+  bool found = false;
   for (const auto& p : shader.parameters) {
     if (p.name != "baseColor") continue;
     if (const auto* c = std::get_if<render::Color>(&p.value)) {
       r = c->r;
       g = c->g;
       b = c->b;
-      return true;
+      found = true;
     }
   }
-  return false;
+  return found;
 }
 
 bool readBoolParam(const ecs::ShaderComponent& shader, const char* name, bool& out) {
+  bool found = false;
   for (const auto& p : shader.parameters) {
     if (p.name != name) continue;
     if (const auto* v = std::get_if<bool>(&p.value)) {
       out = *v;
-      return true;
+      found = true;
     }
   }
-  return false;
+  return found;
 }
 
-bool readColorParam(const ecs::ShaderComponent& shader, const char* name, float& r, float& g, float& b) {
+bool readVec2Param(const ecs::ShaderComponent& shader, const char* name, float& x, float& y) {
+  bool found = false;
   for (const auto& p : shader.parameters) {
     if (p.name != name) continue;
-    if (const auto* c = std::get_if<render::Color>(&p.value)) {
-      r = c->r;
-      g = c->g;
-      b = c->b;
-      return true;
+    if (const auto* v = std::get_if<math::Vec2>(&p.value)) {
+      x = v->x;
+      y = v->y;
+      found = true;
     }
   }
-  return false;
+  return found;
+}
+
+void extractKnownTextures(const ecs::ShaderComponent& shader, GraphicsSystem::TerrainDraw& out) {
+  auto tryBind = [&](const char* slot, render::AssetRef& dst, bool& has) {
+    for (const auto& t : shader.textures) {
+      if (t.slot == slot && t.texture.enabled && !t.texture.key.empty()) {
+        dst = t.texture;
+        has = true;
+        return;
+      }
+    }
+  };
+
+  tryBind("albedo", out.albedoTex, out.hasAlbedoTex);
+
+  // Prefer OpenGL normal map if explicitly provided.
+  tryBind("normalgl", out.normalTex, out.hasNormalTex);
+  if (!out.hasNormalTex) {
+    tryBind("normal", out.normalTex, out.hasNormalTex);
+  }
+
+  tryBind("roughness", out.roughnessTex, out.hasRoughnessTex);
+  tryBind("ao", out.aoTex, out.hasAoTex);
+  tryBind("ambient_occlusion", out.aoTex, out.hasAoTex);
+  tryBind("displacement", out.displacementTex, out.hasDisplacementTex);
+}
+
+void extractRockLayerTextures(const ecs::ShaderComponent& shader, GraphicsSystem::TerrainDraw& out) {
+  auto tryBind = [&](const char* slot, render::AssetRef& dst, bool& has) {
+    for (const auto& t : shader.textures) {
+      if (t.slot == slot && t.texture.enabled && !t.texture.key.empty()) {
+        dst = t.texture;
+        has = true;
+        return;
+      }
+    }
+  };
+
+  tryBind("rock_albedo", out.rockAlbedoTex, out.hasRockAlbedoTex);
+  tryBind("rock_normalgl", out.rockNormalTex, out.hasRockNormalTex);
+  tryBind("rock_roughness", out.rockRoughnessTex, out.hasRockRoughnessTex);
+  tryBind("rock_ao", out.rockAoTex, out.hasRockAoTex);
+  tryBind("rock_displacement", out.rockDisplacementTex, out.hasRockDisplacementTex);
 }
 
 }  // namespace
@@ -92,7 +139,7 @@ bool readColorParam(const ecs::ShaderComponent& shader, const char* name, float&
 const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& registry) {
   m_frame.camera = {};
   m_frame.terrains.clear();
-  m_frame.grasses.clear();
+  m_frame.rocks.clear();
   m_frame.lights.clear();
 
   // --- Camera (pick the first available) ---
@@ -145,14 +192,19 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(shader, "dirtSinkScale", draw.dirtSinkScale);
         (void)readFloatParam(shader, "dirtSinkDensity", draw.dirtSinkDensity);
 
-        (void)readBoolParam(shader, "pebblesEnabled", draw.pebblesEnabled);
-        (void)readColorParam(shader, "pebbleColor", draw.pebbleColorR, draw.pebbleColorG, draw.pebbleColorB);
-        (void)readFloatParam(shader, "pebbleRoughness", draw.pebbleRoughness);
-        (void)readFloatParam(shader, "pebbleScale", draw.pebbleScale);
-        (void)readFloatParam(shader, "pebbleDensity", draw.pebbleDensity);
-        (void)readFloatParam(shader, "pebbleBlend", draw.pebbleBlend);
-        (void)readFloatParam(shader, "pebbleNormalStrength", draw.pebbleNormalStrength);
-        (void)readFloatParam(shader, "pebbleHeight", draw.pebbleHeight);
+        extractKnownTextures(shader, draw);
+        (void)readVec2Param(shader, "uvTiling", draw.uvTilingX, draw.uvTilingY);
+        (void)readFloatParam(shader, "normalScale", draw.normalStrength);
+        (void)readFloatParam(shader, "aoStrength", draw.aoStrength);
+        (void)readFloatParam(shader, "displacementStrength", draw.displacementStrength);
+
+        (void)readBoolParam(shader, "rockLayerEnabled", draw.rockLayerEnabled);
+        extractRockLayerTextures(shader, draw);
+        (void)readVec2Param(shader, "rockUvTiling", draw.rockUvTilingX, draw.rockUvTilingY);
+        (void)readFloatParam(shader, "rockNormalScale", draw.rockNormalStrength);
+        (void)readFloatParam(shader, "rockDisplacementStrength", draw.rockDisplacementStrength);
+        (void)readFloatParam(shader, "rockBlendStrength", draw.rockBlendStrength);
+        (void)readFloatParam(shader, "rockNoiseScale", draw.rockNoiseScale);
         m_frame.terrains.push_back(std::move(draw));
       });
 
@@ -172,28 +224,29 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         m_frame.lights.push_back(std::move(draw));
       });
 
-  // --- Grass patches with shaders ---
-  registry.view<ecs::GrassPatchComponent, ecs::ShaderComponent, ecs::TransformComponent>(
+  // --- Rock scatters with shaders ---
+  registry.view<ecs::RockScatterComponent, ecs::ShaderComponent, ecs::TransformComponent>(
       [&](ecs::EntityId id,
-          const ecs::GrassPatchComponent& grass,
+          const ecs::RockScatterComponent& rocks,
           const ecs::ShaderComponent& shader,
           const ecs::TransformComponent& tr) {
-        if (!grass.enabled) return;
+        if (!rocks.enabled) return;
         if (!shader.enabled) return;
-        FrameSnapshot::GrassDraw draw;
+        FrameSnapshot::RockDraw draw;
         draw.entity = id;
         draw.position = tr.position;
-        draw.area = grass.area;
-        draw.density = grass.density;
-        draw.seed = grass.seed;
-        draw.minScale = grass.minScale;
-        draw.maxScale = grass.maxScale;
-        draw.jitter = grass.jitter;
-        draw.lodBias = grass.lodBias;
-        draw.castShadows = grass.castShadows;
-        draw.receiveShadows = grass.receiveShadows;
+        draw.area = rocks.area;
+        draw.density = rocks.density;
+        draw.seed = rocks.seed;
+        draw.minScale = rocks.minScale;
+        draw.maxScale = rocks.maxScale;
+        draw.clumpiness = rocks.clumpiness;
+        draw.patchScale = rocks.patchScale;
+        draw.lodBias = rocks.lodBias;
+        draw.castShadows = rocks.castShadows;
+        draw.receiveShadows = rocks.receiveShadows;
         draw.shader = shader.shader;
-        m_frame.grasses.push_back(std::move(draw));
+        m_frame.rocks.push_back(std::move(draw));
       });
 
   return m_frame;
