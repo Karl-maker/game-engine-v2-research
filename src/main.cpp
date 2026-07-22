@@ -5,6 +5,7 @@
 #include "core/SteadyTimeSource.h"
 #include "games/AttachmentDemoGame.h"
 #include "games/EnemyFollowDemoGame.h"
+#include "games/GameplayDemoGame.h"
 #include "games/TargetDemoGame.h"
 
 #include <iostream>
@@ -15,11 +16,15 @@ static std::unique_ptr<core::IGame> makeGameFromArgs(int argc, char** argv) {
   // Usage:
   //   ./duppy attachment
   //   ./duppy target
+  //   ./duppy gameplay
   //
   // Default is "attachment".
   const std::string mode = (argc >= 2) ? std::string(argv[1]) : "attachment";
   if (mode == "enemy" || mode == "enemy-follow" || mode == "3") {
     return std::make_unique<games::EnemyFollowDemoGame>();
+  }
+  if (mode == "gameplay" || mode == "graphics" || mode == "4") {
+    return std::make_unique<games::GameplayDemoGame>();
   }
   if (mode == "target" || mode == "2") {
     return std::make_unique<games::TargetDemoGame>();
@@ -33,6 +38,7 @@ int main(int argc, char** argv) {
   std::cout << "  ./duppy attachment\n";
   std::cout << "  ./duppy target\n";
   std::cout << "  ./duppy enemy\n";
+  std::cout << "  ./duppy gameplay\n";
   std::cout << "Type `q` then Enter to quit.\n\n";
 
   core::SteadyTimeSource timeSource;
