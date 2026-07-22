@@ -91,7 +91,7 @@ float fbm(vec2 p) {
 }
 
 void main() {
-  const vec3 b = gl_TessCoord;
+  vec3 b = gl_TessCoord;
 
   vec3 pos = tc_WorldPos[0] * b.x + tc_WorldPos[1] * b.y + tc_WorldPos[2] * b.z;
   vec3 N = tc_WorldNormal[0] * b.x + tc_WorldNormal[1] * b.y + tc_WorldNormal[2] * b.z;
@@ -171,7 +171,8 @@ void main() {
   float tLod = saturate((distMeters - u_TessNear) / denom);
   float lod = 1.0 - tLod;
   lod = lod * lod;  // ease
-  float farScale = 0.12;
+  // LOD: kill displacement far from camera.
+  float farScale = 0.0;
   float dispScale = mix(farScale, 1.0, lod);
 
   vec3 displacedPos = pos + N * (disp * dispScale);

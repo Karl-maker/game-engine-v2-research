@@ -13,6 +13,7 @@ add_executable(duppy
   src/ecs/systems/GraphicsSystem.cpp
   src/ecs/systems/MotionSystem.cpp
   src/ecs/systems/MovementSystem.cpp
+  src/ecs/systems/SkyPresetSystem.cpp
   src/ecs/systems/TargetSystem.cpp
   src/ecs/services/RaycastConeFactoryService.cpp
   src/terrain/PerlinNoise2D.cpp

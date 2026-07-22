@@ -51,6 +51,53 @@ static void getFramebufferSize(GLFWwindow* window, int* outW, int* outH) {
   *outH = h;
 }
 
+static math::Mat4 ortho(float left, float right, float bottom, float top, float zNear, float zFar) {
+  math::Mat4 out{};
+  for (float& v : out.m) v = 0.0f;
+
+  const float rl = right - left;
+  const float tb = top - bottom;
+  const float fn = zFar - zNear;
+  out.m[0] = 2.0f / std::max(1e-6f, rl);
+  out.m[5] = 2.0f / std::max(1e-6f, tb);
+  out.m[10] = -2.0f / std::max(1e-6f, fn);
+  out.m[12] = -(right + left) / std::max(1e-6f, rl);
+  out.m[13] = -(top + bottom) / std::max(1e-6f, tb);
+  out.m[14] = -(zFar + zNear) / std::max(1e-6f, fn);
+  out.m[15] = 1.0f;
+  return out;
+}
+
+static void ensureShadowMap(std::uint32_t& fbo, std::uint32_t& depthTex, int& curRes, int desiredRes) {
+  desiredRes = std::max(128, std::min(4096, desiredRes));
+  if (depthTex != 0 && fbo != 0 && curRes == desiredRes) return;
+
+  if (fbo) glDeleteFramebuffers(1, &fbo);
+  if (depthTex) glDeleteTextures(1, &depthTex);
+  fbo = 0;
+  depthTex = 0;
+  curRes = desiredRes;
+
+  glGenTextures(1, &depthTex);
+  glBindTexture(GL_TEXTURE_2D, depthTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, desiredRes, desiredRes, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT,
+               nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  glGenFramebuffers(1, &fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
+  glDrawBuffer(GL_NONE);
+  glReadBuffer(GL_NONE);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 struct OverlayVert final {
   float x;
   float y;
@@ -443,6 +490,11 @@ void OpenGlRenderer::stop() {
   if (m_window) {
     glfwMakeContextCurrent(m_window);
     if (m_skyVao) glDeleteVertexArrays(1, &m_skyVao);
+    if (m_shadowFbo) glDeleteFramebuffers(1, &m_shadowFbo);
+    if (m_shadowDepthTex) glDeleteTextures(1, &m_shadowDepthTex);
+    m_shadowFbo = 0;
+    m_shadowDepthTex = 0;
+    m_shadowRes = 0;
     m_textures.destroyAllGlTextures();
     glfwMakeContextCurrent(nullptr);
   }
@@ -503,13 +555,22 @@ void OpenGlRenderer::destroyRockMesh(RockMesh& m) {
   m = {};
 }
 
-OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::systems::GraphicsSystem::TerrainDraw& t) {
+static std::uint64_t terrainMeshKey(std::uint32_t id, int lodStep) {
+  const std::uint64_t lod = static_cast<std::uint64_t>(std::max(1, std::min(256, lodStep)));
+  return (static_cast<std::uint64_t>(id) << 8) | lod;
+}
+
+OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::systems::GraphicsSystem::TerrainDraw& t,
+                                                                    int lodStep) {
   const std::uint32_t id = static_cast<std::uint32_t>(t.entity);
-  auto it = m_terrainMeshes.find(id);
+  lodStep = std::max(1, std::min(256, lodStep));
+
+  const std::uint64_t key = terrainMeshKey(id, lodStep);
+  auto it = m_terrainMeshes.find(key);
   if (it != m_terrainMeshes.end()) {
     auto& m = it->second;
     if (m.gridWidth == t.gridWidth && m.gridHeight == t.gridHeight && m.cellSizeMeters == t.cellSizeMeters &&
-        m.heightScaleMeters == t.heightScaleMeters && m.noiseSeed == t.noiseSeed) {
+        m.heightScaleMeters == t.heightScaleMeters && m.noiseSeed == t.noiseSeed && m.lodStep == lodStep) {
       return &m;
     }
     destroyTerrainMesh(m);
@@ -522,9 +583,16 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
   mesh.cellSizeMeters = t.cellSizeMeters;
   mesh.heightScaleMeters = t.heightScaleMeters;
   mesh.noiseSeed = t.noiseSeed;
+  mesh.lodStep = lodStep;
 
-  const int w = std::max(2, t.gridWidth);
-  const int h = std::max(2, t.gridHeight);
+  const int wCells = std::max(2, t.gridWidth);
+  const int hCells = std::max(2, t.gridHeight);
+
+  // LOD reduces vertex density but must keep the same world-space extents.
+  // `lodStep` means "sample every Nth cell" (plus the last edge), not "shrink the terrain".
+  const int step = std::max(1, lodStep);
+  const int w = std::max(2, (wCells + step - 1) / step);
+  const int h = std::max(2, (hCells + step - 1) / step);
   const int vertsW = w + 1;
   const int vertsH = h + 1;
 
@@ -534,8 +602,10 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
   heights.resize(static_cast<std::size_t>(vertsW * vertsH));
   for (int z = 0; z < vertsH; ++z) {
     for (int x = 0; x < vertsW; ++x) {
-      const float sx = static_cast<float>(x) * t.cellSizeMeters;
-      const float sz = static_cast<float>(z) * t.cellSizeMeters;
+      const int cx = std::min(wCells, x * step);
+      const int cz = std::min(hCells, z * step);
+      const float sx = static_cast<float>(cx) * t.cellSizeMeters;
+      const float sz = static_cast<float>(cz) * t.cellSizeMeters;
       const float n = noise.sampleFractal(sx, sz, t.noise);
       heights[static_cast<std::size_t>(z * vertsW + x)] = n * t.heightScaleMeters;
     }
@@ -544,8 +614,9 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
   std::vector<Vertex> vertices;
   vertices.resize(static_cast<std::size_t>(vertsW * vertsH));
 
-  const float halfW = (static_cast<float>(w) * t.cellSizeMeters) * 0.5f;
-  const float halfH = (static_cast<float>(h) * t.cellSizeMeters) * 0.5f;
+  const float halfW = (static_cast<float>(wCells) * t.cellSizeMeters) * 0.5f;
+  const float halfH = (static_cast<float>(hCells) * t.cellSizeMeters) * 0.5f;
+  const float sampleSpacing = t.cellSizeMeters * static_cast<float>(step);
 
   auto heightAt = [&](int x, int z) -> float {
     x = std::max(0, std::min(vertsW - 1, x));
@@ -555,8 +626,10 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
 
   for (int z = 0; z < vertsH; ++z) {
     for (int x = 0; x < vertsW; ++x) {
-      const float px = static_cast<float>(x) * t.cellSizeMeters - halfW;
-      const float pz = static_cast<float>(z) * t.cellSizeMeters - halfH;
+      const int cx = std::min(wCells, x * step);
+      const int cz = std::min(hCells, z * step);
+      const float px = static_cast<float>(cx) * t.cellSizeMeters - halfW;
+      const float pz = static_cast<float>(cz) * t.cellSizeMeters - halfH;
       const float py = heightAt(x, z);
 
       // Finite difference normal.
@@ -564,7 +637,7 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
       const float hr = heightAt(x + 1, z);
       const float hd = heightAt(x, z - 1);
       const float hu = heightAt(x, z + 1);
-      const math::Vec3 n = math::normalize(math::Vec3{hl - hr, 2.0f * t.cellSizeMeters, hd - hu});
+      const math::Vec3 n = math::normalize(math::Vec3{hl - hr, 2.0f * sampleSpacing, hd - hu});
 
       Vertex v{};
       v.px = px;
@@ -619,7 +692,7 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
 
   glBindVertexArray(0);
 
-  auto [insIt, _] = m_terrainMeshes.emplace(id, mesh);
+  auto [insIt, _] = m_terrainMeshes.emplace(key, mesh);
   return &insIt->second;
 }
 
@@ -859,6 +932,168 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       math::lookAt(frame.camera.position, frame.camera.position + frame.camera.forward, math::Vec3{0.0f, 1.0f, 0.0f});
   const math::Mat4 viewProj = math::mul(proj, view);
 
+  // --- Shadow map pass (optional; off by default via RenderSettingsComponent) ---
+  bool shadowOn = false;
+  math::Mat4 lightViewProj{};
+  math::Vec3 shadowLightDir{0.0f, -1.0f, 0.0f};
+  float shadowBias = 0.001f;
+  float shadowStrength = 1.0f;
+  float shadowTexelX = 1.0f;
+  float shadowTexelY = 1.0f;
+
+  if (frame.settings.present && frame.settings.shadowsEnabled) {
+    const ecs::systems::GraphicsSystem::LightDraw* sun = nullptr;
+    for (const auto& l : frame.lights) {
+      if (l.type == 0 && l.castShadows) {
+        sun = &l;
+        break;
+      }
+    }
+
+    if (sun) {
+      int q = frame.settings.shadowQuality;
+      if (q < 0) q = 0;
+      if (q > 2) q = 2;
+      const float qScale = (q == 0) ? 0.75f : (q == 1 ? 1.0f : 1.5f);
+      const int desiredRes =
+          static_cast<int>(std::max(128.0f, std::min(4096.0f, static_cast<float>(sun->shadowResolution) * qScale)));
+      ensureShadowMap(m_shadowFbo, m_shadowDepthTex, m_shadowRes, desiredRes);
+
+      shadowTexelX = 1.0f / static_cast<float>(m_shadowRes);
+      shadowTexelY = 1.0f / static_cast<float>(m_shadowRes);
+      shadowStrength = frame.settings.shadowStrength;
+      shadowBias = sun->shadowBias;
+      shadowLightDir = math::normalize(sun->direction);
+
+      const float dist = std::max(10.0f, sun->shadowDistance);
+      const math::Vec3 camPos = frame.camera.position;
+      const math::Vec3 camFwd = math::normalize(frame.camera.forward);
+
+      // Focus the shadow frustum slightly ahead of the camera (better use of resolution).
+      const math::Vec3 center = camPos + camFwd * (dist * 0.35f);
+      const float radius = dist * 0.60f;
+
+      const math::Vec3 up0{0.0f, 1.0f, 0.0f};
+      const float upDot = std::abs(math::dot(up0, shadowLightDir));
+      const math::Vec3 up = (upDot > 0.95f) ? math::Vec3{0.0f, 0.0f, 1.0f} : up0;
+
+      const math::Vec3 eye = center - shadowLightDir * dist;
+      const math::Mat4 lView = math::lookAt(eye, center, up);
+      const math::Mat4 lProj = ortho(-radius, radius, -radius, radius, 0.1f, dist * 2.2f);
+      lightViewProj = math::mul(lProj, lView);
+
+      // Render depth.
+      glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
+      glViewport(0, 0, m_shadowRes, m_shadowRes);
+      glClear(GL_DEPTH_BUFFER_BIT);
+      glEnable(GL_DEPTH_TEST);
+      glDepthMask(GL_TRUE);
+      glDisable(GL_BLEND);
+      glEnable(GL_CULL_FACE);
+      glCullFace(GL_FRONT);
+
+      // Terrain casters.
+      for (const auto& t : frame.terrains) {
+        if (!t.castShadows) continue;
+
+        const math::Vec3 toCenter = t.position - camPos;
+        const float d = math::length(toCenter);
+        const float viewDot = (d > 1e-5f) ? math::dot(toCenter * (1.0f / d), camFwd) : 1.0f;
+
+        const bool wantTess = frame.settings.shadowUseTessellation && (t.tessQuality > 0) && (d < (t.tessFar * 0.9f)) &&
+                              (viewDot > 0.10f);
+        const char* key = wantTess ? "graphics/shaders/terrain_shadow" : "graphics/shaders/terrain_shadow_notess";
+        const ShaderService::Program* program = m_shaders.getOrCreate(key);
+        if (!program || !program->programId) continue;
+
+        int lodStep = 2;
+        if (d > 55.0f) lodStep = 4;
+        if (!wantTess && d > 85.0f) lodStep = 8;
+
+        TerrainMesh* mesh = getOrCreateTerrainMesh(t, lodStep);
+        if (!mesh || !mesh->vao) continue;
+
+        glUseProgram(program->programId);
+        const GLint locModel = glGetUniformLocation(program->programId, "u_Model");
+        if (locModel >= 0) {
+          const math::Mat4 model = math::translate(t.position);
+          glUniformMatrix4fv(locModel, 1, GL_FALSE, model.m);
+        }
+        const GLint locLvp = glGetUniformLocation(program->programId, "u_LightViewProj");
+        if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
+
+        if (program->hasTessellation) {
+          glPatchParameteri(GL_PATCH_VERTICES, 3);
+          const GLint locCam = glGetUniformLocation(program->programId, "u_CameraPos");
+          if (locCam >= 0) glUniform3f(locCam, camPos.x, camPos.y, camPos.z);
+          const GLint locCamFwd = glGetUniformLocation(program->programId, "u_CameraForward");
+          if (locCamFwd >= 0) glUniform3f(locCamFwd, camFwd.x, camFwd.y, camFwd.z);
+          const GLint locTessNear = glGetUniformLocation(program->programId, "u_TessNear");
+          const GLint locTessFar = glGetUniformLocation(program->programId, "u_TessFar");
+          const GLint locTessMin = glGetUniformLocation(program->programId, "u_TessMin");
+          const GLint locTessMax = glGetUniformLocation(program->programId, "u_TessMax");
+          if (locTessNear >= 0) glUniform1f(locTessNear, t.tessNear);
+          if (locTessFar >= 0) glUniform1f(locTessFar, t.tessFar);
+          if (locTessMin >= 0) glUniform1f(locTessMin, t.tessMin);
+          if (locTessMax >= 0) glUniform1f(locTessMax, t.tessMax);
+        }
+
+        glBindVertexArray(mesh->vao);
+        const GLenum mode = program->hasTessellation ? GL_PATCHES : GL_TRIANGLES;
+        glDrawElements(mode, static_cast<GLsizei>(mesh->indexCount), GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(0);
+      }
+
+      // Rock casters (use existing instance chunks).
+      const ShaderService::Program* rockProg = m_shaders.getOrCreate("graphics/shaders/rocks_shadow");
+      if (rockProg && rockProg->programId) {
+        glUseProgram(rockProg->programId);
+        const GLint locLvp = glGetUniformLocation(rockProg->programId, "u_LightViewProj");
+        if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
+
+        // Choose a ground terrain to anchor rock height (first terrain for now).
+        const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain =
+            frame.terrains.empty() ? nullptr : &frame.terrains[0];
+
+        for (const auto& r : frame.rocks) {
+          if (!r.castShadows) continue;
+          RockMesh* mesh = getOrCreateRockMesh(r, groundTerrain);
+          if (!mesh || !mesh->vao || mesh->instanceCapacity == 0 || mesh->chunks.empty()) continue;
+
+          glBindVertexArray(mesh->vao);
+          glBindBuffer(GL_ARRAY_BUFFER, mesh->instanceVbo);
+
+          const float lodBias = std::max(0.25f, r.lodBias);
+          const float maxDist = 120.0f / lodBias;
+          for (const auto& c : mesh->chunks) {
+            const math::Vec3 d0 = frame.camera.position - c.center;
+            const float distC = std::sqrt(d0.x * d0.x + d0.y * d0.y + d0.z * d0.z) - c.radius;
+            if (distC > maxDist) continue;
+
+            const std::size_t baseByte = static_cast<std::size_t>(c.instanceOffset) * sizeof(RockInstance);
+            glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(RockInstance), reinterpret_cast<void*>(baseByte + 0));
+            glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(RockInstance),
+                                  reinterpret_cast<void*>(baseByte + sizeof(float) * 3));
+            glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(RockInstance),
+                                  reinterpret_cast<void*>(baseByte + sizeof(float) * 4));
+            glDrawElementsInstanced(GL_TRIANGLES,
+                                    static_cast<GLsizei>(mesh->indexCount),
+                                    GL_UNSIGNED_INT,
+                                    nullptr,
+                                    static_cast<GLsizei>(c.instanceCount));
+          }
+
+          glBindVertexArray(0);
+        }
+      }
+
+      glCullFace(GL_BACK);
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      glViewport(0, 0, m_fbWidth, m_fbHeight);
+      shadowOn = true;
+    }
+  }
+
   // Sky pass (fullscreen procedural).
   if (!frame.skies.empty() && m_skyVao) {
     const auto& sky = frame.skies[0];
@@ -1007,14 +1242,48 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     range[i] = l.range;
   }
 
+  // Main geometry passes: reset critical GL state (some earlier passes disable/modify these).
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LEQUAL);
+  glDisable(GL_BLEND);
+  glCullFace(GL_BACK);
+
   for (const auto& t : frame.terrains) {
-    const ShaderService::Program* program = m_shaders.getOrCreate(t.shader.key);
+    const math::Vec3 camPos = frame.camera.position;
+    const math::Vec3 camFwd = math::normalize(frame.camera.forward);
+
+    // Terrain is centered around its transform; approximate bounds for cheap LOD decisions.
+    const float sizeX = static_cast<float>(std::max(2, t.gridWidth)) * t.cellSizeMeters;
+    const float sizeZ = static_cast<float>(std::max(2, t.gridHeight)) * t.cellSizeMeters;
+    const math::Vec3 terrainCenter = t.position;
+    const math::Vec3 toCenter = terrainCenter - camPos;
+    const float distSq = toCenter.x * toCenter.x + toCenter.y * toCenter.y + toCenter.z * toCenter.z;
+    const float invDist = 1.0f / std::sqrt(std::max(1e-6f, distSq));
+    const float distMeters = distSq * invDist;
+    const float viewDot = (toCenter.x * invDist) * camFwd.x + (toCenter.y * invDist) * camFwd.y + (toCenter.z * invDist) * camFwd.z;
+
+    // Choose shader variant: use tessellation only when close and within a forward cone.
+    std::string shaderKey = t.shader.key;
+    const bool wantTess = (distMeters < (t.tessFar * 0.9f)) && (viewDot > 0.10f) && (t.tessQuality > 0);
+    if (!wantTess) {
+      shaderKey += "_notess";
+    }
+
+    const ShaderService::Program* program = m_shaders.getOrCreate(shaderKey);
     if (!program || !program->programId) continue;
 
     const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog =
         frame.fogVolumes.empty() ? nullptr : &frame.fogVolumes[0];
 
-    TerrainMesh* mesh = getOrCreateTerrainMesh(t);
+    // Geometry LOD (reduces triangle count). Tessellation can still add detail on top when enabled.
+    int lodStep = 1;
+    if (distMeters > 55.0f) lodStep = 4;
+    else if (distMeters > 25.0f) lodStep = 2;
+    if (viewDot < 0.10f) lodStep = std::max(lodStep, 4);
+    if (t.tessQuality <= 0) lodStep = std::max(lodStep, 2);
+    if (!wantTess && distMeters > 85.0f) lodStep = std::max(lodStep, 8);
+
+    TerrainMesh* mesh = getOrCreateTerrainMesh(t, lodStep);
     if (!mesh || !mesh->vao) continue;
 
     glUseProgram(program->programId);
@@ -1045,6 +1314,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     }
     if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
     if (locCam >= 0) glUniform3f(locCam, frame.camera.position.x, frame.camera.position.y, frame.camera.position.z);
+    const GLint locCamFwd = glGetUniformLocation(program->programId, "u_CameraForward");
+    if (locCamFwd >= 0) glUniform3f(locCamFwd, frame.camera.forward.x, frame.camera.forward.y, frame.camera.forward.z);
     if (locTime >= 0) glUniform1f(locTime, timeSeconds);
     if (locColorNoise >= 0) glUniform1f(locColorNoise, t.dirtColorNoiseStrength);
     if (locSinkOn >= 0) glUniform1i(locSinkOn, t.dirtSinksEnabled ? 1 : 0);
@@ -1073,6 +1344,26 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       if (locFogHf >= 0) glUniform1f(locFogHf, fog->heightFalloff);
       const GLint locFogBase = glGetUniformLocation(program->programId, "u_FogBaseHeight");
       if (locFogBase >= 0) glUniform1f(locFogBase, fog->baseHeightOffset);
+    }
+
+    // Shadow uniforms (single directional shadow map, optional).
+    const GLint locShadowOn = glGetUniformLocation(program->programId, "u_ShadowEnabled");
+    if (locShadowOn >= 0) glUniform1i(locShadowOn, shadowOn ? 1 : 0);
+    if (shadowOn) {
+      const GLint locLvp = glGetUniformLocation(program->programId, "u_LightViewProj");
+      if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
+      const GLint locBias = glGetUniformLocation(program->programId, "u_ShadowBias");
+      if (locBias >= 0) glUniform1f(locBias, shadowBias);
+      const GLint locStrength = glGetUniformLocation(program->programId, "u_ShadowStrength");
+      if (locStrength >= 0) glUniform1f(locStrength, shadowStrength);
+      const GLint locTexel = glGetUniformLocation(program->programId, "u_ShadowTexelSize");
+      if (locTexel >= 0) glUniform2f(locTexel, shadowTexelX, shadowTexelY);
+
+      glActiveTexture(GL_TEXTURE15);
+      glBindTexture(GL_TEXTURE_2D, m_shadowDepthTex);
+      const GLint locMap = glGetUniformLocation(program->programId, "u_ShadowMap");
+      if (locMap >= 0) glUniform1i(locMap, 15);
+      glActiveTexture(GL_TEXTURE0);
     }
 
     // Far grass tint (disabled for now).
@@ -1242,14 +1533,28 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     // Terrain tessellation (if the shader key provides TCS+TES).
     if (program->hasTessellation) {
       glPatchParameteri(GL_PATCH_VERTICES, 3);
+
+      // Tess quality (renderer-defined): keep tessellation modest by default.
+      // 0=Low, 1=Medium, 2=High.
+      int q = t.tessQuality;
+      if (q < 0) q = 0;
+      if (q > 2) q = 2;
+      const float qScale = (q == 0) ? 0.45f : (q == 1 ? 0.70f : 1.0f);
+      const float qFarScale = (q == 0) ? 0.65f : (q == 1 ? 0.85f : 1.0f);
+
+      const float tessNear = t.tessNear;
+      const float tessFar = std::max(tessNear + 1.0f, t.tessFar * qFarScale);
+      const float tessMin = std::max(1.0f, t.tessMin);
+      const float tessMax = std::max(tessMin, std::min(64.0f, t.tessMax * qScale));
+
       const GLint locTessNear = glGetUniformLocation(program->programId, "u_TessNear");
       const GLint locTessFar = glGetUniformLocation(program->programId, "u_TessFar");
       const GLint locTessMin = glGetUniformLocation(program->programId, "u_TessMin");
       const GLint locTessMax = glGetUniformLocation(program->programId, "u_TessMax");
-      if (locTessNear >= 0) glUniform1f(locTessNear, 6.0f);
-      if (locTessFar >= 0) glUniform1f(locTessFar, 120.0f);
-      if (locTessMin >= 0) glUniform1f(locTessMin, 2.0f);
-      if (locTessMax >= 0) glUniform1f(locTessMax, 18.0f);
+      if (locTessNear >= 0) glUniform1f(locTessNear, tessNear);
+      if (locTessFar >= 0) glUniform1f(locTessFar, tessFar);
+      if (locTessMin >= 0) glUniform1f(locTessMin, tessMin);
+      if (locTessMax >= 0) glUniform1f(locTessMax, tessMax);
 
       const GLint locNormDispBoost = glGetUniformLocation(program->programId, "u_NormalDisplacementBoost");
       if (locNormDispBoost >= 0) glUniform1f(locNormDispBoost, 0.85f);
@@ -1308,6 +1613,26 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locSunCol >= 0) glUniform3f(locSunCol, sunCol.x, sunCol.y, sunCol.z);
     const GLint locSunI = glGetUniformLocation(program->programId, "u_SunIntensity");
     if (locSunI >= 0) glUniform1f(locSunI, sunIntensity);
+
+    // Shadow uniforms (optional).
+    const GLint locShadowOn = glGetUniformLocation(program->programId, "u_ShadowEnabled");
+    if (locShadowOn >= 0) glUniform1i(locShadowOn, shadowOn ? 1 : 0);
+    if (shadowOn) {
+      const GLint locLvp = glGetUniformLocation(program->programId, "u_LightViewProj");
+      if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
+      const GLint locBias = glGetUniformLocation(program->programId, "u_ShadowBias");
+      if (locBias >= 0) glUniform1f(locBias, shadowBias);
+      const GLint locStrength = glGetUniformLocation(program->programId, "u_ShadowStrength");
+      if (locStrength >= 0) glUniform1f(locStrength, shadowStrength);
+      const GLint locTexel = glGetUniformLocation(program->programId, "u_ShadowTexelSize");
+      if (locTexel >= 0) glUniform2f(locTexel, shadowTexelX, shadowTexelY);
+
+      glActiveTexture(GL_TEXTURE15);
+      glBindTexture(GL_TEXTURE_2D, m_shadowDepthTex);
+      const GLint locMap = glGetUniformLocation(program->programId, "u_ShadowMap");
+      if (locMap >= 0) glUniform1i(locMap, 15);
+      glActiveTexture(GL_TEXTURE0);
+    }
 
     glBindVertexArray(mesh->vao);
     glBindBuffer(GL_ARRAY_BUFFER, mesh->instanceVbo);

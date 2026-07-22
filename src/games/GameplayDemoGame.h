@@ -16,6 +16,7 @@
 #include "ecs/systems/GraphicsSystem.h"
 #include "ecs/systems/MotionSystem.h"
 #include "ecs/systems/MovementSystem.h"
+#include "ecs/systems/SkyPresetSystem.h"
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
 #include "graphics/OpenGlRenderer.h"
@@ -36,6 +37,7 @@ class GameplayDemoGame final : public core::IGame {
   ecs::systems::ControllerSystem m_controllerSystem;
   ecs::systems::MotionSystem m_motionSystem;
   ecs::systems::MovementSystem m_movementSystem;
+  ecs::systems::SkyPresetSystem m_skyPresets;
   ecs::systems::GraphicsSystem m_graphics;
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL

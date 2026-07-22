@@ -63,6 +63,7 @@ class OpenGlRenderer final {
     float cellSizeMeters = 1.0f;
     float heightScaleMeters = 1.0f;
     std::uint32_t noiseSeed = 1337;
+    int lodStep = 1;  // 1=full res, 2=half, 4=quarter, ...
   };
 
   struct RockMesh final {
@@ -92,7 +93,7 @@ class OpenGlRenderer final {
     std::vector<Chunk> chunks;
   };
 
-  TerrainMesh* getOrCreateTerrainMesh(const ecs::systems::GraphicsSystem::TerrainDraw& terrain);
+  TerrainMesh* getOrCreateTerrainMesh(const ecs::systems::GraphicsSystem::TerrainDraw& terrain, int lodStep);
   RockMesh* getOrCreateRockMesh(const ecs::systems::GraphicsSystem::FrameSnapshot::RockDraw& rocks,
                                 const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain);
 
@@ -117,6 +118,11 @@ class OpenGlRenderer final {
   // Sky fullscreen triangle VAO.
   std::uint32_t m_skyVao = 0;
 
+  // Shadow map (single directional light, optional).
+  std::uint32_t m_shadowFbo = 0;
+  std::uint32_t m_shadowDepthTex = 0;
+  int m_shadowRes = 0;
+
   // Input state (GLFW callbacks write, game drains once per tick).
   bool m_keyW = false;
   bool m_keyA = false;
@@ -132,7 +138,7 @@ class OpenGlRenderer final {
   double m_accumMouseDy = 0.0;
 
   ShaderService m_shaders;
-  std::unordered_map<std::uint32_t, TerrainMesh> m_terrainMeshes;  // key: entity id
+  std::unordered_map<std::uint64_t, TerrainMesh> m_terrainMeshes;  // key: (entity id, lodStep)
   std::unordered_map<std::uint32_t, RockMesh> m_rockMeshes;        // key: entity id
 
   TextureService m_textures;

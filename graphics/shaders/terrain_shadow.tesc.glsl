@@ -1,6 +1,4 @@
-// Terrain tessellation control shader (demo)
-//
-// Builds triangle patches and picks a tessellation factor based on camera distance.
+// Terrain shadow caster tessellation control shader (demo)
 
 #version 410 core
 
@@ -38,8 +36,6 @@ void main() {
     float invDist = inversesqrt(max(distSq, 1e-6));
     float distMeters = distSq * invDist;
 
-    // View-cone LOD: only tessellate patches that are closer AND inside a forward cone.
-    // This avoids spending tessellation on terrain behind or far off-camera.
     vec3 viewDir = normalize(u_CameraForward);
     float viewDot = dot(toCenter * invDist, viewDir);
     float viewW = smoothstep(0.15, 0.45, viewDot);
@@ -57,3 +53,4 @@ void main() {
     gl_TessLevelInner[0] = tess;
   }
 }
+

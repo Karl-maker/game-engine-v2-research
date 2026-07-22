@@ -89,6 +89,14 @@ class GraphicsSystem final {
     // Displacement influence (shading/bump only).
     float displacementStrength = 0.25f;
 
+    // Tessellation controls (used when the shader supports tessellation).
+    // These map directly to the terrain tessellation shader uniforms.
+    float tessNear = 6.0f;   // meters
+    float tessFar = 120.0f;  // meters
+    float tessMin = 2.0f;    // >= 1
+    float tessMax = 18.0f;   // <= 64
+    int tessQuality = 0;     // 0=Low,1=Medium,2=High (renderer-defined)
+
     // Optional rock layer (second material set).
     bool rockLayerEnabled = false;
     render::AssetRef rockAlbedoTex{};
@@ -118,6 +126,9 @@ class GraphicsSystem final {
     float intensity = 1.0f;
     float range = 0.0f;
     bool castShadows = false;
+    std::uint32_t shadowResolution = 1024;
+    float shadowBias = 0.001f;
+    float shadowDistance = 50.0f;
   };
 
   struct FrameSnapshot final {
@@ -189,6 +200,15 @@ class GraphicsSystem final {
     };
     std::vector<RockDraw> rocks;
     std::vector<LightDraw> lights;
+
+    struct RenderSettingsDraw final {
+      bool present = false;
+      bool shadowsEnabled = false;
+      int shadowQuality = 1;
+      float shadowStrength = 1.0f;
+      bool shadowUseTessellation = false;
+    };
+    RenderSettingsDraw settings{};
   };
 
   const FrameSnapshot& tick(EntityRegistry& registry);

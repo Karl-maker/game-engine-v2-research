@@ -1,17 +1,11 @@
 // Terrain fragment shader (demo)
 //
-// Intended mapping from ECS:
-// - ShaderComponent.textures -> sampler2D bindings (by slot name)
-// - ShaderComponent.parameters -> uniforms like u_BaseColor, u_Roughness, etc.
-// - LightComponent (+ TransformComponent) -> packed arrays below
-//
-// Notes:
-// - This repo currently does not compile/link shaders at runtime; this file is an asset stub.
+// Non-tessellated variant used for LOD/far rendering.
+// Kept identical to `graphics/shaders/terrain.frag.glsl` so materials behave the same.
 
 #version 410 core
 
 #include "fog.glsl"
-#include "shadow.glsl"
 
 in vec3 v_WorldPos;
 in vec3 v_WorldNormal;
@@ -241,91 +235,55 @@ vec3 shadePbrish(vec3 albedo, vec3 normal, vec3 viewDir, float roughness, float 
         L = toLight / dist;
       }
 
-      float range = max(u_LightRange[i], 0.0001);
-      float falloff = clamp(1.0 - (dist / range), 0.0, 1.0);
-      attenuation = falloff * falloff;
+      float range = max(0.001, u_LightRange[i]);
+      float r = saturate(1.0 - (dist / range));
+      attenuation = r * r;
     }
+
+    vec3 H = normalize(L + viewDir);
 
     float NdotL = saturate(dot(normal, L));
     float NdotV = saturate(dot(normal, viewDir));
-    if (NdotL <= 0.0 || NdotV <= 0.0) continue;
-
-    if (u_LightType[i] == 0) {
-      // Apply shadowing to directional lights.
-      NdotL *= shadowVisibility(v_WorldPos, normal, u_LightDir[i]);
-    }
-
-    vec3 light = u_LightColor[i] * u_LightIntensity[i] * attenuation;
-
-    vec3 H = normalize(L + viewDir);
     float NdotH = saturate(dot(normal, H));
-    float VdotH = saturate(dot(viewDir, H));
+    float HdotV = saturate(dot(H, viewDir));
 
-    float r = clamp(roughness, 0.04, 1.0);
-    vec3 F0 = mix(vec3(0.04), albedo, saturate(metallic));
-    vec3 F = fresnelSchlick(VdotH, F0);
-    float D = distributionGGX(NdotH, r);
-    float G = geometrySmith(NdotV, NdotL, r);
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    vec3 F = fresnelSchlick(HdotV, F0);
+    float D = distributionGGX(NdotH, roughness);
+    float G = geometrySmith(NdotV, NdotL, roughness);
 
-    vec3 spec = (D * G * F) / max(4.0 * NdotV * NdotL, 1e-5);
-    spec *= u_SpecularIntensity;
+    vec3 numerator = D * G * F;
+    float denom = max(4.0 * NdotV * NdotL, 1e-6);
+    vec3 spec = numerator / denom;
 
     vec3 kS = F;
-    vec3 kD = (vec3(1.0) - kS) * (1.0 - saturate(metallic));
+    vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
 
-    vec3 diffuse = kD * albedo / 3.14159265;
-    result += (diffuse + spec) * light * NdotL;
+    vec3 radiance = u_LightColor[i] * u_LightIntensity[i] * attenuation;
+    vec3 diffuse = (kD * albedo) / 3.14159265;
+    result += (diffuse + spec) * radiance * NdotL;
   }
 
-  // Ambient: lifted a bit so shadows aren't overly dark.
-  vec3 ambient = albedo * 0.09 + vec3(0.02, 0.03, 0.04) * 0.45;
+  // Cheap ambient.
+  vec3 ambient = vec3(0.08) * albedo;
   result += ambient;
+
   return result;
 }
 
 void main() {
   vec3 N = normalize(v_WorldNormal);
   vec3 V = normalize(u_CameraPos - v_WorldPos);
+
   vec2 uv = v_Uv * u_UvTiling;
 
-  // If an albedo texture is bound, let it fully own the base color.
-  // Otherwise, fall back to procedural dirt.
-  vec3 albedo = vec3(0.0);
-  float roughness = u_Roughness;
-  float wetMask = 0.0;
-  float micro = 0.5;
-
+  // If an albedo texture is bound, let it fully own the base color (baseColor acts as a fallback).
+  vec3 albedo = u_BaseColor.rgb;
   if (u_UseAlbedo) {
     albedo = texture(u_Albedo, uv).rgb;
-    roughness = u_Roughness;
-  } else {
-    // --- Procedural dirt detail ---
-    vec2 p = v_WorldPos.xz;
-    float macro = fbm(p * 0.04);
-    micro = fbm(p * 1.75 + u_Time * 0.05);
-    float grain = valueNoise(p * 7.0);
-
-    // Height-ish mask for subtle wet/dry patches.
-    wetMask = saturate((macro - 0.45) * 2.5);
-
-    // Base albedo variation: warmer/cooler specks and grain.
-    vec3 base = u_BaseColor.rgb;
-    vec3 warm = vec3(0.10, 0.06, 0.02);
-    vec3 cool = vec3(-0.04, -0.02, 0.00);
-    base += mix(cool, warm, micro) * (0.35 * u_DirtColorNoiseStrength);
-    base *= 0.85 + macro * 0.35;
-    base *= 0.92 + (grain - 0.5) * (0.12 * u_DirtColorNoiseStrength);
-
-    // Slope-based tint (steeper slopes slightly darker).
-    float slope = 1.0 - saturate(dot(N, vec3(0.0, 1.0, 0.0)));
-    base *= 1.0 - slope * 0.18;
-
-    roughness = clamp(u_Roughness + (0.5 - micro) * 0.25, 0.04, 1.0);
-    roughness = mix(roughness, roughness * 0.55, wetMask);  // "wetter" looks smoother
-
-    albedo = base;
   }
 
+  float roughness = u_Roughness;
   float metallic = u_Metallic;
 
   // Micro-bump from procedural noise.
@@ -403,7 +361,6 @@ void main() {
     roughness = clamp(roughness - sink * (0.25 * u_DirtSinkStrength), 0.04, 1.0);
 
     // Push normal slightly to create a shallow depression feel.
-    // Using a height-like field from the sink mask.
     float eps = 0.35;
     float sx = dirtSinks(v_WorldPos.xz + vec2(eps, 0.0) + vec2(13.7, -4.2), u_DirtSinkScale, u_DirtSinkDensity).x;
     float sz = dirtSinks(v_WorldPos.xz + vec2(0.0, eps) + vec2(13.7, -4.2), u_DirtSinkScale, u_DirtSinkDensity).x;
@@ -415,15 +372,6 @@ void main() {
   vec3 color = shadePbrish(albedo, N, V, roughness, metallic);
   color *= mix(1.0, ao, clamp(u_AOStrength, 0.0, 1.0));
 
-  if (u_GrassTintEnabled != 0) {
-    float dist = length(u_CameraPos.xz - v_WorldPos.xz);
-    float t = saturate((dist - u_GrassTintNear) / max(0.001, (u_GrassTintFar - u_GrassTintNear)));
-    // Coverage mask (patchy).
-    float cov = saturate((fbm(v_WorldPos.xz * 0.06) - 0.5) * 2.0);
-    vec3 tint = mix(color, u_GrassTintColor, cov * u_GrassTintStrength);
-    color = mix(color, tint, t);
-  }
-
   // Fog in linear space (more visible than applying after tonemap/gamma).
   float fogF = fogFactorAt(u_CameraPos, v_WorldPos);
   color = mix(color, u_FogColor, fogF);
@@ -433,3 +381,4 @@ void main() {
   color = pow(color, vec3(1.0 / 2.2));
   o_Color = vec4(color, 1.0);
 }
+
