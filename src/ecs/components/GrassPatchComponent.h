@@ -3,40 +3,94 @@
 // Author: Karl-Johan Bailey
 //
 // GrassPatchComponent (descriptive only)
-// Describes a procedural grass patch for another system to generate/render.
-// No mesh references are stored here; the renderer/foliage system decides assets.
+// Describes GPU-instanced vegetation (primarily grass) for another system to generate/render.
+//
+// Design goals (demo-friendly, scalable):
+// - No ECS entity per blade/clump; a renderer/system builds instance buffers.
+// - Multiple layers/species to avoid obvious repetition.
+// - Density/slope/altitude/noise rules for natural variation.
+// - Wind + interaction are handled in shaders (driven by shared uniforms).
 
+#include "ecs/EntityId.h"
 #include "math/Vec3.h"
+#include "terrain/NoiseConfig.h"
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace ecs {
 
 struct GrassPatchComponent {
+  struct GrassLayer final {
+    // Engine-defined species key (renderer decides mesh/shader details for this species).
+    // Suggested defaults: "ShortGrass", "TallGrass", "BroadLeafGrass", "DryGrass",
+    // "Weed", "SmallFlower", "GroundCover".
+    std::string species = "GroundCover";
+
+    // Instances per square meter before masks/noise.
+    float density = 5.0f;
+
+    // Size range in meters (uniform scale applied to the clump mesh).
+    float minScale = 0.55f;
+    float maxScale = 0.95f;
+
+    // Blade spacing multiplier inside each clump. Lower = tighter, denser tuft.
+    float bladeSpacing = 0.2f;
+
+    // Blade bend/curve controls.
+    float bendStrength = 0.35f;
+    float curveStrength = 0.18f;
+    float twistStrength = 0.08f;
+
+    // Terrain masks (optional; interpreted by the grass system).
+    // Slope is in degrees (0 = flat).
+    float minSlopeDeg = 0.0f;
+    float maxSlopeDeg = 42.0f;
+    float minAltitude = -10000.0f;
+    float maxAltitude = 10000.0f;
+
+    // Patchiness noise (world-space; higher strength = denser in high-noise regions).
+    float noiseScale = 0.06f;
+    float noiseStrength = 0.65f;  // 0..1
+
+    // Wind contribution for this layer (shader-defined units).
+    float windStrength = 1.0f;
+
+    // Distance fade/cull (meters). Keep near grass dense; let terrain shader do the far field.
+    float maxDistance = 30.0f;
+  };
+
   bool enabled = true;
 
-  // Patch area (system-defined interpretation).
-  // Common pattern: x=width, y=unused, z=depth for an axis-aligned rectangle in XZ.
-  math::Vec3 area{10.0f, 0.0f, 10.0f};
+  // Patch area in XZ (x=width, z=depth), centered on the entity transform.
+  math::Vec3 area{14.0f, 0.0f, 14.0f};
 
-  // Instances per square meter (or engine-defined units).
-  float density = 8.0f;
+  // Base density multiplier applied to each layer's density.
+  float densityMultiplier = 1.0f;
 
-  std::uint32_t seed = 12345;
+  std::uint32_t seed = 12345u;
 
-  // Distribution profile (system-defined). Examples: "uniform", "clumped", "poisson".
-  std::string distribution = "poisson";
+  // Terrain-like density mask. High-density zones and empty zones come from this noise.
+  terrain::NoiseConfig densityNoise{.type = terrain::NoiseType::Perlin, .seed = 12345u, .frequency = 0.03f, .octaves = 3,
+                                    .lacunarity = 2.0f, .persistence = 0.55f};
+  float densityNoiseThreshold = 0.42f;
+  float densityNoiseContrast = 3.0f;
+  float densityNoiseStrength = 1.0f;
 
-  // Grass type key used by a foliage library/system (engine-defined).
-  // Examples: "field_grass_short", "savanna_tuft", "jungle_blade".
-  std::string grassType = "field_grass";
+  // Terrain selection (optional). If invalid, systems may use the first visible terrain.
+  EntityId sourceTerrainEntity = kInvalidEntityId;
 
-  // Instance data generation hints.
-  bool generateInstanceData = true;
-  float minScale = 0.8f;
-  float maxScale = 1.2f;
-  float jitter = 1.0f;  // randomness strength (system-defined)
+  // Layers (micro/hero/secondary vegetation). More layers = more variation.
+  std::vector<GrassLayer> layers = {
+      GrassLayer{.species = "GroundCover", .density = 8.0f, .minScale = 0.28f, .maxScale = 0.46f, .maxDistance = 18.0f},
+      GrassLayer{.species = "TallGrass", .density = 3.5f, .minScale = 0.55f, .maxScale = 0.88f, .maxDistance = 30.0f},
+  };
+
+  // Interaction (player/actors) handled in shader as a set of influence spheres.
+  bool interactionEnabled = true;
+  float interactionRadiusMeters = 1.25f;
+  float interactionStrength = 1.0f;
 
   // Render settings hints (engine-defined).
   bool castShadows = false;
@@ -45,4 +99,3 @@ struct GrassPatchComponent {
 };
 
 }  // namespace ecs
-

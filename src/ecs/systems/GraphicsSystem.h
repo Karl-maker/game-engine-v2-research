@@ -226,6 +226,52 @@ class GraphicsSystem final {
       render::AssetRef shader{};
     };
 
+    struct GrassLayerDraw final {
+      std::string species;
+      float density = 0.0f;
+      float minScale = 1.0f;
+      float maxScale = 1.0f;
+      float bladeSpacing = 1.0f;
+      float bendStrength = 0.35f;
+      float curveStrength = 0.18f;
+      float twistStrength = 0.08f;
+      float minSlopeDeg = 0.0f;
+      float maxSlopeDeg = 90.0f;
+      float minAltitude = -10000.0f;
+      float maxAltitude = 10000.0f;
+      float noiseScale = 0.06f;
+      float noiseStrength = 0.65f;
+      float windStrength = 1.0f;
+      float maxDistance = 30.0f;
+    };
+
+    struct GrassDraw final {
+      EntityId entity = kInvalidEntityId;
+      EntityId sourceTerrainEntity = kInvalidEntityId;
+      math::Vec3 position{};
+      math::Vec3 area{18.0f, 0.0f, 18.0f};
+      float densityMultiplier = 1.0f;
+      std::uint32_t seed = 0u;
+      terrain::NoiseConfig densityNoise{};
+      float densityNoiseThreshold = 0.42f;
+      float densityNoiseContrast = 3.0f;
+      float densityNoiseStrength = 1.0f;
+      bool castShadows = false;
+      bool receiveShadows = true;
+      float lodBias = 1.0f;
+
+      bool interactionEnabled = true;
+      float interactionRadiusMeters = 1.25f;
+      float interactionStrength = 1.0f;
+
+      render::AssetRef shader{};
+      render::AssetRef albedoTex{};
+      bool hasAlbedoTex = false;
+      float albedoUvScale = 0.22f;  // world->uv scale (meters^-1)
+
+      std::vector<GrassLayerDraw> layers;
+    };
+
   struct RenderSettingsDraw final {
     bool present = false;
     bool shadowsEnabled = false;
@@ -245,6 +291,7 @@ class GraphicsSystem final {
     std::vector<FogDraw> fogVolumes;
     std::vector<SkyDraw> skies;
     std::vector<RockDraw> rocks;
+    std::vector<GrassDraw> grasses;
     std::vector<LightDraw> lights;
     RenderSettingsDraw settings{};
     std::vector<DebugLine> debugLines;

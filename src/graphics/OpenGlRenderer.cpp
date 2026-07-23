@@ -565,6 +565,11 @@ void OpenGlRenderer::stop() {
   }
   m_rockMeshes.clear();
 
+  for (auto& [_, m] : m_grassMeshes) {
+    destroyGrassMesh(m);
+  }
+  m_grassMeshes.clear();
+
   for (auto& [_, m] : m_gpuMeshes) {
     destroyGpuMesh(m);
   }
@@ -642,6 +647,14 @@ void OpenGlRenderer::destroyTerrainMesh(TerrainMesh& m) {
 }
 
 void OpenGlRenderer::destroyRockMesh(RockMesh& m) {
+  if (m.instanceVbo) glDeleteBuffers(1, &m.instanceVbo);
+  if (m.ebo) glDeleteBuffers(1, &m.ebo);
+  if (m.vbo) glDeleteBuffers(1, &m.vbo);
+  if (m.vao) glDeleteVertexArrays(1, &m.vao);
+  m = {};
+}
+
+void OpenGlRenderer::destroyGrassMesh(GrassMesh& m) {
   if (m.instanceVbo) glDeleteBuffers(1, &m.instanceVbo);
   if (m.ebo) glDeleteBuffers(1, &m.ebo);
   if (m.vbo) glDeleteBuffers(1, &m.vbo);
@@ -1075,6 +1088,447 @@ OpenGlRenderer::RockMesh* OpenGlRenderer::getOrCreateRockMesh(
                allInstances.empty() ? nullptr : allInstances.data(), GL_DYNAMIC_DRAW);
 
   auto [insIt, _] = m_rockMeshes.emplace(id, mesh);
+  return &insIt->second;
+}
+
+OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
+    const ecs::systems::GraphicsSystem::FrameSnapshot::GrassDraw& g,
+    std::size_t layerIndex,
+    const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain) {
+  if (layerIndex >= g.layers.size()) return nullptr;
+  const auto& layer = g.layers[layerIndex];
+
+  const auto makeKey = [&](std::uint32_t entityId, std::size_t li) -> std::uint64_t {
+    return (static_cast<std::uint64_t>(entityId) << 32) ^ static_cast<std::uint64_t>(li & 0xFFFFFFFFu);
+  };
+
+  const std::uint32_t entityId = static_cast<std::uint32_t>(g.entity);
+  const std::uint64_t key = makeKey(entityId, layerIndex);
+  auto it = m_grassMeshes.find(key);
+
+  const float density = std::max(0.0f, g.densityMultiplier) * std::max(0.0f, layer.density);
+
+  auto needsRebuild = [&](const GrassMesh& m) {
+    return m.seed != g.seed || m.area.x != g.area.x || m.area.z != g.area.z || m.density != density || m.minScale != layer.minScale ||
+           m.maxScale != layer.maxScale || m.bladeSpacing != layer.bladeSpacing || m.minSlopeDeg != layer.minSlopeDeg ||
+           m.maxSlopeDeg != layer.maxSlopeDeg || m.bendStrength != layer.bendStrength || m.curveStrength != layer.curveStrength ||
+           m.twistStrength != layer.twistStrength ||
+           m.minAltitude != layer.minAltitude || m.maxAltitude != layer.maxAltitude || m.noiseScale != layer.noiseScale ||
+           m.noiseStrength != layer.noiseStrength || m.species != layer.species ||
+           m.densityNoise.frequency != g.densityNoise.frequency || m.densityNoise.octaves != g.densityNoise.octaves ||
+           m.densityNoise.lacunarity != g.densityNoise.lacunarity || m.densityNoise.persistence != g.densityNoise.persistence ||
+           m.densityNoise.seed != g.densityNoise.seed || m.densityNoiseThreshold != g.densityNoiseThreshold ||
+           m.densityNoiseContrast != g.densityNoiseContrast || m.densityNoiseStrength != g.densityNoiseStrength;
+  };
+
+  if (it != m_grassMeshes.end() && !needsRebuild(it->second)) return &it->second;
+
+  if (it != m_grassMeshes.end()) {
+    destroyGrassMesh(it->second);
+    m_grassMeshes.erase(it);
+  }
+
+  GrassMesh mesh{};
+  mesh.seed = g.seed;
+  mesh.area = g.area;
+  mesh.density = density;
+  mesh.minScale = layer.minScale;
+  mesh.maxScale = layer.maxScale;
+  mesh.bladeSpacing = layer.bladeSpacing;
+  mesh.bendStrength = layer.bendStrength;
+  mesh.curveStrength = layer.curveStrength;
+  mesh.twistStrength = layer.twistStrength;
+  mesh.minSlopeDeg = layer.minSlopeDeg;
+  mesh.maxSlopeDeg = layer.maxSlopeDeg;
+  mesh.minAltitude = layer.minAltitude;
+  mesh.maxAltitude = layer.maxAltitude;
+  mesh.noiseScale = layer.noiseScale;
+  mesh.noiseStrength = layer.noiseStrength;
+  mesh.densityNoise = g.densityNoise;
+  if (mesh.densityNoise.seed == 0u) mesh.densityNoise.seed = g.seed;
+  mesh.densityNoiseThreshold = g.densityNoiseThreshold;
+  mesh.densityNoiseContrast = g.densityNoiseContrast;
+  mesh.densityNoiseStrength = g.densityNoiseStrength;
+  mesh.species = layer.species;
+
+  struct GrassVert {
+    float px, py, pz;
+    float u, v;
+  };
+  struct GrassInstance {
+    float px, py, pz;
+    float scale;
+    float rot;
+    float var;
+  };
+
+  // Build a simple "3D clump" mesh: many vertical ribbons (segmented quads) arranged radially.
+  int bladeCount = 10;
+  int segments = 4;
+  float baseWidth = 0.055f;
+  float radialSpread = 0.080f;
+  float bladeHeightMin = 0.70f;
+  float bladeHeightMax = 1.00f;
+  float leanStrength = 0.08f;
+  if (mesh.species == "GroundCover") {
+    bladeCount = 8;
+    segments = 3;
+    baseWidth = 0.048f;
+    radialSpread = 0.060f;
+    bladeHeightMin = 0.45f;
+    bladeHeightMax = 0.78f;
+    leanStrength = 0.06f;
+  } else if (mesh.species == "TallGrass") {
+    bladeCount = 12;
+    segments = 4;
+    baseWidth = 0.052f;
+    radialSpread = 0.090f;
+    bladeHeightMin = 0.65f;
+    bladeHeightMax = 0.92f;
+    leanStrength = 0.12f;
+  } else if (mesh.species == "BroadLeafGrass") {
+    bladeCount = 7;
+    segments = 4;
+    baseWidth = 0.095f;
+    radialSpread = 0.085f;
+    bladeHeightMin = 0.55f;
+    bladeHeightMax = 0.86f;
+    leanStrength = 0.10f;
+  } else if (mesh.species == "DryGrass") {
+    bladeCount = 10;
+    segments = 4;
+    baseWidth = 0.050f;
+    radialSpread = 0.090f;
+    bladeHeightMin = 0.58f;
+    bladeHeightMax = 0.88f;
+    leanStrength = 0.12f;
+  } else if (mesh.species == "Weed") {
+    bladeCount = 9;
+    segments = 4;
+    baseWidth = 0.060f;
+    radialSpread = 0.090f;
+    bladeHeightMin = 0.58f;
+    bladeHeightMax = 0.94f;
+    leanStrength = 0.10f;
+  } else if (mesh.species == "SmallFlower") {
+    bladeCount = 6;
+    segments = 3;
+    baseWidth = 0.080f;
+    radialSpread = 0.070f;
+    bladeHeightMin = 0.62f;
+    bladeHeightMax = 0.90f;
+    leanStrength = 0.08f;
+  }
+  radialSpread *= std::max(0.2f, layer.bladeSpacing);
+
+  auto hashStr = [](const std::string& s) -> std::uint32_t {
+    std::uint32_t h = 2166136261u;
+    for (unsigned char c : s) {
+      h ^= static_cast<std::uint32_t>(c);
+      h *= 16777619u;
+    }
+    return h;
+  };
+
+  const std::uint32_t geoSeed = hashStr(mesh.species) ^ 0xB5297A4Du;
+
+  auto rand01 = [&](std::uint32_t n) {
+    n ^= n >> 16;
+    n *= 0x7feb352dU;
+    n ^= n >> 15;
+    n *= 0x846ca68bU;
+    n ^= n >> 16;
+    return (n & 0x00FFFFFFu) / 16777216.0f;
+  };
+
+  std::vector<GrassVert> verts;
+  std::vector<std::uint32_t> idxs;
+  verts.reserve(static_cast<std::size_t>(bladeCount) * static_cast<std::size_t>(segments + 1) * 2u);
+  idxs.reserve(static_cast<std::size_t>(bladeCount) * static_cast<std::size_t>(segments) * 6u);
+
+  const float twoPi = 6.2831853f;
+  for (int b = 0; b < bladeCount; ++b) {
+    const float rb = rand01(geoSeed + static_cast<std::uint32_t>(b) * 2654435761u);
+    const float yaw = (static_cast<float>(b) / std::max(1.0f, static_cast<float>(bladeCount))) * twoPi + (rb - 0.5f) * 0.55f;
+    const float c = std::cos(yaw);
+    const float s = std::sin(yaw);
+    const float w = baseWidth * (0.75f + 0.70f * rand01(geoSeed + static_cast<std::uint32_t>(b) * 97531u));
+    const float ro = radialSpread * (rand01(geoSeed + static_cast<std::uint32_t>(b) * 71237u) - 0.5f);
+    const float bladeHeight =
+        bladeHeightMin + (bladeHeightMax - bladeHeightMin) * rand01(geoSeed + static_cast<std::uint32_t>(b) * 42437u);
+    const float leanYaw = rand01(geoSeed + static_cast<std::uint32_t>(b) * 17713u) * twoPi;
+    const float leanAmount = leanStrength * (0.35f + 0.65f * rand01(geoSeed + static_cast<std::uint32_t>(b) * 18149u));
+    const float leanX = std::cos(leanYaw) * leanAmount;
+    const float leanZ = std::sin(leanYaw) * leanAmount;
+    const float curl = (rand01(geoSeed + static_cast<std::uint32_t>(b) * 22013u) - 0.5f) * 0.06f;
+    const float ox = c * ro;
+    const float oz = s * ro;
+
+    const std::uint32_t base = static_cast<std::uint32_t>(verts.size());
+    for (int i = 0; i <= segments; ++i) {
+      const float v = static_cast<float>(i) / std::max(1.0f, static_cast<float>(segments));
+      const float taper = std::pow(1.0f - v, 1.25f);
+      const float ww = w * (0.18f + 0.82f * taper);
+      const float h = bladeHeight * v;
+      const float bend = h * h * (0.45f + curl);
+
+      const float lx0 = -0.5f * ww;
+      const float lx1 = 0.5f * ww;
+      const float y = h;
+
+      // Rotate around Y.
+      const float x0 = c * lx0;
+      const float z0 = s * lx0;
+      const float x1 = c * lx1;
+      const float z1 = s * lx1;
+      const float bendX = leanX * bend;
+      const float bendZ = leanZ * bend;
+
+      verts.push_back(GrassVert{x0 + ox + bendX, y, z0 + oz + bendZ, 0.0f, v});
+      verts.push_back(GrassVert{x1 + ox + bendX, y, z1 + oz + bendZ, 1.0f, v});
+    }
+
+    for (int i = 0; i < segments; ++i) {
+      const std::uint32_t i0 = base + static_cast<std::uint32_t>(i * 2 + 0);
+      const std::uint32_t i1 = base + static_cast<std::uint32_t>(i * 2 + 1);
+      const std::uint32_t i2 = base + static_cast<std::uint32_t>((i + 1) * 2 + 0);
+      const std::uint32_t i3 = base + static_cast<std::uint32_t>((i + 1) * 2 + 1);
+      idxs.push_back(i0);
+      idxs.push_back(i2);
+      idxs.push_back(i1);
+      idxs.push_back(i1);
+      idxs.push_back(i2);
+      idxs.push_back(i3);
+    }
+  }
+
+  mesh.indexCount = static_cast<std::uint32_t>(idxs.size());
+
+  glGenVertexArrays(1, &mesh.vao);
+  glGenBuffers(1, &mesh.vbo);
+  glGenBuffers(1, &mesh.ebo);
+  glGenBuffers(1, &mesh.instanceVbo);
+
+  glBindVertexArray(mesh.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+  glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(verts.size() * sizeof(GrassVert)), verts.data(), GL_STATIC_DRAW);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(idxs.size() * sizeof(std::uint32_t)), idxs.data(), GL_STATIC_DRAW);
+
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GrassVert), reinterpret_cast<void*>(0));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GrassVert), reinterpret_cast<void*>(sizeof(float) * 3));
+
+  glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
+  glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(0));
+  glVertexAttribDivisor(2, 1);
+  glEnableVertexAttribArray(3);
+  glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 3));
+  glVertexAttribDivisor(3, 1);
+  glEnableVertexAttribArray(4);
+  glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 4));
+  glVertexAttribDivisor(4, 1);
+  glEnableVertexAttribArray(5);
+  glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 5));
+  glVertexAttribDivisor(5, 1);
+
+  glBindVertexArray(0);
+
+  // Instance generation (noisy density + slope/altitude masks).
+  const float areaM2 = std::max(0.0f, g.area.x) * std::max(0.0f, g.area.z);
+  const std::uint32_t maxInstances = static_cast<std::uint32_t>(
+      std::min(60000.0f, std::max(0.0f, areaM2 * std::max(0.0f, density))));
+
+  terrain::PerlinNoise2D densityNoise(g.seed ^ (0x9E3779B9u + static_cast<std::uint32_t>(layerIndex) * 1013u));
+  terrain::PerlinNoise2D heightNoise(groundTerrain ? groundTerrain->noiseSeed : g.seed);
+  const terrain::NoiseConfig groundCfg = groundTerrain ? groundTerrain->noise : terrain::NoiseConfig{};
+  const float groundHeightScale = groundTerrain ? groundTerrain->heightScaleMeters : 0.0f;
+
+  const float terrainSizeX =
+      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridWidth)) * groundTerrain->cellSizeMeters) : 0.0f;
+  const float terrainSizeZ =
+      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridHeight)) * groundTerrain->cellSizeMeters) : 0.0f;
+  const float terrainHalfW = terrainSizeX * 0.5f;
+  const float terrainHalfD = terrainSizeZ * 0.5f;
+
+  auto sampleGroundY = [&](float worldX, float worldZ) -> float {
+    float groundY = groundTerrain ? groundTerrain->position.y : g.position.y;
+    if (!groundTerrain || groundHeightScale == 0.0f) return groundY;
+    float localX = (worldX - groundTerrain->position.x) + terrainHalfW;
+    float localZ = (worldZ - groundTerrain->position.z) + terrainHalfD;
+    localX = std::clamp(localX, 0.0f, terrainSizeX);
+    localZ = std::clamp(localZ, 0.0f, terrainSizeZ);
+    groundY += heightNoise.sampleFractal(localX, localZ, groundCfg) * groundHeightScale;
+    return groundY;
+  };
+
+  auto sampleSlopeDeg = [&](float worldX, float worldZ) -> float {
+    const float eps = 0.35f;
+    const float hL = sampleGroundY(worldX - eps, worldZ);
+    const float hR = sampleGroundY(worldX + eps, worldZ);
+    const float hD = sampleGroundY(worldX, worldZ - eps);
+    const float hU = sampleGroundY(worldX, worldZ + eps);
+    const float dhdx = (hR - hL) / (2.0f * eps);
+    const float dhdz = (hU - hD) / (2.0f * eps);
+    const float slopeRad = std::atan(std::sqrt(dhdx * dhdx + dhdz * dhdz));
+    return slopeRad * 57.2957795f;
+  };
+
+  terrain::NoiseConfig densCfg;
+  densCfg.frequency = std::max(0.005f, layer.noiseScale);
+  densCfg.octaves = 2;
+  densCfg.persistence = 0.55f;
+  densCfg.lacunarity = 2.0f;
+  terrain::NoiseConfig densityMaskCfg = g.densityNoise;
+  if (densityMaskCfg.frequency <= 0.0f) densityMaskCfg.frequency = 0.03f;
+  if (densityMaskCfg.octaves <= 0) densityMaskCfg.octaves = 1;
+  if (densityMaskCfg.persistence <= 0.0f) densityMaskCfg.persistence = 0.55f;
+  if (densityMaskCfg.lacunarity <= 0.0f) densityMaskCfg.lacunarity = 2.0f;
+  densityMaskCfg.seed = g.densityNoise.seed != 0u ? g.densityNoise.seed : g.seed;
+
+  const float chunkSize = std::max(2.0f, mesh.chunkSizeMeters);
+  const int chunkCountX = std::max(1, static_cast<int>(std::ceil(std::max(0.0f, g.area.x) / chunkSize)));
+  const int chunkCountZ = std::max(1, static_cast<int>(std::ceil(std::max(0.0f, g.area.z) / chunkSize)));
+  const int chunkCount = chunkCountX * chunkCountZ;
+  const float halfW = g.area.x * 0.5f;
+  const float halfD = g.area.z * 0.5f;
+
+  struct ChunkBuild final {
+    math::Vec3 center{};
+    float radius = 0.0f;
+    std::vector<GrassInstance> instances;
+  };
+
+  std::vector<ChunkBuild> chunkBuilds;
+  chunkBuilds.resize(static_cast<std::size_t>(chunkCount));
+  for (int cz = 0; cz < chunkCountZ; ++cz) {
+    for (int cx = 0; cx < chunkCountX; ++cx) {
+      const int idx = cz * chunkCountX + cx;
+      auto& cb = chunkBuilds[static_cast<std::size_t>(idx)];
+      const float x0 = -halfW + static_cast<float>(cx) * chunkSize;
+      const float z0 = -halfD + static_cast<float>(cz) * chunkSize;
+      const float x1 = std::min(x0 + chunkSize, halfW);
+      const float z1 = std::min(z0 + chunkSize, halfD);
+      cb.center = {g.position.x + (x0 + x1) * 0.5f, g.position.y, g.position.z + (z0 + z1) * 0.5f};
+      const float rx = (x1 - x0) * 0.5f;
+      const float rz = (z1 - z0) * 0.5f;
+      cb.radius = std::sqrt(rx * rx + rz * rz) + 1.6f;
+      cb.instances.reserve(static_cast<std::size_t>(maxInstances / std::max(1, chunkCount)));
+    }
+  }
+
+  const std::uint32_t seed = g.seed ^ (static_cast<std::uint32_t>(layerIndex) * 0x85EBCA6Bu);
+
+  struct Cluster final {
+    float x = 0.0f;
+    float z = 0.0f;
+    float radius = 1.0f;
+    float strength = 1.0f;
+  };
+
+  const int clusterCount = std::clamp(static_cast<int>(std::ceil(areaM2 / 300.0f)), 3, 8);
+  std::vector<Cluster> clusters;
+  clusters.reserve(static_cast<std::size_t>(clusterCount));
+  for (int i = 0; i < clusterCount; ++i) {
+    const std::uint32_t ci = seed ^ (0x9E3779B9u + static_cast<std::uint32_t>(i) * 2246822519u);
+    Cluster c{};
+    c.x = (rand01(ci + 11u) * 2.0f - 1.0f) * halfW;
+    c.z = (rand01(ci + 29u) * 2.0f - 1.0f) * halfD;
+    const float minRadius = std::max(2.5f, std::min(halfW, halfD) * 0.16f);
+    const float maxRadius = std::max(minRadius + 0.1f, std::min(halfW, halfD) * 0.36f);
+    c.radius = minRadius + (maxRadius - minRadius) * rand01(ci + 47u);
+    c.strength = 0.70f + 0.55f * rand01(ci + 71u);
+    clusters.push_back(c);
+  }
+
+  const float clusterBlend = 0.40f + 0.35f * std::clamp(layer.noiseStrength, 0.0f, 1.0f);
+  const float clusterSharpness = 1.35f + 1.75f * std::clamp(layer.noiseStrength, 0.0f, 1.0f);
+
+  std::uint32_t attempts = 0;
+  const std::uint32_t maxAttempts = maxInstances * 12u + 2048u;
+  std::size_t generated = 0;
+
+  while (generated < static_cast<std::size_t>(maxInstances) && attempts < maxAttempts) {
+    const std::uint32_t idx = attempts++;
+    const float rx = rand01(seed + idx * 9781u);
+    const float rz = rand01(seed + idx * 6271u);
+    const float rScale = rand01(seed + idx * 3137u);
+    const float rRot = rand01(seed + idx * 1951u);
+    const float rVar = rand01(seed + idx * 8111u);
+
+    const float x = (rx * 2.0f - 1.0f) * halfW;
+    const float z = (rz * 2.0f - 1.0f) * halfD;
+
+    const float worldX = g.position.x + x;
+    const float worldZ = g.position.z + z;
+
+    const float n = (densityNoise.sampleFractal(worldX, worldZ, densCfg) + 1.0f) * 0.5f;
+    const float densityMaskRaw = (densityNoise.sampleFractal(worldX, worldZ, densityMaskCfg) + 1.0f) * 0.5f;
+    const float densityMaskContrast = std::max(0.1f, g.densityNoiseContrast);
+    const float densityMaskThreshold = g.densityNoiseThreshold;
+    float densityMask =
+        std::clamp((densityMaskRaw - densityMaskThreshold) / std::max(0.0001f, 1.0f - densityMaskThreshold), 0.0f, 1.0f);
+    densityMask = std::pow(densityMask, densityMaskContrast) * std::clamp(g.densityNoiseStrength, 0.0f, 1.0f);
+    float clusterMask = 0.0f;
+    for (const auto& c : clusters) {
+      const float dx = x - c.x;
+      const float dz = z - c.z;
+      const float dist = std::sqrt(dx * dx + dz * dz);
+      const float falloff = std::clamp(1.0f - (dist / std::max(0.001f, c.radius)), 0.0f, 1.0f);
+      clusterMask = std::max(clusterMask, c.strength * std::pow(falloff, clusterSharpness));
+    }
+    clusterMask = std::clamp(clusterMask, 0.0f, 1.0f);
+
+    const float ns = std::clamp(layer.noiseStrength, 0.0f, 1.0f);
+    const float noiseMask = (ns <= 0.0001f) ? 1.0f : std::clamp((n - (1.0f - ns)) / ns, 0.0f, 1.0f);
+    const float t = std::clamp((clusterMask * clusterBlend + noiseMask * (1.0f - clusterBlend)) * densityMask, 0.0f, 1.0f);
+    if (rand01(seed ^ (idx * 1013904223u)) > t) continue;
+
+    const float groundY = sampleGroundY(worldX, worldZ);
+    if (groundY < layer.minAltitude || groundY > layer.maxAltitude) continue;
+
+    const float slopeDeg = sampleSlopeDeg(worldX, worldZ);
+    if (slopeDeg < layer.minSlopeDeg || slopeDeg > layer.maxSlopeDeg) continue;
+
+    GrassInstance inst{};
+    inst.px = worldX;
+    inst.py = groundY;
+    inst.pz = worldZ;
+    inst.scale = layer.minScale + (layer.maxScale - layer.minScale) * std::pow(rScale, 1.8f);
+    inst.rot = rRot * twoPi;
+    inst.var = rVar;
+
+    const int cx = std::clamp(static_cast<int>((x + halfW) / chunkSize), 0, chunkCountX - 1);
+    const int cz = std::clamp(static_cast<int>((z + halfD) / chunkSize), 0, chunkCountZ - 1);
+    chunkBuilds[static_cast<std::size_t>(cz * chunkCountX + cx)].instances.push_back(inst);
+    generated += 1;
+  }
+
+  std::vector<GrassInstance> allInstances;
+  allInstances.reserve(maxInstances);
+  mesh.chunks.clear();
+  mesh.chunks.reserve(chunkBuilds.size());
+
+  for (const auto& cb : chunkBuilds) {
+    if (cb.instances.empty()) continue;
+    GrassMesh::Chunk c;
+    c.center = cb.center;
+    c.radius = cb.radius;
+    c.instanceOffset = static_cast<std::uint32_t>(allInstances.size());
+    c.instanceCount = static_cast<std::uint32_t>(cb.instances.size());
+    allInstances.insert(allInstances.end(), cb.instances.begin(), cb.instances.end());
+    mesh.chunks.push_back(c);
+  }
+
+  mesh.instanceCapacity = static_cast<std::uint32_t>(allInstances.size());
+  glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
+  glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(allInstances.size() * sizeof(GrassInstance)),
+               allInstances.empty() ? nullptr : allInstances.data(), GL_DYNAMIC_DRAW);
+
+  auto [insIt, _] = m_grassMeshes.emplace(key, mesh);
   return &insIt->second;
 }
 
@@ -1834,8 +2288,165 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glBindVertexArray(0);
   }
 
-	  // Choose a ground terrain to anchor grass height (first terrain for now).
-	  const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain = frame.terrains.empty() ? nullptr : &frame.terrains[0];
+  // Choose a ground terrain to anchor procedural scatters (first terrain for now).
+  const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain = frame.terrains.empty() ? nullptr : &frame.terrains[0];
+
+  // Grass pass (GPU-instanced clumps; no ECS entity per blade).
+  if (!frame.grasses.empty()) {
+    struct GrassInstance {
+      float px, py, pz;
+      float scale;
+      float rot;
+      float var;
+    };
+
+    const float timeSeconds = static_cast<float>(glfwGetTime());
+
+    math::Vec3 sunDir{-0.2f, -1.0f, -0.3f};
+    math::Vec3 sunCol{1.0f, 1.0f, 1.0f};
+    float sunIntensity = 1.0f;
+    for (const auto& l : frame.lights) {
+      if (l.type == 0) {
+        sunDir = math::normalize(l.direction);
+        sunCol = l.color;
+        sunIntensity = l.intensity;
+        break;
+      }
+    }
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+
+    const auto findTerrain = [&](ecs::EntityId id) -> const ecs::systems::GraphicsSystem::TerrainDraw* {
+      for (const auto& t : frame.terrains) {
+        if (t.entity == id) return &t;
+      }
+      return nullptr;
+    };
+
+    for (const auto& gr : frame.grasses) {
+      const ecs::systems::GraphicsSystem::TerrainDraw* gt =
+          (gr.sourceTerrainEntity != ecs::kInvalidEntityId) ? findTerrain(gr.sourceTerrainEntity) : groundTerrain;
+
+      const std::string shaderKey = gr.shader.key.empty() ? "graphics/shaders/grass_clumps" : gr.shader.key;
+      const ShaderService::Program* program = m_shaders.getOrCreate(shaderKey);
+      if (!program || !program->programId) continue;
+
+      glUseProgram(program->programId);
+
+      const GLint locVp = glGetUniformLocation(program->programId, "u_ViewProj");
+      if (locVp >= 0) glUniformMatrix4fv(locVp, 1, GL_FALSE, viewProj.m);
+      const GLint locCam = glGetUniformLocation(program->programId, "u_CameraPos");
+      if (locCam >= 0) glUniform3f(locCam, frame.camera.position.x, frame.camera.position.y, frame.camera.position.z);
+      const GLint locTime = glGetUniformLocation(program->programId, "u_Time");
+      if (locTime >= 0) glUniform1f(locTime, timeSeconds);
+
+      const GLint locSunDir = glGetUniformLocation(program->programId, "u_SunDir");
+      if (locSunDir >= 0) glUniform3f(locSunDir, sunDir.x, sunDir.y, sunDir.z);
+      const GLint locSunCol = glGetUniformLocation(program->programId, "u_SunColor");
+      if (locSunCol >= 0) glUniform3f(locSunCol, sunCol.x, sunCol.y, sunCol.z);
+      const GLint locSunInt = glGetUniformLocation(program->programId, "u_SunIntensity");
+      if (locSunInt >= 0) glUniform1f(locSunInt, sunIntensity);
+
+      const std::string albedoPath = gr.hasAlbedoTex ? gr.albedoTex.key : "assets/textures/grass/grass_color.jpg";
+      const GLuint albedoId = m_textures.requestTexture(albedoPath, true);
+      const bool useAlbedo = albedoId != 0;
+      const GLint locUseAlb = glGetUniformLocation(program->programId, "u_UseAlbedo");
+      if (locUseAlb >= 0) glUniform1i(locUseAlb, useAlbedo ? 1 : 0);
+      const GLint locAlbScale = glGetUniformLocation(program->programId, "u_AlbedoUvScale");
+      if (locAlbScale >= 0) glUniform1f(locAlbScale, gr.albedoUvScale);
+      if (useAlbedo) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, albedoId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_AlbedoTex");
+        if (loc >= 0) glUniform1i(loc, 0);
+      }
+
+      const int interactionCount = gr.interactionEnabled ? 1 : 0;
+      const GLint locIc = glGetUniformLocation(program->programId, "u_InteractionCount");
+      if (locIc >= 0) glUniform1i(locIc, interactionCount);
+      if (interactionCount > 0) {
+        const GLint locI0 = glGetUniformLocation(program->programId, "u_InteractionsPosRad[0]");
+        if (locI0 >= 0) {
+          glUniform4f(locI0,
+                      frame.camera.position.x,
+                      frame.camera.position.y,
+                      frame.camera.position.z,
+                      std::max(0.01f, gr.interactionRadiusMeters));
+        }
+        const GLint locS0 = glGetUniformLocation(program->programId, "u_InteractionsStrength[0]");
+        if (locS0 >= 0) glUniform1f(locS0, gr.interactionStrength);
+      }
+
+      for (std::size_t li = 0; li < gr.layers.size(); ++li) {
+        const auto& layer = gr.layers[li];
+
+        GrassMesh* mesh = getOrCreateGrassMesh(gr, li, gt);
+        if (!mesh || !mesh->vao || mesh->instanceCapacity == 0 || mesh->chunks.empty()) continue;
+
+        const float lodBias = std::max(0.25f, gr.lodBias);
+        const float maxDist = std::max(2.0f, layer.maxDistance / lodBias);
+        const float fadeRange = std::min(8.0f, std::max(2.0f, maxDist * 0.25f));
+        const float fadeNear = std::max(0.0f, maxDist - fadeRange);
+
+        const GLint locFadeNear = glGetUniformLocation(program->programId, "u_FadeNear");
+        const GLint locFadeFar = glGetUniformLocation(program->programId, "u_FadeFar");
+        if (locFadeNear >= 0) glUniform1f(locFadeNear, fadeNear);
+        if (locFadeFar >= 0) glUniform1f(locFadeFar, maxDist);
+
+      const GLint locWind = glGetUniformLocation(program->programId, "u_WindStrength");
+      if (locWind >= 0) glUniform1f(locWind, layer.windStrength);
+      const GLint locBend = glGetUniformLocation(program->programId, "u_BladeBendStrength");
+      if (locBend >= 0) glUniform1f(locBend, mesh->bendStrength);
+      const GLint locCurve = glGetUniformLocation(program->programId, "u_BladeCurveStrength");
+      if (locCurve >= 0) glUniform1f(locCurve, mesh->curveStrength);
+      const GLint locTwist = glGetUniformLocation(program->programId, "u_BladeTwistStrength");
+      if (locTwist >= 0) glUniform1f(locTwist, mesh->twistStrength);
+      const GLint locWindDir = glGetUniformLocation(program->programId, "u_WindDirXZ");
+      if (locWindDir >= 0) glUniform2f(locWindDir, 0.92f, 0.38f);
+        const GLint locWindSpd = glGetUniformLocation(program->programId, "u_WindSpeed");
+        if (locWindSpd >= 0) glUniform1f(locWindSpd, 1.25f);
+
+        math::Vec3 tint{0.26f, 0.52f, 0.18f};
+        if (layer.species == "GroundCover") tint = {0.20f, 0.45f, 0.16f};
+        else if (layer.species == "DryGrass") tint = {0.44f, 0.50f, 0.18f};
+        else if (layer.species == "BroadLeafGrass") tint = {0.28f, 0.56f, 0.20f};
+        else if (layer.species == "SmallFlower") tint = {0.34f, 0.56f, 0.22f};
+        const GLint locTint = glGetUniformLocation(program->programId, "u_SpeciesTint");
+        if (locTint >= 0) glUniform3f(locTint, tint.x, tint.y, tint.z);
+
+        glBindVertexArray(mesh->vao);
+        glBindBuffer(GL_ARRAY_BUFFER, mesh->instanceVbo);
+
+        for (const auto& c : mesh->chunks) {
+          const math::Vec3 d = frame.camera.position - c.center;
+          const float dist = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z) - c.radius;
+          if (dist > maxDist) continue;
+
+          const std::size_t baseByte = static_cast<std::size_t>(c.instanceOffset) * sizeof(GrassInstance);
+          glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(baseByte + 0));
+          glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
+                                reinterpret_cast<void*>(baseByte + sizeof(float) * 3));
+          glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
+                                reinterpret_cast<void*>(baseByte + sizeof(float) * 4));
+          glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
+                                reinterpret_cast<void*>(baseByte + sizeof(float) * 5));
+          glDrawElementsInstanced(GL_TRIANGLES,
+                                  static_cast<GLsizei>(mesh->indexCount),
+                                  GL_UNSIGNED_INT,
+                                  nullptr,
+                                  static_cast<GLsizei>(c.instanceCount));
+        }
+
+        glBindVertexArray(0);
+      }
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, 0);
+    }
+  }
 
   // Mesh pass (async-loaded glTF/extension-based assets).
   for (const auto& m : frame.meshes) {

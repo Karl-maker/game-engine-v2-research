@@ -6,6 +6,7 @@
 #include "ecs/components/ColliderComponent.h"
 #include "ecs/components/CombatVolumeComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
+#include "ecs/components/GrassPatchComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/MeshComponent.h"
 #include "ecs/components/RenderSettingsComponent.h"
@@ -279,6 +280,21 @@ void extractRockLayerTextures(const ecs::ShaderComponent& shader, GraphicsSystem
   tryBind("rock_displacement", out.rockDisplacementTex, out.hasRockDisplacementTex);
 }
 
+void extractGrassTextures(const ecs::ShaderComponent& shader, GraphicsSystem::FrameSnapshot::GrassDraw& out) {
+  auto tryBind = [&](const char* slot, render::AssetRef& dst, bool& has) {
+    for (const auto& t : shader.textures) {
+      if (t.slot == slot && t.texture.enabled && !t.texture.key.empty()) {
+        dst = t.texture;
+        has = true;
+        return;
+      }
+    }
+  };
+
+  tryBind("grass_albedo", out.albedoTex, out.hasAlbedoTex);
+  if (!out.hasAlbedoTex) tryBind("albedo", out.albedoTex, out.hasAlbedoTex);
+}
+
 }  // namespace
 
 const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& registry) {
@@ -290,6 +306,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
   m_frame.fogVolumes.clear();
   m_frame.skies.clear();
   m_frame.rocks.clear();
+  m_frame.grasses.clear();
   m_frame.lights.clear();
   m_frame.settings = {};
 
@@ -609,6 +626,63 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.receiveShadows = rocks.receiveShadows;
         draw.shader = shader.shader;
         m_frame.rocks.push_back(std::move(draw));
+      });
+
+  // --- Grass patches with shaders ---
+  registry.view<ecs::GrassPatchComponent, ecs::ShaderComponent, ecs::TransformComponent>(
+      [&](ecs::EntityId id,
+          const ecs::GrassPatchComponent& grass,
+          const ecs::ShaderComponent& shader,
+          const ecs::TransformComponent& tr) {
+        if (!grass.enabled) return;
+        if (!shader.enabled) return;
+        if (grass.layers.empty()) return;
+
+        FrameSnapshot::GrassDraw draw;
+        draw.entity = id;
+        draw.sourceTerrainEntity = grass.sourceTerrainEntity;
+        draw.position = tr.position;
+        draw.area = grass.area;
+        draw.densityMultiplier = grass.densityMultiplier;
+        draw.seed = grass.seed;
+        draw.densityNoise = grass.densityNoise;
+        draw.densityNoiseThreshold = grass.densityNoiseThreshold;
+        draw.densityNoiseContrast = grass.densityNoiseContrast;
+        draw.densityNoiseStrength = grass.densityNoiseStrength;
+        draw.castShadows = grass.castShadows;
+        draw.receiveShadows = grass.receiveShadows;
+        draw.lodBias = grass.lodBias;
+        draw.interactionEnabled = grass.interactionEnabled;
+        draw.interactionRadiusMeters = grass.interactionRadiusMeters;
+        draw.interactionStrength = grass.interactionStrength;
+        draw.shader = shader.shader;
+
+        extractGrassTextures(shader, draw);
+        (void)readFloatParam(shader, "grassAlbedoUvScale", draw.albedoUvScale);
+
+        draw.layers.reserve(grass.layers.size());
+        for (const auto& l : grass.layers) {
+          FrameSnapshot::GrassLayerDraw ld;
+          ld.species = l.species;
+          ld.density = l.density;
+          ld.minScale = l.minScale;
+          ld.maxScale = l.maxScale;
+          ld.bladeSpacing = l.bladeSpacing;
+          ld.bendStrength = l.bendStrength;
+          ld.curveStrength = l.curveStrength;
+          ld.twistStrength = l.twistStrength;
+          ld.minSlopeDeg = l.minSlopeDeg;
+          ld.maxSlopeDeg = l.maxSlopeDeg;
+          ld.minAltitude = l.minAltitude;
+          ld.maxAltitude = l.maxAltitude;
+          ld.noiseScale = l.noiseScale;
+          ld.noiseStrength = l.noiseStrength;
+          ld.windStrength = l.windStrength;
+          ld.maxDistance = l.maxDistance;
+          draw.layers.push_back(std::move(ld));
+        }
+
+        m_frame.grasses.push_back(std::move(draw));
       });
 
   return m_frame;

@@ -359,6 +359,55 @@ void GameplayDemoGame::onStart() {
     shader.parameters.push_back({"dirtSinksEnabled", false});
   }
 
+  // Grass patches (instanced clumps; layered for variation).
+  {
+    const ecs::EntityId grass = m_registry.createEntity("grass_patch");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(grass);
+    tr.position = {0.0f, 0.0f, 0.0f};
+
+    auto& gp = m_registry.emplace<ecs::GrassPatchComponent>(grass);
+    gp.sourceTerrainEntity = m_terrain;
+    gp.area = {42.0f, 0.0f, 42.0f};
+    gp.seed = 9001u;
+    gp.densityMultiplier = 1.0f;
+    gp.densityNoise.seed = 1777u;
+    gp.densityNoise.frequency = 0.022f;
+    gp.densityNoise.octaves = 2;
+    gp.densityNoise.persistence = 0.50f;
+    gp.densityNoise.lacunarity = 2.0f;
+    gp.densityNoiseThreshold = 0.18f;
+    gp.densityNoiseContrast = 0.95f;
+    gp.densityNoiseStrength = 1.0f;
+    gp.interactionEnabled = true;
+    gp.interactionRadiusMeters = 1.25f;
+    gp.interactionStrength = 1.0f;
+
+    // Heavier patchiness so the field isn't uniformly dense.
+    if (!gp.layers.empty()) {
+      gp.layers[0].noiseScale = 0.05f;
+      gp.layers[0].noiseStrength = 0.78f;
+      gp.layers[0].bendStrength = 0.30f;
+      gp.layers[0].curveStrength = 0.18f;
+      gp.layers[0].twistStrength = 0.08f;
+      gp.layers[1].noiseScale = 0.05f;
+      gp.layers[1].noiseStrength = 0.70f;
+      gp.layers[1].bendStrength = 0.38f;
+      gp.layers[1].curveStrength = 0.22f;
+      gp.layers[1].twistStrength = 0.10f;
+      gp.layers[1].minScale = 0.55f;
+      gp.layers[1].maxScale = 0.88f;
+    }
+
+    auto& sh = m_registry.emplace<ecs::ShaderComponent>(grass);
+    sh.shader.key = "graphics/shaders/grass_clumps";
+    sh.doubleSided = true;
+    sh.depthWrite = true;
+    sh.receiveShadows = true;
+    sh.castShadows = false;
+    sh.textures.push_back({"grass_albedo", render::AssetRef{true, "assets/textures/grass/grass_color.jpg", 0}, true});
+    sh.parameters.push_back({"grassAlbedoUvScale", 0.22f});
+  }
+
   m_light = m_registry.createEntity("sun");
   m_registry.emplace<ecs::TransformComponent>(m_light);
   {
@@ -378,7 +427,7 @@ void GameplayDemoGame::onStart() {
     m_registry.emplace<ecs::TransformComponent>(skyEntity);
 
     auto& skyc = m_registry.emplace<ecs::SkyComponent>(skyEntity);
-    skyc.skyType = ecs::SkyComponent::SkyType::Night;
+    skyc.skyType = ecs::SkyComponent::SkyType::Day;
     skyc.useSkyTypePreset = true;
     skyc.linkedDirectionalLightEntity = m_light;
     skyc.cloudType = ecs::SkyComponent::CloudType::Scattered;

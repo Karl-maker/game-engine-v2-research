@@ -100,6 +100,46 @@ class OpenGlRenderer final {
     std::vector<Chunk> chunks;
   };
 
+  struct GrassMesh final {
+    struct Chunk final {
+      math::Vec3 center{};
+      float radius = 0.0f;
+      std::uint32_t instanceOffset = 0;
+      std::uint32_t instanceCount = 0;
+    };
+
+    std::uint32_t vao = 0;
+    std::uint32_t vbo = 0;
+    std::uint32_t ebo = 0;
+    std::uint32_t instanceVbo = 0;
+    std::uint32_t indexCount = 0;
+    std::uint32_t instanceCapacity = 0;
+
+    std::uint32_t seed = 0u;
+    math::Vec3 area{};
+    float density = 0.0f;
+    float minScale = 0.0f;
+    float maxScale = 0.0f;
+    float bladeSpacing = 1.0f;
+    float bendStrength = 0.35f;
+    float curveStrength = 0.18f;
+    float twistStrength = 0.08f;
+    float minSlopeDeg = 0.0f;
+    float maxSlopeDeg = 90.0f;
+    float minAltitude = -10000.0f;
+    float maxAltitude = 10000.0f;
+    float noiseScale = 0.06f;
+    float noiseStrength = 0.65f;
+    terrain::NoiseConfig densityNoise{};
+    float densityNoiseThreshold = 0.42f;
+    float densityNoiseContrast = 3.0f;
+    float densityNoiseStrength = 1.0f;
+    std::string species;
+
+    float chunkSizeMeters = 6.0f;
+    std::vector<Chunk> chunks;
+  };
+
   struct GpuSubMesh final {
     std::uint32_t vao = 0;
     std::uint32_t vbo = 0;
@@ -117,10 +157,14 @@ class OpenGlRenderer final {
   TerrainMesh* getOrCreateTerrainMesh(const ecs::systems::GraphicsSystem::TerrainDraw& terrain, int lodStep);
   RockMesh* getOrCreateRockMesh(const ecs::systems::GraphicsSystem::FrameSnapshot::RockDraw& rocks,
                                 const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain);
+  GrassMesh* getOrCreateGrassMesh(const ecs::systems::GraphicsSystem::FrameSnapshot::GrassDraw& grass,
+                                  std::size_t layerIndex,
+                                  const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain);
   GpuMeshAsset* getOrCreateGpuMesh(const std::string& path);
 
   static void destroyTerrainMesh(TerrainMesh& m);
   static void destroyRockMesh(RockMesh& m);
+  static void destroyGrassMesh(GrassMesh& m);
   static void destroyGpuMesh(GpuMeshAsset& m);
 
   GLFWwindow* m_window = nullptr;
@@ -171,6 +215,7 @@ class OpenGlRenderer final {
   ShaderService m_shaders;
   std::unordered_map<std::uint64_t, TerrainMesh> m_terrainMeshes;  // key: (entity id, lodStep)
   std::unordered_map<std::uint32_t, RockMesh> m_rockMeshes;        // key: entity id
+  std::unordered_map<std::uint64_t, GrassMesh> m_grassMeshes;      // key: (entity id, layerIndex)
   std::unordered_map<std::string, GpuMeshAsset> m_gpuMeshes;       // key: source path
   std::unordered_map<std::string, assets::MeshAssetService::State> m_meshLogState;
 
