@@ -365,59 +365,57 @@ void GameplayDemoGame::onStart() {
     auto& tr = m_registry.emplace<ecs::TransformComponent>(grass);
     tr.position = {0.0f, 0.0f, 0.0f};
 
-    // auto& gp = m_registry.emplace<ecs::GrassPatchComponent>(grass);
-    // gp.sourceTerrainEntity = m_terrain;
-    // gp.area = {42.0f, 0.0f, 42.0f};
-    // gp.seed = 9001u;
-    // gp.densityMultiplier = 1.0f;
-    // gp.densityNoise.seed = 1777u;
-    // gp.densityNoise.frequency = 0.022f;
-    // gp.densityNoise.octaves = 2;
-    // gp.densityNoise.persistence = 0.50f;
-    // gp.densityNoise.lacunarity = 2.0f;
-    // gp.densityNoiseThreshold = 0.10f;
-    // gp.densityNoiseContrast = 0.72f;
-    // gp.densityNoiseStrength = 1.0f;
-    // gp.islandNoise.seed = 7331u;
-    // gp.islandNoise.frequency = 0.042f;
-    // gp.islandNoise.octaves = 3;
-    // gp.islandNoise.persistence = 0.62f;
-    // gp.islandNoise.lacunarity = 2.05f;
-    // gp.islandNoiseOffset = {0.0f, 0.0f, 0.0f};
-    // gp.islandNoiseThreshold = 0.40f;
-    // gp.islandNoiseSoftness = 0.20f;
-    // gp.islandNoiseContrast = 1.15f;
-    // gp.islandNoiseStrength = 0.92f;
-    // gp.interactionEnabled = true;
-    // gp.interactionRadiusMeters = 1.25f;
-    // gp.interactionStrength = 1.0f;
+    auto& gp = m_registry.emplace<ecs::GrassPatchComponent>(grass);
+    gp.sourceTerrainEntity = m_terrain;
+    gp.area = {42.0f, 0.0f, 42.0f};
+    gp.seed = 9001u;
+    gp.densityMultiplier = 1.0f;
+    gp.densityNoise.seed = 1777u;
+    gp.densityNoise.frequency = 0.022f;
+    gp.densityNoise.octaves = 2;
+    gp.densityNoise.persistence = 0.50f;
+    gp.densityNoise.lacunarity = 2.0f;
+    gp.densityNoiseThreshold = 0.10f;
+    gp.densityNoiseContrast = 0.72f;
+    gp.densityNoiseStrength = 1.0f;
+    gp.islandNoise.seed = 7331u;
+    gp.islandNoise.frequency = 0.042f;
+    gp.islandNoise.octaves = 3;
+    gp.islandNoise.persistence = 0.62f;
+    gp.islandNoise.lacunarity = 2.05f;
+    gp.islandNoiseOffset = {0.0f, 0.0f, 0.0f};
+    gp.islandNoiseThreshold = 0.40f;
+    gp.islandNoiseSoftness = 0.20f;
+    gp.islandNoiseContrast = 1.15f;
+    gp.islandNoiseStrength = 0.92f;
+    gp.interactionEnabled = false;
+    gp.interactionRadiusMeters = 1.25f;
+    gp.interactionStrength = 1.0f;
 
-    // // Single shader-carpet layer: low geometry, short fibers, camera haze in shader.
-    // gp.layers = {
-    //     ecs::GrassPatchComponent::GrassLayer{.species = "ShaderGrassCarpet",
-    //                                          .description =
-    //                                              "One shader-driven short grass carpet; broken strandy fibers, fake thickness.",
-    //                                          .density = 5.8f,
-    //                                          .minScale = 0.56f,
-    //                                          .maxScale = 0.96f,
-    //                                          .bladeSpacing = 0.58f,
-    //                                          .bendStrength = 0.18f,
-    //                                          .curveStrength = 0.24f,
-    //                                          .twistStrength = 0.10f,
-    //                                          .noiseScale = 0.052f,
-    //                                          .noiseStrength = 0.56f,
-    //                                          .windStrength = 0.42f,
-    //                                          .maxDistance = 36.0f},
-    // };
+    // Billboard grass planes: three intersecting planes nearby, cheaper LOD farther out.
+    gp.layers = {
+        ecs::GrassPatchComponent::GrassLayer{.species = "BillboardGrassPlanes",
+                                             .description =
+                                                 "Three off-center intersecting billboard planes with random heights and texture variation.",
+                                             .density = 4.8f,
+                                             .minScale = 0.70f,
+                                             .maxScale = 1.18f,
+                                             .bladeSpacing = 0.70f,
+                                             .bendStrength = 0.16f,
+                                             .curveStrength = 0.16f,
+                                             .twistStrength = 0.0f,
+                                             .noiseScale = 0.052f,
+                                             .noiseStrength = 0.56f,
+                                             .windStrength = 0.0f,
+                                             .maxDistance = 42.0f},
+    };
 
     auto& sh = m_registry.emplace<ecs::ShaderComponent>(grass);
-    sh.shader.key = "graphics/shaders/grass_clumps";
+    sh.shader.key = "graphics/shaders/grass_planes";
     sh.doubleSided = true;
     sh.depthWrite = true;
     sh.receiveShadows = true;
     sh.castShadows = false;
-    sh.textures.push_back({"grass_albedo", render::AssetRef{true, "assets/textures/grass/grass_color.jpg", 0}, true});
-    sh.parameters.push_back({"grassAlbedoUvScale", 0.095f});
   }
 
   m_light = m_registry.createEntity("sun");
@@ -439,7 +437,7 @@ void GameplayDemoGame::onStart() {
     m_registry.emplace<ecs::TransformComponent>(skyEntity);
 
     auto& skyc = m_registry.emplace<ecs::SkyComponent>(skyEntity);
-    skyc.skyType = ecs::SkyComponent::SkyType::Day;
+    skyc.skyType = ecs::SkyComponent::SkyType::Night;
     skyc.useSkyTypePreset = true;
     skyc.linkedDirectionalLightEntity = m_light;
     skyc.cloudType = ecs::SkyComponent::CloudType::Scattered;
@@ -477,7 +475,7 @@ void GameplayDemoGame::onStart() {
     f.sizeMeters = {w * 1.25f, 80.0f, d * 1.25f};
     // Placeholder values; SkyPresetSystem will drive these when linked from SkyComponent.
     f.color = {0.55f, 0.62f, 0.72f, 1.0f};
-    f.density = 0.0f;
+    f.density = 1.0f;
     f.startDistance = 6.0f;
     f.endDistance = 160.0f;
     f.heightFalloff = 0.045f;

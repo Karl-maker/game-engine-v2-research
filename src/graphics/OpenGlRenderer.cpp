@@ -38,6 +38,49 @@ struct RockInstance final {
   float rot;
 };
 
+struct GrassBillboardTexturePreset final {
+  const char* path = "";
+  float weight = 0.0f;
+};
+
+static constexpr GrassBillboardTexturePreset kGrassBillboardPresets[] = {
+    {"assets/textures/vegitation/grass_patch_01/material_basecolor.png", 0.34f},
+    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.28f},
+    {"assets/textures/vegitation/grass_blade_01/Grass_Mat_diffuse.png", 0.11f},
+    {"assets/textures/vegitation/grass_blade_02/Grass1_Mat_diffuse.png", 0.10f},
+    {"assets/textures/vegitation/grass_blade_03/Grass2_Mat_diffuse.png", 0.09f},
+    {"assets/textures/vegitation/grass_blade_04/Grass3_Mat_diffuse.png", 0.08f},
+};
+
+static constexpr int kGrassBillboardPresetCount =
+    static_cast<int>(sizeof(kGrassBillboardPresets) / sizeof(kGrassBillboardPresets[0]));
+
+struct GrassBillboardFactory final {
+  struct PlaneSpec final {
+    float yawDeg = 0.0f;
+    math::Vec3 offset{};
+    float heightMul = 1.0f;
+  };
+
+  static PlaneSpec planeSpec(int planeId, float setupJitter) {
+    PlaneSpec spec{};
+    if (planeId == 0) {
+      spec.yawDeg = -23.0f + setupJitter * 12.0f;
+      spec.offset = {-0.045f, 0.0f, 0.020f};
+      spec.heightMul = 1.0f;
+    } else if (planeId == 1) {
+      spec.yawDeg = 31.0f - setupJitter * 16.0f;
+      spec.offset = {0.030f, 0.0f, -0.032f};
+      spec.heightMul = 0.90f;
+    } else {
+      spec.yawDeg = 71.0f + setupJitter * 10.0f;
+      spec.offset = {-0.012f, 0.0f, 0.048f};
+      spec.heightMul = 1.08f;
+    }
+    return spec;
+  }
+};
+
 static void glfwErrorCallback(int code, const char* desc) {
   std::cerr << "[glfw] error " << code << ": " << (desc ? desc : "(null)") << "\n";
 }
@@ -1167,6 +1210,7 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   struct GrassVert {
     float px, py, pz;
     float u, v;
+    float planeId;
   };
   struct GrassInstance {
     float px, py, pz;
@@ -1184,7 +1228,15 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   float bladeHeightMin = 0.70f;
   float bladeHeightMax = 1.00f;
   float leanStrength = 0.08f;
-  if (mesh.species == "ShaderGrassCarpet") {
+  if (mesh.species == "BillboardGrassPlanes") {
+    bladeCount = 3;
+    segments = 3;
+    baseWidth = 0.46f;
+    radialSpread = 0.06f;
+    bladeHeightMin = 0.78f;
+    bladeHeightMax = 1.20f;
+    leanStrength = 0.06f;
+  } else if (mesh.species == "ShaderGrassCarpet") {
     bladeCount = 4;
     segments = 3;
     baseWidth = 0.30f;
@@ -1269,7 +1321,37 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   idxs.reserve(static_cast<std::size_t>(bladeCount) * static_cast<std::size_t>(segments) * 6u);
 
   const float twoPi = 6.2831853f;
-  for (int b = 0; b < bladeCount; ++b) {
+  if (mesh.species == "BillboardGrassPlanes") {
+    for (int p = 0; p < bladeCount; ++p) {
+      const float planeJitter = rand01(geoSeed + static_cast<std::uint32_t>(p) * 26699u) * 2.0f - 1.0f;
+      const auto spec = GrassBillboardFactory::planeSpec(p, planeJitter);
+      const float localHeight = bladeHeightMin + (bladeHeightMax - bladeHeightMin) *
+                                                  rand01(geoSeed + static_cast<std::uint32_t>(p) * 42437u) * spec.heightMul;
+      const float localWidth = baseWidth * (0.82f + 0.28f * rand01(geoSeed + static_cast<std::uint32_t>(p) * 97531u));
+      const std::uint32_t base = static_cast<std::uint32_t>(verts.size());
+      for (int i = 0; i <= segments; ++i) {
+        const float v = static_cast<float>(i) / std::max(1.0f, static_cast<float>(segments));
+        const float taper = std::pow(1.0f - v, 1.05f);
+        const float h = localHeight * v;
+        const float halfW = localWidth * (0.40f + 0.26f * taper);
+        const float bendForward = (p == 2) ? std::pow(v, 1.65f) * (0.12f + 0.05f * rand01(geoSeed + 991u)) : 0.0f;
+        verts.push_back(GrassVert{-halfW + spec.offset.x, h, bendForward + spec.offset.z, 0.0f, v, static_cast<float>(p)});
+        verts.push_back(GrassVert{halfW + spec.offset.x, h, bendForward + spec.offset.z, 1.0f, v, static_cast<float>(p)});
+      }
+      for (int i = 0; i < segments; ++i) {
+        const std::uint32_t i0 = base + static_cast<std::uint32_t>(i * 2 + 0);
+        const std::uint32_t i1 = base + static_cast<std::uint32_t>(i * 2 + 1);
+        const std::uint32_t i2 = base + static_cast<std::uint32_t>((i + 1) * 2 + 0);
+        const std::uint32_t i3 = base + static_cast<std::uint32_t>((i + 1) * 2 + 1);
+        idxs.push_back(i0);
+        idxs.push_back(i2);
+        idxs.push_back(i1);
+        idxs.push_back(i1);
+        idxs.push_back(i2);
+        idxs.push_back(i3);
+      }
+    }
+  } else for (int b = 0; b < bladeCount; ++b) {
     const float rb = rand01(geoSeed + static_cast<std::uint32_t>(b) * 2654435761u);
     const float yaw = (static_cast<float>(b) / std::max(1.0f, static_cast<float>(bladeCount))) * twoPi + (rb - 0.5f) * 0.90f;
     const float c = std::cos(yaw);
@@ -1319,8 +1401,8 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
       const float bendX = leanX * bend;
       const float bendZ = leanZ * bend;
 
-      verts.push_back(GrassVert{x0 + ox + bendX, y, z0 + oz + bendZ, 0.0f, v});
-      verts.push_back(GrassVert{x1 + ox + bendX, y, z1 + oz + bendZ, 1.0f, v});
+      verts.push_back(GrassVert{x0 + ox + bendX, y, z0 + oz + bendZ, 0.0f, v, 0.0f});
+      verts.push_back(GrassVert{x1 + ox + bendX, y, z1 + oz + bendZ, 1.0f, v, 0.0f});
     }
 
     for (int i = 0; i < segments; ++i) {
@@ -1354,21 +1436,23 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GrassVert), reinterpret_cast<void*>(0));
   glEnableVertexAttribArray(1);
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GrassVert), reinterpret_cast<void*>(sizeof(float) * 3));
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(GrassVert), reinterpret_cast<void*>(sizeof(float) * 5));
 
   glBindBuffer(GL_ARRAY_BUFFER, mesh.instanceVbo);
   glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
-  glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(0));
-  glVertexAttribDivisor(2, 1);
   glEnableVertexAttribArray(3);
-  glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 3));
+  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(0));
   glVertexAttribDivisor(3, 1);
   glEnableVertexAttribArray(4);
-  glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 4));
+  glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 3));
   glVertexAttribDivisor(4, 1);
   glEnableVertexAttribArray(5);
-  glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 5));
+  glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 4));
   glVertexAttribDivisor(5, 1);
+  glEnableVertexAttribArray(6);
+  glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(sizeof(float) * 5));
+  glVertexAttribDivisor(6, 1);
 
   glBindVertexArray(0);
 
@@ -2384,6 +2468,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       const std::string shaderKey = gr.shader.key.empty() ? "graphics/shaders/grass_clumps" : gr.shader.key;
       const ShaderService::Program* program = m_shaders.getOrCreate(shaderKey);
       if (!program || !program->programId) continue;
+      const bool useBillboardPlanes = shaderKey == "graphics/shaders/grass_planes";
 
       glUseProgram(program->programId);
 
@@ -2401,18 +2486,36 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       const GLint locSunInt = glGetUniformLocation(program->programId, "u_SunIntensity");
       if (locSunInt >= 0) glUniform1f(locSunInt, sunIntensity);
 
-      const std::string albedoPath = gr.hasAlbedoTex ? gr.albedoTex.key : "assets/textures/grass/grass_color.jpg";
-      const GLuint albedoId = m_textures.requestTexture(albedoPath, true);
-      const bool useAlbedo = albedoId != 0;
-      const GLint locUseAlb = glGetUniformLocation(program->programId, "u_UseAlbedo");
-      if (locUseAlb >= 0) glUniform1i(locUseAlb, useAlbedo ? 1 : 0);
-      const GLint locAlbScale = glGetUniformLocation(program->programId, "u_AlbedoUvScale");
-      if (locAlbScale >= 0) glUniform1f(locAlbScale, gr.albedoUvScale);
-      if (useAlbedo) {
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, albedoId);
-        const GLint loc = glGetUniformLocation(program->programId, "u_AlbedoTex");
-        if (loc >= 0) glUniform1i(loc, 0);
+      if (useBillboardPlanes) {
+        const char* samplerNames[kGrassBillboardPresetCount] = {
+            "u_GrassTex0",
+            "u_GrassTex1",
+            "u_GrassTex2",
+            "u_GrassTex3",
+            "u_GrassTex4",
+            "u_GrassTex5",
+        };
+        for (int texIndex = 0; texIndex < kGrassBillboardPresetCount; ++texIndex) {
+          const GLuint texId = m_textures.requestTexture(kGrassBillboardPresets[texIndex].path, true);
+          glActiveTexture(GL_TEXTURE0 + texIndex);
+          glBindTexture(GL_TEXTURE_2D, texId);
+          const GLint loc = glGetUniformLocation(program->programId, samplerNames[texIndex]);
+          if (loc >= 0) glUniform1i(loc, texIndex);
+        }
+      } else {
+        const std::string albedoPath = gr.hasAlbedoTex ? gr.albedoTex.key : "assets/textures/grass/grass_color.jpg";
+        const GLuint albedoId = m_textures.requestTexture(albedoPath, true);
+        const bool useAlbedo = albedoId != 0;
+        const GLint locUseAlb = glGetUniformLocation(program->programId, "u_UseAlbedo");
+        if (locUseAlb >= 0) glUniform1i(locUseAlb, useAlbedo ? 1 : 0);
+        const GLint locAlbScale = glGetUniformLocation(program->programId, "u_AlbedoUvScale");
+        if (locAlbScale >= 0) glUniform1f(locAlbScale, gr.albedoUvScale);
+        if (useAlbedo) {
+          glActiveTexture(GL_TEXTURE0);
+          glBindTexture(GL_TEXTURE_2D, albedoId);
+          const GLint loc = glGetUniformLocation(program->programId, "u_AlbedoTex");
+          if (loc >= 0) glUniform1i(loc, 0);
+        }
       }
 
       const int interactionCount = gr.interactionEnabled ? 1 : 0;
@@ -2447,24 +2550,16 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         if (locFadeNear >= 0) glUniform1f(locFadeNear, fadeNear);
         if (locFadeFar >= 0) glUniform1f(locFadeFar, maxDist);
 
-        const GLint locWind = glGetUniformLocation(program->programId, "u_WindStrength");
-        if (locWind >= 0) glUniform1f(locWind, layer.windStrength);
-        const GLint locBend = glGetUniformLocation(program->programId, "u_BladeBendStrength");
-        if (locBend >= 0) glUniform1f(locBend, mesh->bendStrength);
-        const GLint locCurve = glGetUniformLocation(program->programId, "u_BladeCurveStrength");
-        if (locCurve >= 0) glUniform1f(locCurve, mesh->curveStrength);
-        const GLint locTwist = glGetUniformLocation(program->programId, "u_BladeTwistStrength");
-        if (locTwist >= 0) glUniform1f(locTwist, mesh->twistStrength);
-        const GLint locWindDir = glGetUniformLocation(program->programId, "u_WindDirXZ");
-        if (locWindDir >= 0) glUniform2f(locWindDir, 0.92f, 0.38f);
-        const GLint locWindSpd = glGetUniformLocation(program->programId, "u_WindSpeed");
-        if (locWindSpd >= 0) glUniform1f(locWindSpd, 1.25f);
-
         math::Vec3 tint{0.26f, 0.52f, 0.18f};
         float carpetHaze = 0.35f;
         float stylizedBands = 0.35f;
         float carpetThickness = 0.65f;
-        if (layer.species == "ShaderGrassCarpet") {
+        if (useBillboardPlanes || layer.species == "BillboardGrassPlanes") {
+          tint = {0.93f, 1.00f, 0.92f};
+          carpetHaze = 0.60f;
+          stylizedBands = 0.22f;
+          carpetThickness = 0.58f;
+        } else if (layer.species == "ShaderGrassCarpet") {
           tint = {0.24f, 0.49f, 0.15f};
           carpetHaze = 0.72f;
           stylizedBands = 0.12f;
@@ -2481,6 +2576,30 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         if (locBands >= 0) glUniform1f(locBands, stylizedBands);
         const GLint locThickness = glGetUniformLocation(program->programId, "u_CarpetThickness");
         if (locThickness >= 0) glUniform1f(locThickness, carpetThickness);
+
+        if (useBillboardPlanes) {
+          const float lodTwoPlaneDist = std::max(4.0f, maxDist * 0.36f);
+          const float lodOnePlaneDist = std::max(lodTwoPlaneDist + 3.0f, maxDist * 0.72f);
+          const GLint locLodTwo = glGetUniformLocation(program->programId, "u_LodTwoPlaneDist");
+          if (locLodTwo >= 0) glUniform1f(locLodTwo, lodTwoPlaneDist);
+          const GLint locLodOne = glGetUniformLocation(program->programId, "u_LodOnePlaneDist");
+          if (locLodOne >= 0) glUniform1f(locLodOne, lodOnePlaneDist);
+          const GLint locBottomFade = glGetUniformLocation(program->programId, "u_BottomFade");
+          if (locBottomFade >= 0) glUniform1f(locBottomFade, 0.14f);
+        } else {
+          const GLint locWind = glGetUniformLocation(program->programId, "u_WindStrength");
+          if (locWind >= 0) glUniform1f(locWind, layer.windStrength);
+          const GLint locBend = glGetUniformLocation(program->programId, "u_BladeBendStrength");
+          if (locBend >= 0) glUniform1f(locBend, mesh->bendStrength);
+          const GLint locCurve = glGetUniformLocation(program->programId, "u_BladeCurveStrength");
+          if (locCurve >= 0) glUniform1f(locCurve, mesh->curveStrength);
+          const GLint locTwist = glGetUniformLocation(program->programId, "u_BladeTwistStrength");
+          if (locTwist >= 0) glUniform1f(locTwist, mesh->twistStrength);
+          const GLint locWindDir = glGetUniformLocation(program->programId, "u_WindDirXZ");
+          if (locWindDir >= 0) glUniform2f(locWindDir, 0.92f, 0.38f);
+          const GLint locWindSpd = glGetUniformLocation(program->programId, "u_WindSpeed");
+          if (locWindSpd >= 0) glUniform1f(locWindSpd, 1.25f);
+        }
 
         glBindVertexArray(mesh->vao);
         glBindBuffer(GL_ARRAY_BUFFER, mesh->instanceVbo);
@@ -2500,12 +2619,12 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
           }
 
           const std::size_t baseByte = static_cast<std::size_t>(c.instanceOffset) * sizeof(GrassInstance);
-          glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(baseByte + 0));
-          glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
-                                reinterpret_cast<void*>(baseByte + sizeof(float) * 3));
+          glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(GrassInstance), reinterpret_cast<void*>(baseByte + 0));
           glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
-                                reinterpret_cast<void*>(baseByte + sizeof(float) * 4));
+                                reinterpret_cast<void*>(baseByte + sizeof(float) * 3));
           glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
+                                reinterpret_cast<void*>(baseByte + sizeof(float) * 4));
+          glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(GrassInstance),
                                 reinterpret_cast<void*>(baseByte + sizeof(float) * 5));
           glDrawElementsInstanced(GL_TRIANGLES,
                                   static_cast<GLsizei>(mesh->indexCount),
@@ -2517,8 +2636,12 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         glBindVertexArray(0);
       }
 
+      const int boundTextureCount = useBillboardPlanes ? kGrassBillboardPresetCount : 1;
+      for (int texIndex = 0; texIndex < boundTextureCount; ++texIndex) {
+        glActiveTexture(GL_TEXTURE0 + texIndex);
+        glBindTexture(GL_TEXTURE_2D, 0);
+      }
       glActiveTexture(GL_TEXTURE0);
-      glBindTexture(GL_TEXTURE_2D, 0);
     }
   }
 

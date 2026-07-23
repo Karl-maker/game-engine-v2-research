@@ -24,13 +24,13 @@ namespace ecs {
 struct GrassPatchComponent {
   struct GrassLayer final {
     // Engine-defined species key (renderer decides mesh/shader details for this species).
-    // Suggested defaults: "ShaderGrassCarpet", "GroundCover", "TallGrass",
+    // Suggested defaults: "BillboardGrassPlanes", "GroundCover", "TallGrass",
     // "BroadLeafGrass", "DryGrass", "Weed", "SmallFlower".
-    std::string species = "ShaderGrassCarpet";
+    std::string species = "BillboardGrassPlanes";
 
     // Describes the intended look; rendering remains shader-driven so the carpet
     // can look dense without needing huge geometry counts.
-    std::string description = "Single-layer short strandy grass carpet; shader fibers provide density without clear blade geometry.";
+    std::string description = "Three intersecting billboard grass planes with texture-driven alpha and distance LOD.";
 
     // Instances per square meter before masks/noise.
     float density = 5.0f;
@@ -58,8 +58,9 @@ struct GrassPatchComponent {
     float noiseScale = 0.06f;
     float noiseStrength = 0.65f;  // 0..1
 
-    // Wind contribution for this layer (shader-defined units).
-    float windStrength = 1.0f;
+    // Legacy per-layer wind strength. BillboardGrassPlanes ignores this and uses
+    // a tiny built-in GPU sway so the CPU path stays simple.
+    float windStrength = 0.0f;
 
     // Distance fade/cull (meters). Keep near grass dense; let terrain shader do the far field.
     float maxDistance = 30.0f;
@@ -98,7 +99,7 @@ struct GrassPatchComponent {
   // Layers. Default is intentionally one shader-driven carpet layer; the shader
   // handles haze, color bands, and fake density instead of stacking geometry layers.
   std::vector<GrassLayer> layers = {
-      GrassLayer{.species = "ShaderGrassCarpet",
+      GrassLayer{.species = "BillboardGrassPlanes",
                  .density = 5.6f,
                  .minScale = 0.54f,
                  .maxScale = 0.92f,
@@ -108,12 +109,12 @@ struct GrassPatchComponent {
                  .twistStrength = 0.10f,
                  .noiseScale = 0.055f,
                  .noiseStrength = 0.54f,
-                 .windStrength = 0.42f,
+                 .windStrength = 0.0f,
                  .maxDistance = 34.0f},
   };
 
   // Interaction (player/actors) handled in shader as a set of influence spheres.
-  bool interactionEnabled = true;
+  bool interactionEnabled = false;
   float interactionRadiusMeters = 1.25f;
   float interactionStrength = 1.0f;
 

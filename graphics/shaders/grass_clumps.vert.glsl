@@ -4,11 +4,12 @@
 
 layout(location = 0) in vec3 a_Position; // local clump space; y in 0..1
 layout(location = 1) in vec2 a_Uv;
+layout(location = 2) in float a_PlaneId;
 
-layout(location = 2) in vec3 i_WorldPos;
-layout(location = 3) in float i_Scale;
-layout(location = 4) in float i_Rot;
-layout(location = 5) in float i_Var;
+layout(location = 3) in vec3 i_WorldPos;
+layout(location = 4) in float i_Scale;
+layout(location = 5) in float i_Rot;
+layout(location = 6) in float i_Var;
 
 uniform mat4 u_ViewProj;
 uniform vec3 u_CameraPos;
