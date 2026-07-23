@@ -24,9 +24,13 @@ namespace ecs {
 struct GrassPatchComponent {
   struct GrassLayer final {
     // Engine-defined species key (renderer decides mesh/shader details for this species).
-    // Suggested defaults: "ShortGrass", "TallGrass", "BroadLeafGrass", "DryGrass",
-    // "Weed", "SmallFlower", "GroundCover".
-    std::string species = "GroundCover";
+    // Suggested defaults: "ShaderGrassCarpet", "GroundCover", "TallGrass",
+    // "BroadLeafGrass", "DryGrass", "Weed", "SmallFlower".
+    std::string species = "ShaderGrassCarpet";
+
+    // Describes the intended look; rendering remains shader-driven so the carpet
+    // can look dense without needing huge geometry counts.
+    std::string description = "Single-layer short strandy grass carpet; shader fibers provide density without clear blade geometry.";
 
     // Instances per square meter before masks/noise.
     float density = 5.0f;
@@ -78,47 +82,34 @@ struct GrassPatchComponent {
   float densityNoiseContrast = 3.0f;
   float densityNoiseStrength = 1.0f;
 
+  // Island mask for shaping the grass patch itself. Use frequency/octaves/persistence/lacunarity
+  // for the noise shape, then threshold/softness/contrast to cut it into controllable islands.
+  terrain::NoiseConfig islandNoise{.type = terrain::NoiseType::Perlin, .seed = 4242u, .frequency = 0.045f, .octaves = 3,
+                                   .lacunarity = 2.0f, .persistence = 0.58f};
+  math::Vec3 islandNoiseOffset{0.0f, 0.0f, 0.0f};
+  float islandNoiseThreshold = 0.44f;
+  float islandNoiseSoftness = 0.18f;
+  float islandNoiseContrast = 1.2f;
+  float islandNoiseStrength = 1.0f;
+
   // Terrain selection (optional). If invalid, systems may use the first visible terrain.
   EntityId sourceTerrainEntity = kInvalidEntityId;
 
-  // Layers (micro/hero/secondary vegetation). More layers = more variation.
+  // Layers. Default is intentionally one shader-driven carpet layer; the shader
+  // handles haze, color bands, and fake density instead of stacking geometry layers.
   std::vector<GrassLayer> layers = {
-      GrassLayer{.species = "GroundCover",
-                 .density = 13.0f,
-                 .minScale = 0.24f,
-                 .maxScale = 0.50f,
-                 .bladeSpacing = 0.12f,
-                 .bendStrength = 0.26f,
-                 .curveStrength = 0.20f,
+      GrassLayer{.species = "ShaderGrassCarpet",
+                 .density = 5.6f,
+                 .minScale = 0.54f,
+                 .maxScale = 0.92f,
+                 .bladeSpacing = 0.56f,
+                 .bendStrength = 0.18f,
+                 .curveStrength = 0.22f,
                  .twistStrength = 0.10f,
-                 .noiseScale = 0.075f,
-                 .noiseStrength = 0.55f,
-                 .windStrength = 0.75f,
-                 .maxDistance = 20.0f},
-      GrassLayer{.species = "TallGrass",
-                 .density = 5.8f,
-                 .minScale = 0.56f,
-                 .maxScale = 1.05f,
-                 .bladeSpacing = 0.16f,
-                 .bendStrength = 0.42f,
-                 .curveStrength = 0.28f,
-                 .twistStrength = 0.12f,
-                 .noiseScale = 0.050f,
-                 .noiseStrength = 0.72f,
-                 .windStrength = 1.0f,
+                 .noiseScale = 0.055f,
+                 .noiseStrength = 0.54f,
+                 .windStrength = 0.42f,
                  .maxDistance = 34.0f},
-      GrassLayer{.species = "BroadLeafGrass",
-                 .density = 1.9f,
-                 .minScale = 0.42f,
-                 .maxScale = 0.82f,
-                 .bladeSpacing = 0.18f,
-                 .bendStrength = 0.34f,
-                 .curveStrength = 0.24f,
-                 .twistStrength = 0.10f,
-                 .noiseScale = 0.060f,
-                 .noiseStrength = 0.68f,
-                 .windStrength = 0.85f,
-                 .maxDistance = 27.0f},
   };
 
   // Interaction (player/actors) handled in shader as a set of influence spheres.

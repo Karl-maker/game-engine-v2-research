@@ -256,6 +256,12 @@ class GraphicsSystem final {
       float densityNoiseThreshold = 0.42f;
       float densityNoiseContrast = 3.0f;
       float densityNoiseStrength = 1.0f;
+      terrain::NoiseConfig islandNoise{};
+      math::Vec3 islandNoiseOffset{};
+      float islandNoiseThreshold = 0.44f;
+      float islandNoiseSoftness = 0.18f;
+      float islandNoiseContrast = 1.2f;
+      float islandNoiseStrength = 1.0f;
       bool castShadows = false;
       bool receiveShadows = true;
       float lodBias = 1.0f;

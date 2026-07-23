@@ -365,45 +365,50 @@ void GameplayDemoGame::onStart() {
     auto& tr = m_registry.emplace<ecs::TransformComponent>(grass);
     tr.position = {0.0f, 0.0f, 0.0f};
 
-    auto& gp = m_registry.emplace<ecs::GrassPatchComponent>(grass);
-    gp.sourceTerrainEntity = m_terrain;
-    gp.area = {42.0f, 0.0f, 42.0f};
-    gp.seed = 9001u;
-    gp.densityMultiplier = 1.15f;
-    gp.densityNoise.seed = 1777u;
-    gp.densityNoise.frequency = 0.022f;
-    gp.densityNoise.octaves = 2;
-    gp.densityNoise.persistence = 0.50f;
-    gp.densityNoise.lacunarity = 2.0f;
-    gp.densityNoiseThreshold = 0.12f;
-    gp.densityNoiseContrast = 0.82f;
-    gp.densityNoiseStrength = 1.0f;
-    gp.interactionEnabled = true;
-    gp.interactionRadiusMeters = 1.25f;
-    gp.interactionStrength = 1.0f;
+    // auto& gp = m_registry.emplace<ecs::GrassPatchComponent>(grass);
+    // gp.sourceTerrainEntity = m_terrain;
+    // gp.area = {42.0f, 0.0f, 42.0f};
+    // gp.seed = 9001u;
+    // gp.densityMultiplier = 1.0f;
+    // gp.densityNoise.seed = 1777u;
+    // gp.densityNoise.frequency = 0.022f;
+    // gp.densityNoise.octaves = 2;
+    // gp.densityNoise.persistence = 0.50f;
+    // gp.densityNoise.lacunarity = 2.0f;
+    // gp.densityNoiseThreshold = 0.10f;
+    // gp.densityNoiseContrast = 0.72f;
+    // gp.densityNoiseStrength = 1.0f;
+    // gp.islandNoise.seed = 7331u;
+    // gp.islandNoise.frequency = 0.042f;
+    // gp.islandNoise.octaves = 3;
+    // gp.islandNoise.persistence = 0.62f;
+    // gp.islandNoise.lacunarity = 2.05f;
+    // gp.islandNoiseOffset = {0.0f, 0.0f, 0.0f};
+    // gp.islandNoiseThreshold = 0.40f;
+    // gp.islandNoiseSoftness = 0.20f;
+    // gp.islandNoiseContrast = 1.15f;
+    // gp.islandNoiseStrength = 0.92f;
+    // gp.interactionEnabled = true;
+    // gp.interactionRadiusMeters = 1.25f;
+    // gp.interactionStrength = 1.0f;
 
-    // Layered, heavy patchiness: dense lush pockets with softer thin edges.
-    if (!gp.layers.empty()) {
-      gp.layers[0].noiseScale = 0.070f;
-      gp.layers[0].noiseStrength = 0.56f;
-      gp.layers[0].bendStrength = 0.24f;
-      gp.layers[0].curveStrength = 0.22f;
-      gp.layers[0].twistStrength = 0.10f;
-      gp.layers[1].noiseScale = 0.045f;
-      gp.layers[1].noiseStrength = 0.74f;
-      gp.layers[1].bendStrength = 0.44f;
-      gp.layers[1].curveStrength = 0.30f;
-      gp.layers[1].twistStrength = 0.12f;
-      gp.layers[1].minScale = 0.58f;
-      gp.layers[1].maxScale = 1.08f;
-      if (gp.layers.size() > 2) {
-        gp.layers[2].noiseScale = 0.060f;
-        gp.layers[2].noiseStrength = 0.66f;
-        gp.layers[2].bendStrength = 0.32f;
-        gp.layers[2].curveStrength = 0.26f;
-        gp.layers[2].twistStrength = 0.10f;
-      }
-    }
+    // // Single shader-carpet layer: low geometry, short fibers, camera haze in shader.
+    // gp.layers = {
+    //     ecs::GrassPatchComponent::GrassLayer{.species = "ShaderGrassCarpet",
+    //                                          .description =
+    //                                              "One shader-driven short grass carpet; broken strandy fibers, fake thickness.",
+    //                                          .density = 5.8f,
+    //                                          .minScale = 0.56f,
+    //                                          .maxScale = 0.96f,
+    //                                          .bladeSpacing = 0.58f,
+    //                                          .bendStrength = 0.18f,
+    //                                          .curveStrength = 0.24f,
+    //                                          .twistStrength = 0.10f,
+    //                                          .noiseScale = 0.052f,
+    //                                          .noiseStrength = 0.56f,
+    //                                          .windStrength = 0.42f,
+    //                                          .maxDistance = 36.0f},
+    // };
 
     auto& sh = m_registry.emplace<ecs::ShaderComponent>(grass);
     sh.shader.key = "graphics/shaders/grass_clumps";
@@ -412,7 +417,7 @@ void GameplayDemoGame::onStart() {
     sh.receiveShadows = true;
     sh.castShadows = false;
     sh.textures.push_back({"grass_albedo", render::AssetRef{true, "assets/textures/grass/grass_color.jpg", 0}, true});
-    sh.parameters.push_back({"grassAlbedoUvScale", 0.18f});
+    sh.parameters.push_back({"grassAlbedoUvScale", 0.095f});
   }
 
   m_light = m_registry.createEntity("sun");

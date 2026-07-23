@@ -649,6 +649,12 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.densityNoiseThreshold = grass.densityNoiseThreshold;
         draw.densityNoiseContrast = grass.densityNoiseContrast;
         draw.densityNoiseStrength = grass.densityNoiseStrength;
+        draw.islandNoise = grass.islandNoise;
+        draw.islandNoiseOffset = grass.islandNoiseOffset;
+        draw.islandNoiseThreshold = grass.islandNoiseThreshold;
+        draw.islandNoiseSoftness = grass.islandNoiseSoftness;
+        draw.islandNoiseContrast = grass.islandNoiseContrast;
+        draw.islandNoiseStrength = grass.islandNoiseStrength;
         draw.castShadows = grass.castShadows;
         draw.receiveShadows = grass.receiveShadows;
         draw.lodBias = grass.lodBias;

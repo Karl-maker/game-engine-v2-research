@@ -32,6 +32,7 @@ out vec2 v_Uv;
 out vec3 v_WorldPos;
 out float v_Var;
 out float v_Fade;
+out float v_ViewDist;
 
 float saturate(float x) { return clamp(x, 0.0, 1.0); }
 
@@ -54,6 +55,7 @@ void main() {
 
   // Fade by camera distance (keep transitions smooth; CPU does coarse chunk culling).
   float dist = length(u_CameraPos - p);
+  v_ViewDist = dist;
   v_Fade = 1.0 - smoothstep(u_FadeNear, u_FadeFar, dist);
 
   // Wind: treat it as a spatial field (waves), not independent wiggles.
@@ -62,7 +64,7 @@ void main() {
   float phase2 = (p.x + p.z) * 0.12 + u_Time * (u_WindSpeed * 0.72);
   float wave = sin(phase) + 0.6 * sin(phase2);
 
-  float h = saturate(a_Position.y);
+  float h = saturate(a_Uv.y);
   float tip = h * h;
   float gust = (0.30 + 0.70 * i_Var);
 
