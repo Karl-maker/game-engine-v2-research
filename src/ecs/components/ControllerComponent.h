@@ -67,4 +67,3 @@ struct ControllerComponent {
 };
 
 }  // namespace ecs
-

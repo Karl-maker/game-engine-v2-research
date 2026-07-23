@@ -16,6 +16,7 @@ add_executable(duppy
   src/ecs/systems/ControllerSystem.cpp
   src/ecs/systems/GraphicsSystem.cpp
   src/ecs/systems/GravitySystem.cpp
+  src/ecs/systems/JumpSystem.cpp
   src/ecs/systems/MotionSystem.cpp
   src/ecs/systems/MovementSystem.cpp
   src/ecs/systems/SkyPresetSystem.cpp

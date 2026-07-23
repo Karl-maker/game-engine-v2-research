@@ -344,6 +344,14 @@ void OpenGlRenderer::glfwKeyCallback(GLFWwindow* w, int key, int, int action, in
     self->m_accumMouseDx = 0.0;
     self->m_accumMouseDy = 0.0;
   }
+  if (key == GLFW_KEY_SPACE) {
+    if (action == GLFW_PRESS && !self->m_keySpaceHeld) {
+      self->m_keySpaceQueued = true;
+      self->m_keySpaceHeld = true;
+    } else if (action == GLFW_RELEASE) {
+      self->m_keySpaceHeld = false;
+    }
+  }
   switch (key) {
     case GLFW_KEY_W: self->m_keyW = down; break;
     case GLFW_KEY_A: self->m_keyA = down; break;
@@ -550,11 +558,13 @@ OpenGlRenderer::RealtimeInput OpenGlRenderer::drainRealtimeInput() {
   out.moveZ = (m_keyW ? 1.0f : 0.0f) + (m_keyS ? -1.0f : 0.0f);
   out.sprint = m_keyShift;
   out.crouch = m_keyCtrl;
+  out.jump = m_keySpaceQueued;
   out.lookActive = m_cursorCaptured;
   out.mouseDx = static_cast<float>(m_accumMouseDx);
   out.mouseDy = static_cast<float>(m_accumMouseDy);
   m_accumMouseDx = 0.0;
   m_accumMouseDy = 0.0;
+  m_keySpaceQueued = false;
   return out;
 }
 

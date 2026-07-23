@@ -18,6 +18,7 @@
 #include "ecs/systems/CollisionResolutionSystem.h"
 #include "ecs/systems/GraphicsSystem.h"
 #include "ecs/systems/GravitySystem.h"
+#include "ecs/systems/JumpSystem.h"
 #include "ecs/systems/MotionSystem.h"
 #include "ecs/systems/MovementSystem.h"
 #include "ecs/systems/SkyPresetSystem.h"
@@ -42,6 +43,7 @@ class GameplayDemoGame final : public core::IGame {
   ecs::systems::ControllerSystem m_controllerSystem;
   ecs::systems::AnimationSystem m_animationSystem;
   ecs::systems::GravitySystem m_gravitySystem;
+  ecs::systems::JumpSystem m_jumpSystem;
   ecs::systems::CollisionDetectionSystem m_collisionDetectionSystem;
   ecs::systems::CollisionResolutionSystem m_collisionResolutionSystem;
   ecs::systems::MotionSystem m_motionSystem;

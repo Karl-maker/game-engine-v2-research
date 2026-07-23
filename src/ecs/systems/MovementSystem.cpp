@@ -59,10 +59,8 @@ void MovementSystem::tick(ecs::EntityRegistry& registry, ecs::services::EventSer
 
         math::Vec3 desiredVel = motion.desiredVelocity;
 
-        // Grounded/walking modes keep vertical physics velocity while controller input owns horizontal intent.
-        if (motion.mode == ecs::MotionComponent::Mode::Walking ||
-            motion.mode == ecs::MotionComponent::Mode::Running ||
-            motion.mode == ecs::MotionComponent::Mode::Crouching) {
+        // Non-flying actors keep vertical velocity under gravity/collision/jump control.
+        if (motion.mode != ecs::MotionComponent::Mode::Flying) {
           desiredVel.y = motion.velocity.y;
         }
 

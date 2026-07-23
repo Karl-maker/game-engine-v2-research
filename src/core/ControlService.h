@@ -22,6 +22,7 @@ class ControlService final {
     float moveZ = 0.0f;   // -1..1
     bool sprint = false;
     bool crouch = false;
+    bool jump = false;
     bool lookActive = false;
     float lookDeltaPitchDeg = 0.0f;
     float lookDeltaYawDeg = 0.0f;
@@ -32,6 +33,7 @@ class ControlService final {
     math::Vec3 lookDeltaDeg{0.0f, 0.0f, 0.0f};   // one-frame impulse; cleared each update()
     bool sprint = false;
     bool crouch = false;
+    bool jump = false;
   };
 
   void update(const TickContext& ctx, const RealtimeInput* realtime = nullptr);

@@ -27,6 +27,7 @@ class OpenGlRenderer final {
     float moveZ = 0.0f;   // -1..1 (S/W)
     bool sprint = false;  // Shift
     bool crouch = false;  // Ctrl
+    bool jump = false;    // Space
     float mouseDx = 0.0f; // pixels since last drain (only when RMB held)
     float mouseDy = 0.0f; // pixels since last drain (only when RMB held)
     bool lookActive = false;
@@ -152,6 +153,8 @@ class OpenGlRenderer final {
   bool m_keyD = false;
   bool m_keyShift = false;
   bool m_keyCtrl = false;
+  bool m_keySpaceQueued = false;
+  bool m_keySpaceHeld = false;
   bool m_cursorCaptured = false;
   bool m_hasMousePos = false;
   double m_lastMouseX = 0.0;

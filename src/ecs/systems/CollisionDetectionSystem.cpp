@@ -99,8 +99,11 @@ void CollisionDetectionSystem::tick(EntityRegistry& registry, ecs::services::Eve
   std::unordered_map<ecs::EntityId, Body> bodies;
   m_grid.clear();
 
-  registry.view<ecs::ColliderComponent, ecs::TransformComponent>(
-      [&](ecs::EntityId id, const ecs::ColliderComponent& collider, const ecs::TransformComponent& tr) {
+  registry.view<ecs::ColliderComponent, ecs::TransformComponent, ecs::MotionComponent>(
+      [&](ecs::EntityId id,
+          const ecs::ColliderComponent& collider,
+          const ecs::TransformComponent& tr,
+          const ecs::MotionComponent&) {
         if (collider.isTrigger) return;
         if (collider.shape == ecs::ColliderComponent::Shape::Terrain) return;
         Body body;

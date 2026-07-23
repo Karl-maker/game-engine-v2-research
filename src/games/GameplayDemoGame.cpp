@@ -36,7 +36,7 @@ void GameplayDemoGame::onStart() {
   std::cout << "Gameplay demo (graphics snapshot)\n";
   std::cout << "- Creates camera + terrain(shader) + light\n";
   std::cout << "- Camera is driven by Controller/Motion/Movement systems\n";
-  std::cout << "Controls (type then Enter): w/a/s/d, move x y z, look pitch yaw, sprint/walk/crouch, stop\n";
+  std::cout << "Controls (type then Enter): w/a/s/d, move x y z, look pitch yaw, sprint/walk/crouch/jump, stop\n";
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   std::cout << "- Opens an OpenGL window and renders the terrain\n";
 #else
@@ -252,6 +252,7 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
     rt.moveZ = in.moveZ;
     rt.sprint = in.sprint;
     rt.crouch = in.crouch;
+    rt.jump = in.jump;
     rt.lookActive = in.lookActive;
     constexpr float kMouseToDeg = 0.08f;
     rt.lookDeltaYawDeg = in.mouseDx * kMouseToDeg;
@@ -266,6 +267,9 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
 
   // --- Gravity only updates velocities ---
   m_gravitySystem.tick(m_registry, ctx.deltaSeconds);
+
+  // --- Jump impulse request ---
+  m_jumpSystem.tick(m_registry);
 
   // --- Motion intent -> transform movement ---
   m_movementSystem.tick(m_registry, m_events, ctx.deltaSeconds);

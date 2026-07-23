@@ -15,6 +15,7 @@ void ControllerSystem::tick(ecs::EntityRegistry& registry, const core::ControlSe
     if (!c.enabled) return;
     if (c.mode != ecs::ControllerComponent::Mode::Player) return;
 
+    c.actionRequests.clear();
     c.moveRequest.hasRequest = true;
     c.moveRequest.hasDirection = true;
     c.moveRequest.direction = state.moveDirection;
@@ -29,8 +30,11 @@ void ControllerSystem::tick(ecs::EntityRegistry& registry, const core::ControlSe
     const bool hasLook = (state.lookDeltaDeg.x != 0.0f) || (state.lookDeltaDeg.y != 0.0f) || (state.lookDeltaDeg.z != 0.0f);
     c.lookRequest.hasRequest = hasLook;
     c.lookRequest.lookDelta = state.lookDeltaDeg;
+
+    if (state.jump) {
+      c.actionRequests.push_back({"jump", true, 1.0f});
+    }
   });
 }
 
 }  // namespace ecs::systems
-
