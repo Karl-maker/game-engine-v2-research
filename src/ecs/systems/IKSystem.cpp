@@ -201,7 +201,8 @@ static math::Vec3 solveFabrik(const std::vector<math::Vec3>& starts,
 
 namespace ecs::systems {
 
-void IKSystem::tick(EntityRegistry& registry, ecs::services::EventService& events) const {
+void IKSystem::tick(EntityRegistry& registry, ecs::services::EventService& events, double deltaSeconds) const {
+  const float dt = static_cast<float>(std::max(0.0, deltaSeconds));
   registry.view<ecs::IKComponent, ecs::SkeletonComponent, ecs::TransformComponent>(
       [&](ecs::EntityId id, ecs::IKComponent& ik, ecs::SkeletonComponent& skeleton, ecs::TransformComponent& tr) {
         if (!ik.enabled || !skeleton.enabled || skeleton.bones.empty()) return;
@@ -209,7 +210,14 @@ void IKSystem::tick(EntityRegistry& registry, ecs::services::EventService& event
         ik.solvedBoneNames.clear();
 
         for (auto& chain : ik.chains) {
-          if (!chain.enabled || !chain.overrideAnimation || chain.boneNames.empty()) continue;
+          if (!chain.overrideAnimation || chain.boneNames.empty()) continue;
+
+          const float blendIn = std::max(0.0001f, chain.blendInSeconds);
+          const float blendOut = std::max(0.0001f, chain.blendOutSeconds);
+          const float targetBlend = chain.enabled ? 1.0f : 0.0f;
+          const float blendRate = chain.enabled ? (dt / blendIn) : (dt / blendOut);
+          chain.currentBlend = std::clamp(chain.currentBlend + (targetBlend - chain.currentBlend) * blendRate, 0.0f, 1.0f);
+          if (chain.currentBlend <= 0.0001f) continue;
 
           math::Vec3 target = chain.worldTarget;
           if (chain.targetMode == ecs::IKComponent::Chain::TargetMode::Entity) {
@@ -252,7 +260,7 @@ void IKSystem::tick(EntityRegistry& registry, ecs::services::EventService& event
               targetRotation.z = currentRotation.z;
             }
 
-            const float weight = std::clamp(chain.weight, 0.0f, 1.0f);
+            const float weight = std::clamp(chain.weight * chain.currentBlend, 0.0f, 1.0f);
             const math::Vec3 blendedRotation{
                 math::lerp(currentRotation, targetRotation, weight).x,
                 math::lerp(currentRotation, targetRotation, weight).y,

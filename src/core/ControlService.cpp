@@ -69,12 +69,14 @@ bool ControlService::parseTwoFloats(const std::string& s, float& a, float& b) {
 void ControlService::update(const TickContext& ctx, const RealtimeInput* realtime) {
   m_state.lookDeltaDeg = {0.0f, 0.0f, 0.0f};
   m_state.jump = false;
+  m_state.attack = false;
 
   if (realtime && realtime->hasInput) {
     m_state.moveDirection = {realtime->moveX, 0.0f, realtime->moveZ};
     m_state.sprint = realtime->sprint;
     m_state.crouch = realtime->crouch;
     m_state.jump = realtime->jump;
+    m_state.attack = realtime->attack;
     if (realtime->lookActive) {
       m_state.lookDeltaDeg.x += realtime->lookDeltaPitchDeg;
       m_state.lookDeltaDeg.y += realtime->lookDeltaYawDeg;
@@ -149,6 +151,11 @@ void ControlService::update(const TickContext& ctx, const RealtimeInput* realtim
 
     if (cmd == "jump") {
       m_state.jump = true;
+      continue;
+    }
+
+    if (cmd == "attack") {
+      m_state.attack = true;
       continue;
     }
   }

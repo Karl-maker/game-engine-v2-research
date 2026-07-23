@@ -33,6 +33,9 @@ struct IKComponent final {
     math::Vec3 targetLocalOffset{0.0f, 0.0f, 0.0f};
 
     float weight = 1.0f;
+    float blendInSeconds = 0.18f;
+    float blendOutSeconds = 0.10f;
+    float currentBlend = 0.0f;
     int iterations = 8;
     bool overrideAnimation = true;
   };

@@ -22,6 +22,7 @@ class IKService final {
   static void setEntityTarget(ecs::IKComponent::Chain& chain, ecs::EntityId targetEntity, const math::Vec3& offset = {});
   static void setWorldTarget(ecs::IKComponent::Chain& chain, const math::Vec3& worldTarget);
   static void setWeight(ecs::IKComponent::Chain& chain, float weight);
+  static void setBlendTimes(ecs::IKComponent::Chain& chain, float blendInSeconds, float blendOutSeconds = -1.0f);
   static void setIterations(ecs::IKComponent::Chain& chain, int iterations);
 };
 

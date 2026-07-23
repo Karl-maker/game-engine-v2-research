@@ -18,7 +18,12 @@ struct RenderSettingsComponent final {
 
   // If true, the shadow caster pass may use tessellation for terrain when available.
   bool shadowUseTessellation = false;
+
+  // Debug-only visual overlays.
+  bool showRays = false;
+  bool showCollisionBoxes = false;
+  bool showCombatBoxes = false;
+  bool showSkeletonBones = false;
 };
 
 }  // namespace ecs
-

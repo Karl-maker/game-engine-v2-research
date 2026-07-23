@@ -41,6 +41,11 @@ void IKService::setWeight(ecs::IKComponent::Chain& chain, float weight) {
   chain.weight = std::clamp(weight, 0.0f, 1.0f);
 }
 
+void IKService::setBlendTimes(ecs::IKComponent::Chain& chain, float blendInSeconds, float blendOutSeconds) {
+  chain.blendInSeconds = std::max(0.0f, blendInSeconds);
+  chain.blendOutSeconds = blendOutSeconds < 0.0f ? chain.blendInSeconds : std::max(0.0f, blendOutSeconds);
+}
+
 void IKService::setIterations(ecs::IKComponent::Chain& chain, int iterations) {
   chain.iterations = std::max(1, iterations);
 }

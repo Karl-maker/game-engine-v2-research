@@ -721,10 +721,6 @@ OpenGlRenderer::GpuMeshAsset* OpenGlRenderer::getOrCreateGpuMesh(const std::stri
   }
 
   auto [ins, _] = m_gpuMeshes.emplace(path, std::move(gpu));
-  std::cout << "Uploaded mesh asset: " << path << " subMeshes=" << ins->second.subMeshes.size()
-            << " materials=" << ins->second.data.materials.size()
-            << " bones=" << ins->second.data.skeleton.bones.size()
-            << " animations=" << ins->second.data.animations.size() << "\n";
   return &ins->second;
 }
 
@@ -2031,13 +2027,17 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glBindVertexArray(0);
   }
 
-  // Ray debug lines.
-  if (!frame.rays.empty() && m_debugLineProgram && m_debugLineVao && m_debugLineVbo) {
+  // World-space debug lines.
+  if ((!frame.rays.empty() || !frame.debugLines.empty()) && m_debugLineProgram && m_debugLineVao && m_debugLineVbo) {
     std::vector<DebugLineVert> verts;
-    verts.reserve(frame.rays.size() * 2);
+    verts.reserve((frame.rays.size() + frame.debugLines.size()) * 2);
     for (const auto& ray : frame.rays) {
       verts.push_back({ray.start.x, ray.start.y, ray.start.z, ray.color.r, ray.color.g, ray.color.b, ray.color.a});
       verts.push_back({ray.end.x, ray.end.y, ray.end.z, ray.color.r, ray.color.g, ray.color.b, ray.color.a});
+    }
+    for (const auto& line : frame.debugLines) {
+      verts.push_back({line.start.x, line.start.y, line.start.z, line.color.r, line.color.g, line.color.b, line.color.a});
+      verts.push_back({line.end.x, line.end.y, line.end.z, line.color.r, line.color.g, line.color.b, line.color.a});
     }
 
     glUseProgram(m_debugLineProgram);

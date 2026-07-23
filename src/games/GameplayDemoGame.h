@@ -18,6 +18,7 @@
 #include "ecs/systems/AttachmentSystem.h"
 #include "ecs/systems/CollisionDetectionSystem.h"
 #include "ecs/systems/CollisionResolutionSystem.h"
+#include "ecs/systems/HitDetectionSystem.h"
 #include "ecs/systems/HierarchySystem.h"
 #include "ecs/systems/GraphicsSystem.h"
 #include "ecs/systems/GravitySystem.h"
@@ -59,6 +60,7 @@ class GameplayDemoGame final : public core::IGame {
   ecs::systems::JumpSystem m_jumpSystem;
   ecs::systems::CollisionDetectionSystem m_collisionDetectionSystem;
   ecs::systems::CollisionResolutionSystem m_collisionResolutionSystem;
+  ecs::systems::HitDetectionSystem m_hitDetectionSystem;
   ecs::systems::HierarchySystem m_hierarchySystem;
   ecs::systems::MotionSystem m_motionSystem;
   ecs::systems::MovementSystem m_movementSystem;
@@ -79,8 +81,13 @@ class GameplayDemoGame final : public core::IGame {
   ecs::EntityId m_demoNpc = ecs::kInvalidEntityId;
   ecs::EntityId m_terrain = ecs::kInvalidEntityId;
   ecs::EntityId m_light = ecs::kInvalidEntityId;
+  ecs::EntityId m_renderSettings = ecs::kInvalidEntityId;
+  ecs::EntityId m_playerHandSocket = ecs::kInvalidEntityId;
+  ecs::EntityId m_playerHitVolume = ecs::kInvalidEntityId;
+  ecs::EntityId m_demoNpcHurtVolume = ecs::kInvalidEntityId;
 
   double m_printTimer = 0.0;
+  double m_attackTimerSeconds = 0.0;
 };
 
 }  // namespace games

@@ -3,6 +3,8 @@
 // Author: Karl-Johan Bailey
 
 #include "ecs/components/CameraComponent.h"
+#include "ecs/components/ColliderComponent.h"
+#include "ecs/components/CombatVolumeComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/MeshComponent.h"
@@ -14,6 +16,7 @@
 #include "ecs/components/SkyComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
+#include "ecs/services/SpatialHashGridService.h"
 
 #include "math/Vec3.h"
 #include "render/Color.h"
@@ -69,6 +72,95 @@ math::Vec3 rotateVector(const math::Vec3& v, const math::Vec3& rotation) {
   out = {out.x * cy + out.z * sy, out.y, -out.x * sy + out.z * cy};
   out = {out.x * cz - out.y * sz, out.x * sz + out.y * cz, out.z};
   return out;
+}
+
+math::Mat4 composeWorld(const ecs::TransformComponent& tr) {
+  return math::mul(math::translate(tr.position),
+                   math::mul(math::rotateY(tr.rotation.y * kDegToRad),
+                             math::mul(math::rotateX(tr.rotation.x * kDegToRad),
+                                       math::mul(math::rotateZ(tr.rotation.z * kDegToRad), math::scale(tr.scale)))));
+}
+
+math::Vec3 translationFromMat4(const math::Mat4& m) { return {m.m[12], m.m[13], m.m[14]}; }
+
+void addLine(std::vector<GraphicsSystem::FrameSnapshot::DebugLine>& out,
+             const math::Vec3& a,
+             const math::Vec3& b,
+             const render::Color& color) {
+  out.push_back({a, b, color});
+}
+
+void addAabbLines(std::vector<GraphicsSystem::FrameSnapshot::DebugLine>& out,
+                  const ecs::services::SpatialHashGridService::Aabb& bounds,
+                  const render::Color& color) {
+  const math::Vec3 min = bounds.min;
+  const math::Vec3 max = bounds.max;
+  const math::Vec3 p000{min.x, min.y, min.z};
+  const math::Vec3 p001{min.x, min.y, max.z};
+  const math::Vec3 p010{min.x, max.y, min.z};
+  const math::Vec3 p011{min.x, max.y, max.z};
+  const math::Vec3 p100{max.x, min.y, min.z};
+  const math::Vec3 p101{max.x, min.y, max.z};
+  const math::Vec3 p110{max.x, max.y, min.z};
+  const math::Vec3 p111{max.x, max.y, max.z};
+
+  addLine(out, p000, p001, color);
+  addLine(out, p000, p010, color);
+  addLine(out, p000, p100, color);
+  addLine(out, p001, p011, color);
+  addLine(out, p001, p101, color);
+  addLine(out, p010, p011, color);
+  addLine(out, p010, p110, color);
+  addLine(out, p100, p101, color);
+  addLine(out, p100, p110, color);
+  addLine(out, p011, p111, color);
+  addLine(out, p101, p111, color);
+  addLine(out, p110, p111, color);
+}
+
+ecs::services::SpatialHashGridService::Aabb colliderAabb(const ecs::TransformComponent& tr, const ecs::ColliderComponent& c) {
+  const math::Vec3 center = tr.position + c.offset;
+  math::Vec3 half{};
+  switch (c.shape) {
+    case ecs::ColliderComponent::Shape::Sphere:
+      half = {c.size.x, c.size.x, c.size.x};
+      break;
+    case ecs::ColliderComponent::Shape::Capsule:
+      half = {c.size.x, c.size.y * 0.5f, c.size.x};
+      break;
+    case ecs::ColliderComponent::Shape::Terrain:
+    case ecs::ColliderComponent::Shape::Box:
+    case ecs::ColliderComponent::Shape::Mesh:
+    default:
+      half = {std::max(0.01f, c.size.x * 0.5f), std::max(0.01f, c.size.y * 0.5f), std::max(0.01f, c.size.z * 0.5f)};
+      break;
+  }
+  return {center - half, center + half};
+}
+
+ecs::services::SpatialHashGridService::Aabb combatAabb(const ecs::TransformComponent& tr, const ecs::CombatVolumeComponent::Volume& volume) {
+  const math::Vec3 localOffset = rotateVector(volume.offset, tr.rotation);
+  const math::Vec3 center = tr.position + localOffset;
+  const math::Vec3 scale{std::max(0.01f, tr.scale.x), std::max(0.01f, tr.scale.y), std::max(0.01f, tr.scale.z)};
+  switch (volume.shape) {
+    case ecs::CombatVolumeComponent::Shape::Sphere: {
+      const float radius = std::max(0.01f, volume.sphere.radius * std::max({scale.x, scale.y, scale.z}));
+      return {center - math::Vec3{radius, radius, radius}, center + math::Vec3{radius, radius, radius}};
+    }
+    case ecs::CombatVolumeComponent::Shape::Capsule: {
+      const float radius = std::max(0.01f, volume.capsule.radius * std::max(scale.x, scale.z));
+      const float halfHeight = std::max(0.01f, volume.capsule.height * 0.5f * scale.y);
+      const math::Vec3 half{radius, halfHeight + radius, radius};
+      return {center - half, center + half};
+    }
+    case ecs::CombatVolumeComponent::Shape::Box:
+    default: {
+      const math::Vec3 half{std::max(0.01f, volume.box.width * 0.5f * scale.x),
+                            std::max(0.01f, volume.box.height * 0.5f * scale.y),
+                            std::max(0.01f, volume.box.length * 0.5f * scale.z)};
+      return {center - half, center + half};
+    }
+  }
 }
 
 math::Mat4 boneWorldMatrix(const ecs::SkeletonComponent& skeleton, int boneIndex) {
@@ -194,6 +286,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
   m_frame.terrains.clear();
   m_frame.meshes.clear();
   m_frame.rays.clear();
+  m_frame.debugLines.clear();
   m_frame.fogVolumes.clear();
   m_frame.skies.clear();
   m_frame.rocks.clear();
@@ -211,6 +304,21 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         m_frame.camera.nearClip = cam.nearClipPlane;
         m_frame.camera.farClip = cam.farClipPlane;
       });
+
+  // --- Render settings (pick the first enabled) ---
+  registry.view<ecs::RenderSettingsComponent>([&](ecs::EntityId, const ecs::RenderSettingsComponent& s) {
+    if (!s.enabled) return;
+    if (m_frame.settings.present) return;
+    m_frame.settings.present = true;
+    m_frame.settings.shadowsEnabled = s.shadowsEnabled;
+    m_frame.settings.shadowQuality = s.shadowQuality;
+    m_frame.settings.shadowStrength = s.shadowStrength;
+    m_frame.settings.shadowUseTessellation = s.shadowUseTessellation;
+    m_frame.settings.showRays = s.showRays;
+    m_frame.settings.showCollisionBoxes = s.showCollisionBoxes;
+    m_frame.settings.showCombatBoxes = s.showCombatBoxes;
+    m_frame.settings.showSkeletonBones = s.showSkeletonBones;
+  });
 
   // --- Terrains with shaders ---
   registry.view<ecs::TerrainComponent, ecs::ShaderComponent, ecs::TransformComponent>(
@@ -303,7 +411,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
   // --- Ray debug lines ---
   registry.view<ecs::RaycastComponent, ecs::TransformComponent>(
       [&](ecs::EntityId id, const ecs::RaycastComponent& ray, const ecs::TransformComponent& tr) {
-        if (!ray.enabled || !ray.debugDraw) return;
+        if (!m_frame.settings.showRays || !ray.enabled || !ray.debugDraw) return;
 
         math::Vec3 origin{};
         if (ray.originMode == ecs::RaycastComponent::OriginMode::WorldPosition) {
@@ -357,6 +465,49 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         m_frame.rays.push_back(std::move(draw));
       });
 
+  // --- Debug volume boxes and skeleton bones ---
+  if (m_frame.settings.showCollisionBoxes || m_frame.settings.showCombatBoxes || m_frame.settings.showSkeletonBones) {
+    if (m_frame.settings.showCollisionBoxes) {
+      registry.view<ecs::ColliderComponent, ecs::TransformComponent>(
+          [&](ecs::EntityId, const ecs::ColliderComponent& collider, const ecs::TransformComponent& tr) {
+            const auto bounds = colliderAabb(tr, collider);
+            addAabbLines(m_frame.debugLines, bounds, {1.0f, 1.0f, 0.0f, 1.0f});
+          });
+    }
+
+    if (m_frame.settings.showCombatBoxes) {
+      registry.view<ecs::CombatVolumeComponent, ecs::TransformComponent>(
+          [&](ecs::EntityId, const ecs::CombatVolumeComponent& combat, const ecs::TransformComponent& tr) {
+            for (const auto& volume : combat.volumes) {
+              const auto bounds = combatAabb(tr, volume);
+              const float alpha = volume.enabled ? 1.0f : 0.25f;
+              const render::Color color = volume.role == ecs::CombatVolumeComponent::Role::Hit
+                                              ? render::Color{1.0f, 0.0f, 0.0f, alpha}
+                                              : render::Color{1.0f, 0.5f, 0.0f, alpha};
+              addAabbLines(m_frame.debugLines, bounds, color);
+            }
+          });
+    }
+
+    if (m_frame.settings.showSkeletonBones) {
+      registry.view<ecs::SkeletonComponent, ecs::TransformComponent>(
+          [&](ecs::EntityId id, const ecs::SkeletonComponent& skeleton, const ecs::TransformComponent& tr) {
+            if (!skeleton.enabled || skeleton.bones.empty()) return;
+            math::Mat4 rootWorld = composeWorld(tr);
+            if (const auto* mesh = registry.tryGet<ecs::MeshComponent>(id)) {
+              rootWorld = math::mul(rootWorld, math::scale(mesh->scale));
+            }
+            for (std::size_t i = 0; i < skeleton.bones.size(); ++i) {
+              const int parent = skeleton.bones[i].parentIndex;
+              if (parent < 0) continue;
+              const math::Vec3 childPos = translationFromMat4(math::mul(rootWorld, boneWorldMatrix(skeleton, static_cast<int>(i))));
+              const math::Vec3 parentPos = translationFromMat4(math::mul(rootWorld, boneWorldMatrix(skeleton, parent)));
+              addLine(m_frame.debugLines, parentPos, childPos, {1.0f, 1.0f, 1.0f, 1.0f});
+            }
+          });
+    }
+  }
+
   // --- Lights ---
   registry.view<ecs::LightComponent, ecs::TransformComponent>(
       [&](ecs::EntityId id, const ecs::LightComponent& light, const ecs::TransformComponent& tr) {
@@ -375,17 +526,6 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.shadowDistance = light.shadowDistance;
         m_frame.lights.push_back(std::move(draw));
       });
-
-  // --- Render settings (pick the first enabled) ---
-  registry.view<ecs::RenderSettingsComponent>([&](ecs::EntityId, const ecs::RenderSettingsComponent& s) {
-    if (!s.enabled) return;
-    if (m_frame.settings.present) return;
-    m_frame.settings.present = true;
-    m_frame.settings.shadowsEnabled = s.shadowsEnabled;
-    m_frame.settings.shadowQuality = s.shadowQuality;
-    m_frame.settings.shadowStrength = s.shadowStrength;
-    m_frame.settings.shadowUseTessellation = s.shadowUseTessellation;
-  });
 
   // --- Fog volumes (pick the first enabled) ---
   registry.view<ecs::FogVolumeComponent, ecs::TransformComponent>(

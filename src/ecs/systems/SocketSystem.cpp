@@ -11,8 +11,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iomanip>
-#include <iostream>
 
 namespace {
 
@@ -26,11 +24,12 @@ static math::Mat4 composeLocal(const ecs::SocketComponent& socket) {
                    math::mul(math::rotateX(degToRad(socket.rotationOffset.x)), math::scale(scale)));
 }
 
-static math::Mat4 composeWorld(const ecs::TransformComponent& tr) {
+static math::Mat4 composeWorld(const ecs::TransformComponent& tr, const math::Vec3& extraScale = {1.0f, 1.0f, 1.0f}) {
+  const math::Vec3 combinedScale{tr.scale.x * extraScale.x, tr.scale.y * extraScale.y, tr.scale.z * extraScale.z};
   return math::mul(math::translate(tr.position),
                    math::mul(math::rotateY(degToRad(tr.rotation.y)),
                              math::mul(math::rotateX(degToRad(tr.rotation.x)),
-                                       math::mul(math::rotateZ(degToRad(tr.rotation.z)), math::scale(tr.scale)))));
+                                       math::mul(math::rotateZ(degToRad(tr.rotation.z)), math::scale(combinedScale)))));
 }
 
 static math::Vec3 scaleFromMat4(const math::Mat4& m) {
@@ -110,8 +109,7 @@ static math::Vec3 translationFromMat4(const math::Mat4& m) { return {m.m[12], m.
 namespace ecs::systems {
 
 void SocketSystem::tick(EntityRegistry& registry, double deltaSeconds) const {
-  static float debugTimerSeconds = 0.0f;
-  debugTimerSeconds += static_cast<float>(std::max(0.0, deltaSeconds));
+  (void)deltaSeconds;
 
   registry.view<ecs::SocketComponent, ecs::TransformComponent>([&](ecs::EntityId socketId,
                                                                    ecs::SocketComponent& socket,
@@ -130,30 +128,23 @@ void SocketSystem::tick(EntityRegistry& registry, double deltaSeconds) const {
 
     const auto* skeleton = registry.tryGet<ecs::SkeletonComponent>(targetEntity);
     if (!skeleton || !skeleton->enabled) return;
+    math::Vec3 targetMeshScale{1.0f, 1.0f, 1.0f};
     if (!socket.skeletonName.empty() && skeleton->skeletonId != socket.skeletonName) {
       const auto* mesh = registry.tryGet<ecs::MeshComponent>(targetEntity);
       if (!mesh || mesh->skeletonId != socket.skeletonName) return;
+      targetMeshScale = mesh->scale;
+    } else if (const auto* mesh = registry.tryGet<ecs::MeshComponent>(targetEntity)) {
+      targetMeshScale = mesh->scale;
     }
 
     const int boneIndex = findBoneIndex(*skeleton, socket.boneName);
 
-    const math::Mat4 targetWorld = composeWorld(*targetTr);
+    const math::Mat4 targetWorld = composeWorld(*targetTr, targetMeshScale);
     const math::Mat4 boneModel = boneIndex >= 0 ? boneWorldMatrix(*skeleton, boneIndex) : math::identity();
     socket.worldTransform = math::mul(targetWorld, math::mul(boneModel, composeLocal(socket)));
     socketTr.position = translationFromMat4(socket.worldTransform);
     socketTr.rotation = rotationFromMat4(socket.worldTransform);
-    socketTr.scale = {1.0f, 1.0f, 1.0f};
-
-    if (socket.name == "player_head_socket" && debugTimerSeconds >= 0.5f) {
-      debugTimerSeconds = 0.0f;
-      const math::Vec3 bonePos = translationFromMat4(math::mul(targetWorld, boneModel));
-      const math::Vec3 socketPos = translationFromMat4(socket.worldTransform);
-      std::cout << std::fixed << std::setprecision(3)
-                << "[socket] bone=(" << bonePos.x << "," << bonePos.y << "," << bonePos.z << ")"
-                << " socket=(" << socketPos.x << "," << socketPos.y << "," << socketPos.z << ")"
-                << " delta=(" << (socketPos.x - bonePos.x) << "," << (socketPos.y - bonePos.y) << ","
-                << (socketPos.z - bonePos.z) << ")\n";
-    }
+    socketTr.scale = scaleFromMat4(socket.worldTransform);
   });
 }
 

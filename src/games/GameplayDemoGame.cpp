@@ -6,8 +6,10 @@
 
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/AnimationComponent.h"
+#include "ecs/components/AttachmentComponent.h"
 #include "ecs/components/CharacterComponent.h"
 #include "ecs/components/ColliderComponent.h"
+#include "ecs/components/CombatVolumeComponent.h"
 #include "ecs/components/ControllerComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/IKComponent.h"
@@ -24,6 +26,7 @@
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/GrassPatchComponent.h"
 #include "ecs/components/SkeletonComponent.h"
+#include "ecs/components/SocketComponent.h"
 #include "ecs/components/ThirdPersonCameraComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "ecs/events/RaycastEvents.h"
@@ -34,6 +37,7 @@
 #include "materials/presets/HighQualityDirtRockGrassLayer.h"
 #include "materials/presets/RealisticSkyClouds.h"
 
+#include <algorithm>
 #include <iostream>
 
 namespace games {
@@ -61,6 +65,7 @@ void configurePlayerHeadIk(ecs::EntityRegistry& registry, ecs::EntityId actor, e
   headChain.overrideAnimation = true;
   ecs::services::IKService::setEntityTarget(headChain, target, {0.0f, -0.10f, 0.0f});
   ecs::services::IKService::setWeight(headChain, 1.0f);
+  ecs::services::IKService::setBlendTimes(headChain, 0.25f, 0.20f);
   ecs::services::IKService::setIterations(headChain, 6);
 }
 
@@ -96,6 +101,7 @@ void configurePlayerHandReachIk(ecs::EntityRegistry& registry, ecs::EntityId act
   handChain.targetLocalOffset = {0.0f, 0.0f, 0.0f};
   ecs::services::IKService::setEntityTarget(handChain, target, {0.0f, 1.2f, 0.15f});
   ecs::services::IKService::setWeight(handChain, 0.92f);
+  ecs::services::IKService::setBlendTimes(handChain, 0.25f, 0.20f);
   ecs::services::IKService::setIterations(handChain, 8);
 }
 
@@ -144,6 +150,14 @@ VisionDebugResult updatePlayerVisionDrivenIk(ecs::EntityRegistry& registry,
   }
   result.sawObservedTarget = targetSeen;
   return result;
+}
+
+bool hasActionRequest(const ecs::ControllerComponent* controller, const std::string& action) {
+  if (!controller) return false;
+  for (const auto& req : controller->actionRequests) {
+    if (req.pressed && req.action == action) return true;
+  }
+  return false;
 }
 
 }  // namespace
@@ -422,8 +436,55 @@ void GameplayDemoGame::onStart() {
 
   // Global render switches (tweakable).
   {
-    const auto rs = m_registry.createEntity("render_settings");
-    (void)m_registry.emplace<ecs::RenderSettingsComponent>(rs);
+    m_renderSettings = m_registry.createEntity("render_settings");
+    auto& rs = m_registry.emplace<ecs::RenderSettingsComponent>(m_renderSettings);
+    rs.enabled = true;
+  }
+
+  {
+    m_playerHandSocket = m_registry.createEntity("player_hand_socket");
+    m_registry.emplace<ecs::TransformComponent>(m_playerHandSocket);
+    auto& socket = m_registry.emplace<ecs::SocketComponent>(m_playerHandSocket);
+    socket.name = "player_hand_socket";
+    socket.targetEntity = m_player;
+    socket.targetEntityName = "business_man";
+    socket.skeletonName = "business-man#skin0";
+    socket.boneName = "RightHand_42";
+
+    auto& combat = m_registry.emplace<ecs::CombatVolumeComponent>(m_playerHandSocket);
+    ecs::CombatVolumeComponent::Volume hitVolume;
+    hitVolume.role = ecs::CombatVolumeComponent::Role::Hit;
+    hitVolume.shape = ecs::CombatVolumeComponent::Shape::Box;
+    hitVolume.box = {0.30f, 0.22f, 0.45f};
+    hitVolume.offset = {0.0f, 0.0f, 0.22f};
+    hitVolume.damage = 12.0f;
+    hitVolume.damageType = "melee";
+    hitVolume.force = 4.5f;
+    hitVolume.singleHit = true;
+    combat.volumes.push_back(hitVolume);
+    m_playerHitVolume = m_playerHandSocket;
+  }
+
+  {
+    m_demoNpcHurtVolume = m_registry.createEntity("demo_npc_hurtbox");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(m_demoNpcHurtVolume);
+    tr.position = {0.0f, 0.0f, 0.0f};
+    auto& attach = m_registry.emplace<ecs::AttachmentComponent>(m_demoNpcHurtVolume);
+    ecs::AttachmentComponent::Attachment a;
+    a.targetEntity = m_demoNpc;
+    a.mode = ecs::AttachmentComponent::Mode::Parent;
+    a.positionOffset = {0.0f, 0.0f, 0.0f};
+    a.inheritRotation = true;
+    a.inheritScale = false;
+    attach.attachments.push_back(a);
+    auto& combat = m_registry.emplace<ecs::CombatVolumeComponent>(m_demoNpcHurtVolume);
+    ecs::CombatVolumeComponent::Volume hurtVolume;
+    hurtVolume.role = ecs::CombatVolumeComponent::Role::Hurt;
+    hurtVolume.shape = ecs::CombatVolumeComponent::Shape::Box;
+    hurtVolume.box = {0.8f, 1.7f, 0.55f};
+    hurtVolume.offset = {0.0f, 0.95f, 0.0f};
+    hurtVolume.damageMultiplier = 1.0f;
+    combat.volumes.push_back(hurtVolume);
   }
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
@@ -464,6 +525,28 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   m_controls.update(ctx, rt.hasInput ? &rt : nullptr);
   m_controllerSystem.tick(m_registry, m_controls);
 
+  if (auto* renderSettings = m_registry.tryGet<ecs::RenderSettingsComponent>(m_renderSettings)) {
+    renderSettings->showRays = ctx.debugHudEnabled;
+    renderSettings->showCollisionBoxes = ctx.debugHudEnabled;
+    renderSettings->showCombatBoxes = ctx.debugHudEnabled;
+    renderSettings->showSkeletonBones = ctx.debugHudEnabled;
+  }
+
+  if (const auto* controller = m_registry.tryGet<ecs::ControllerComponent>(m_player)) {
+    if (hasActionRequest(controller, "attack")) {
+      m_attackTimerSeconds = 0.25;
+    }
+  }
+  if (m_attackTimerSeconds > 0.0) {
+    m_attackTimerSeconds = std::max(0.0, m_attackTimerSeconds - ctx.deltaSeconds);
+  }
+  if (auto* combat = m_registry.tryGet<ecs::CombatVolumeComponent>(m_playerHitVolume)) {
+    for (auto& volume : combat->volumes) {
+      volume.enabled = m_attackTimerSeconds > 0.0;
+      volume.singleHit = true;
+    }
+  }
+
   // --- Controller requests -> motion intent ---
   m_motionSystem.tick(m_registry);
 
@@ -486,13 +569,14 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   m_animationSystem.tick(m_registry, ctx.deltaSeconds);
   // m_ikSystem.tick(m_registry, m_events);
   m_hierarchySystem.tick(m_registry);
-  m_socketSystem.tick(m_registry, ctx.deltaSeconds);
   m_attachmentSystem.update(m_registry, ctx.deltaSeconds);
   m_rayDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
   m_sensorSystem.tick(m_registry, m_events);
   (void)updatePlayerVisionDrivenIk(m_registry, m_events, m_player, m_demoNpc);
   updatePlayerHeadFacingIk(m_registry, m_player, m_camera);
-  m_ikSystem.tick(m_registry, m_events);
+  m_ikSystem.tick(m_registry, m_events, ctx.deltaSeconds);
+   m_socketSystem.tick(m_registry, ctx.deltaSeconds);
+  m_hitDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
 
   // --- Third-person camera follow ---
   m_thirdPersonCameraSystem.tick(m_registry, ctx.deltaSeconds);
@@ -515,15 +599,6 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   }
 #endif
 
-  m_printTimer += ctx.deltaSeconds;
-  if (m_printTimer >= 0.5) {
-    m_printTimer = 0.0;
-
-    if (!frame.terrains.empty()) {
-      std::cout << " terrain.shader=\"" << frame.terrains[0].shader.key << "\"";
-    }
-    std::cout << "\n";
-  }
 }
 
 void GameplayDemoGame::onStop() {

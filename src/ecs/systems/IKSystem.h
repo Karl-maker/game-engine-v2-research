@@ -9,7 +9,7 @@ namespace ecs::systems {
 
 class IKSystem final {
  public:
-  void tick(EntityRegistry& registry, ecs::services::EventService& events) const;
+  void tick(EntityRegistry& registry, ecs::services::EventService& events, double deltaSeconds) const;
 };
 
 }  // namespace ecs::systems

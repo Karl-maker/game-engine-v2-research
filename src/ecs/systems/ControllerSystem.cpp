@@ -34,6 +34,9 @@ void ControllerSystem::tick(ecs::EntityRegistry& registry, const core::ControlSe
     if (state.jump) {
       c.actionRequests.push_back({"jump", true, 1.0f});
     }
+    if (state.attack) {
+      c.actionRequests.push_back({"attack", true, 1.0f});
+    }
   });
 }
 

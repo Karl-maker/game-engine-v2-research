@@ -158,6 +158,12 @@ class GraphicsSystem final {
       std::string category;
     };
 
+    struct DebugLine final {
+      math::Vec3 start{};
+      math::Vec3 end{};
+      render::Color color{1.0f, 1.0f, 1.0f, 1.0f};
+    };
+
     struct FogDraw final {
       EntityId entity = kInvalidEntityId;
       math::Vec3 center{};
@@ -220,13 +226,17 @@ class GraphicsSystem final {
       render::AssetRef shader{};
     };
 
-    struct RenderSettingsDraw final {
-      bool present = false;
-      bool shadowsEnabled = false;
-      int shadowQuality = 1;
-      float shadowStrength = 1.0f;
-      bool shadowUseTessellation = false;
-    };
+  struct RenderSettingsDraw final {
+    bool present = false;
+    bool shadowsEnabled = false;
+    int shadowQuality = 1;
+    float shadowStrength = 1.0f;
+    bool shadowUseTessellation = false;
+    bool showRays = false;
+    bool showCollisionBoxes = false;
+    bool showCombatBoxes = false;
+    bool showSkeletonBones = false;
+  };
 
     ActiveCamera camera;
     std::vector<TerrainDraw> terrains;
@@ -237,6 +247,7 @@ class GraphicsSystem final {
     std::vector<RockDraw> rocks;
     std::vector<LightDraw> lights;
     RenderSettingsDraw settings{};
+    std::vector<DebugLine> debugLines;
   };
 
   const FrameSnapshot& tick(EntityRegistry& registry);
