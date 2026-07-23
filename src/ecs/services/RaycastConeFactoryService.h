@@ -38,6 +38,10 @@ struct RaycastConeConfig {
   // Attachment offsets: where the cone originates relative to the owner.
   math::Vec3 originLocalOffset{0.0f, 0.0f, 0.0f};
 
+  // Optional direct socket follow. If set, rays attach to the named socket on `socketTargetEntity`.
+  EntityId socketTargetEntity = kInvalidEntityId;
+  std::string socketKey;
+
   // Naming for created ray entities.
   std::string baseName = "cone_raycast";
 };

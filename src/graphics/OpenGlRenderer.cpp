@@ -2043,10 +2043,15 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glUseProgram(m_debugLineProgram);
     const GLint locViewProj = glGetUniformLocation(m_debugLineProgram, "u_ViewProj");
     if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
-    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glDisable(GL_CULL_FACE);
-    glDisable(GL_BLEND);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+#if defined(GL_LINE_SMOOTH)
+    glEnable(GL_LINE_SMOOTH);
+#endif
+    glLineWidth(2.0f);
 
     glBindVertexArray(m_debugLineVao);
     glBindBuffer(GL_ARRAY_BUFFER, m_debugLineVbo);
@@ -2059,6 +2064,11 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(verts.size()));
     glBindVertexArray(0);
     glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+#if defined(GL_LINE_SMOOTH)
+    glDisable(GL_LINE_SMOOTH);
+#endif
+    glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
   }
 

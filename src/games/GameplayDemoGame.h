@@ -76,6 +76,7 @@ class GameplayDemoGame final : public core::IGame {
 
   ecs::EntityId m_camera = ecs::kInvalidEntityId;
   ecs::EntityId m_player = ecs::kInvalidEntityId;
+  ecs::EntityId m_demoNpc = ecs::kInvalidEntityId;
   ecs::EntityId m_terrain = ecs::kInvalidEntityId;
   ecs::EntityId m_light = ecs::kInvalidEntityId;
 

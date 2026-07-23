@@ -8,7 +8,7 @@ namespace ecs::systems {
 
 class SocketSystem final {
  public:
-  void tick(EntityRegistry& registry) const;
+  void tick(EntityRegistry& registry, double deltaSeconds) const;
 };
 
 }  // namespace ecs::systems

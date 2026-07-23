@@ -16,17 +16,25 @@ namespace ecs {
 
 struct IKComponent final {
   struct Chain final {
+    enum class TargetMode {
+      Entity,
+      WorldPosition,
+    };
+
     bool enabled = true;
     std::string name;
     std::vector<std::string> boneNames;
 
+    TargetMode targetMode = TargetMode::Entity;
     EntityId targetEntity = kInvalidEntityId;
     std::string targetEntityName;
+    math::Vec3 worldTarget{0.0f, 0.0f, 0.0f};
     math::Vec3 targetOffset{0.0f, 0.0f, 0.0f};
     math::Vec3 targetLocalOffset{0.0f, 0.0f, 0.0f};
 
     float weight = 1.0f;
     int iterations = 8;
+    bool overrideAnimation = true;
   };
 
   bool enabled = true;

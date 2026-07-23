@@ -3,6 +3,7 @@
 // Author: Karl-Johan Bailey
 
 #include "ecs/components/ColliderComponent.h"
+#include "ecs/components/SensorComponent.h"
 #include "ecs/components/RaycastComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
@@ -125,6 +126,7 @@ RayBoxHit rayAabb(const math::Vec3& origin, const math::Vec3& direction, const A
 namespace ecs::systems {
 
 void RayDetectionSystem::tick(EntityRegistry& registry, ecs::services::EventService& events, double timeSeconds) {
+  (void)timeSeconds;
   struct Body final {
     ecs::EntityId id = ecs::kInvalidEntityId;
     Aabb bounds{};
@@ -230,8 +232,19 @@ void RayDetectionSystem::tick(EntityRegistry& registry, ecs::services::EventServ
     std::vector<physics::RaycastHit> hits;
     hits.reserve(candidates.size());
 
+    const ecs::EntityId sensorParentEntity =
+        ray.ignoreSelf && registry.isAlive(ray.sensorEntity)
+            ? [&]() {
+                const auto* sensor = registry.tryGet<ecs::SensorComponent>(ray.sensorEntity);
+                return sensor ? sensor->parentEntity : ecs::kInvalidEntityId;
+              }()
+            : ecs::kInvalidEntityId;
+
     for (ecs::EntityId candidateId : candidates) {
-      if (ray.ignoreSelf && (candidateId == ray.originEntity || candidateId == ray.sensorEntity)) continue;
+      if (ray.ignoreSelf &&
+          (candidateId == ray.originEntity || candidateId == ray.sensorEntity || candidateId == sensorParentEntity)) {
+        continue;
+      }
       if (!registry.isAlive(candidateId)) continue;
       const auto bodyIt = bodies.find(candidateId);
       if (bodyIt == bodies.end()) continue;

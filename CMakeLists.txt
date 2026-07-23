@@ -29,6 +29,7 @@ add_executable(duppy
   src/ecs/systems/SocketSystem.cpp
   src/ecs/systems/TargetSystem.cpp
   src/ecs/systems/ThirdPersonCameraSystem.cpp
+  src/ecs/services/IKService.cpp
   src/ecs/services/RaycastConeFactoryService.cpp
   src/ecs/services/SpatialHashGridService.cpp
   src/terrain/PerlinNoise2D.cpp

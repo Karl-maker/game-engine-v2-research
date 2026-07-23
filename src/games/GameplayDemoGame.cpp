@@ -11,11 +11,13 @@
 #include "ecs/components/ControllerComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/IKComponent.h"
+#include "ecs/components/IdentityComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/MotionComponent.h"
 #include "ecs/components/MeshComponent.h"
 #include "ecs/components/RenderSettingsComponent.h"
 #include "ecs/components/RigidbodyComponent.h"
+#include "ecs/components/SensorComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/StatsComponent.h"
 #include "ecs/components/SkyComponent.h"
@@ -24,6 +26,8 @@
 #include "ecs/components/SkeletonComponent.h"
 #include "ecs/components/ThirdPersonCameraComponent.h"
 #include "ecs/components/TransformComponent.h"
+#include "ecs/events/RaycastEvents.h"
+#include "ecs/services/IKService.h"
 #include "ecs/services/RaycastConeFactoryService.h"
 #include "materials/presets/HighQualityDirtRockLayer.h"
 #include "materials/presets/StoneGrass.h"
@@ -34,7 +38,118 @@
 
 namespace games {
 
+namespace {
+
+struct VisionDebugResult final {
+  bool sawObservedTarget = false;
+  std::string firstHitName;
+};
+
+math::Vec3 forwardFromPitchYawDeg(float pitchDeg, float yawDeg) {
+  constexpr float kPi = 3.14159265358979323846f;
+  constexpr float kDegToRad = kPi / 180.0f;
+  const float pitch = pitchDeg * kDegToRad;
+  const float yaw = yawDeg * kDegToRad;
+  return math::Vec3{std::cos(pitch) * std::sin(yaw), -std::sin(pitch), std::cos(pitch) * std::cos(yaw)};
+}
+
+void configurePlayerHeadIk(ecs::EntityRegistry& registry, ecs::EntityId actor, ecs::EntityId target) {
+  auto* ik = registry.tryGet<ecs::IKComponent>(actor);
+  if (!ik) return;
+
+  auto& headChain = ecs::services::IKService::ensureChain(*ik, "look_at_camera", {"Neck_7", "Head_6"});
+  headChain.overrideAnimation = true;
+  ecs::services::IKService::setEntityTarget(headChain, target, {0.0f, -0.10f, 0.0f});
+  ecs::services::IKService::setWeight(headChain, 1.0f);
+  ecs::services::IKService::setIterations(headChain, 6);
+}
+
+void updatePlayerHeadFacingIk(ecs::EntityRegistry& registry, ecs::EntityId actor, ecs::EntityId camera) {
+  auto* ik = registry.tryGet<ecs::IKComponent>(actor);
+  if (!ik || camera == ecs::kInvalidEntityId) return;
+
+  ecs::IKComponent::Chain* headChain = nullptr;
+  for (auto& chain : ik->chains) {
+    if (chain.name == "look_at_camera") {
+      headChain = &chain;
+      break;
+    }
+  }
+  if (!headChain || !registry.isAlive(camera)) return;
+
+  const auto* camTr = registry.tryGet<ecs::TransformComponent>(camera);
+  if (!camTr) return;
+
+  const math::Vec3 forward = forwardFromPitchYawDeg(camTr->rotation.x, camTr->rotation.y);
+  ecs::services::IKService::setWorldTarget(*headChain, camTr->position + forward * 20.0f);
+  headChain->enabled = true;
+}
+
+void configurePlayerHandReachIk(ecs::EntityRegistry& registry, ecs::EntityId actor, ecs::EntityId target) {
+  auto* ik = registry.tryGet<ecs::IKComponent>(actor);
+  if (!ik) return;
+
+  auto& handChain =
+      ecs::services::IKService::ensureChain(*ik, "reach_seen_target", {"RightArm_44", "RightForeArm_43", "RightHand_42"});
+  handChain.overrideAnimation = true;
+  handChain.enabled = false;
+  handChain.targetLocalOffset = {0.0f, 0.0f, 0.0f};
+  ecs::services::IKService::setEntityTarget(handChain, target, {0.0f, 1.2f, 0.15f});
+  ecs::services::IKService::setWeight(handChain, 0.92f);
+  ecs::services::IKService::setIterations(handChain, 8);
+}
+
+VisionDebugResult updatePlayerVisionDrivenIk(ecs::EntityRegistry& registry,
+                                             ecs::services::EventService& events,
+                                             ecs::EntityId player,
+                                             ecs::EntityId observedTarget) {
+  VisionDebugResult result;
+  auto* ik = registry.tryGet<ecs::IKComponent>(player);
+  if (!ik) return result;
+
+  ecs::IKComponent::Chain* reachChain = nullptr;
+  for (auto& chain : ik->chains) {
+    if (chain.name == "reach_seen_target") {
+      reachChain = &chain;
+      break;
+    }
+  }
+  if (!reachChain) return result;
+
+  bool targetSeen = false;
+  bool hasTarget = false;
+  math::Vec3 targetWorld{};
+  const auto alerts = events.consumeAll<ecs::events::SensorAlertEvent>();
+  for (const auto& alert : alerts) {
+    if (alert.parentEntity != player) continue;
+    if (result.firstHitName.empty()) {
+      if (const auto* identity = registry.tryGet<ecs::IdentityComponent>(alert.hitEntity)) {
+        result.firstHitName = identity->name;
+      } else {
+        result.firstHitName = "entity_" + std::to_string(alert.hitEntity);
+      }
+    }
+    if (!hasTarget) {
+      targetWorld = alert.hit.hitPosition;
+      hasTarget = true;
+    }
+    if (alert.hitEntity == observedTarget) {
+      targetSeen = true;
+    }
+  }
+
+  reachChain->enabled = hasTarget;
+  if (hasTarget) {
+    ecs::services::IKService::setWorldTarget(*reachChain, targetWorld);
+  }
+  result.sawObservedTarget = targetSeen;
+  return result;
+}
+
+}  // namespace
+
 void GameplayDemoGame::onStart() {
+  std::cout << "\x1B[2J\x1B[H";
   std::cout << "Gameplay demo (graphics snapshot)\n";
   std::cout << "- Creates camera + terrain(shader) + light\n";
   std::cout << "- Camera is driven by Controller/Motion/Movement systems\n";
@@ -56,7 +171,7 @@ void GameplayDemoGame::onStart() {
 
   m_player = m_registry.createEntity("business_man");
   auto& playerTr = m_registry.emplace<ecs::TransformComponent>(m_player);
-  playerTr.position = {0.0f, 0.0f, -8.0f};
+  playerTr.position = {0.0f, 0.0f, 0.0f};
   playerTr.rotation = {0.0f, 0.0f, 0.0f};
   m_registry.emplace<ecs::ControllerComponent>(m_player);
   m_registry.emplace<ecs::CharacterComponent>(m_player);
@@ -76,6 +191,7 @@ void GameplayDemoGame::onStart() {
     collider.shape = ecs::ColliderComponent::Shape::Capsule;
     collider.size = {0.38f, 1.85f, 0.38f};
     collider.offset = {0.0f, 0.925f, 0.0f};
+    collider.collisionLayer = physics::kLayerCharacter;
   }
   {
     auto& stats = m_registry.emplace<ecs::StatsComponent>(m_player);
@@ -114,14 +230,9 @@ void GameplayDemoGame::onStart() {
   }
   {
     auto& ik = m_registry.emplace<ecs::IKComponent>(m_player);
-    ecs::IKComponent::Chain headChain;
-    headChain.name = "look_at_camera";
-    headChain.boneNames = {"Neck_7", "Head_6"};
-    headChain.targetEntity = m_camera;
-    headChain.targetOffset = {0.0f, -0.10f, 0.0f};
-    headChain.weight = 1.0f;
-    headChain.iterations = 6;
-    ik.chains.push_back(headChain);
+    ik.enabled = true;
+    configurePlayerHeadIk(m_registry, m_player, m_camera);
+    configurePlayerHandReachIk(m_registry, m_player, ecs::kInvalidEntityId);
   }
   {
     auto& thirdPerson = m_registry.emplace<ecs::ThirdPersonCameraComponent>(m_camera);
@@ -132,28 +243,29 @@ void GameplayDemoGame::onStart() {
     thirdPerson.yawDeg = playerTr.rotation.y;
   }
 
-  // Head sensor cone for the player.
   {
     ecs::services::RaycastConeFactoryService rayFactory;
     ecs::services::SensorConeConfig cfg;
     cfg.sensorName = "player_head_sensor";
     cfg.socketName = "player_head_socket";
+    cfg.socketPositionOffset = {0.0f, 0.00f, 0.00f};
     cfg.cone.baseName = "player_head_ray";
     cfg.cone.rayCount = 12;
-    cfg.cone.coneAngleDeg = 35.0f;
-    cfg.cone.length = 10.0f;
+    cfg.cone.coneAngleDeg = 22.0f;
+    cfg.cone.length = 16.0f;
     cfg.cone.radius = 0.0f;
-    cfg.cone.collisionLayers = physics::kAllLayers;
+    cfg.cone.collisionLayers = physics::kLayerCharacter;
     cfg.cone.ignoreLayers = 0;
     cfg.cone.ignoreSelf = true;
     cfg.cone.maxHits = 1;
-    cfg.cone.originLocalOffset = {0.0f, 0.18f, 0.05f};
+    cfg.cone.originLocalOffset = {0.0f, 0.0f, 0.0f};
     rayFactory.createSensorCone(m_registry, m_player, cfg);
   }
 
   // A second character that just stands there.
   {
     const auto npc = m_registry.createEntity("business_man_npc");
+    m_demoNpc = npc;
     auto& npcTr = m_registry.emplace<ecs::TransformComponent>(npc);
     npcTr.position = {3.25f, 0.0f, -8.0f};
     npcTr.rotation = {0.0f, 180.0f, 0.0f};
@@ -192,6 +304,7 @@ void GameplayDemoGame::onStart() {
       npcCollider.shape = ecs::ColliderComponent::Shape::Capsule;
       npcCollider.size = {0.38f, 1.85f, 0.38f};
       npcCollider.offset = {0.0f, 0.925f, 0.0f};
+      npcCollider.collisionLayer = physics::kLayerCharacter;
     }
     auto& npcAnim = m_registry.emplace<ecs::AnimationComponent>(npc);
     npcAnim.availableClips = {"IdleV4.2(maya_head)", "Idle", "Walk", "Run"};
@@ -199,6 +312,8 @@ void GameplayDemoGame::onStart() {
     npcAnim.idleAnimationClip = "IdleV4.2(maya_head)";
     npcAnim.idleDelaySeconds = 5.0f;
   }
+
+  configurePlayerHandReachIk(m_registry, m_player, m_demoNpc);
 
   m_terrain = m_registry.createEntity("terrain");
   m_registry.emplace<ecs::TransformComponent>(m_terrain);
@@ -215,8 +330,10 @@ void GameplayDemoGame::onStart() {
     terrain.noise.lacunarity = 2.0f;
     auto& collider = m_registry.emplace<ecs::ColliderComponent>(m_terrain);
     collider.shape = ecs::ColliderComponent::Shape::Terrain;
+    collider.collisionLayer = physics::kLayerWorld;
     collider.terrain.enabled = true;
     collider.terrain.sourceTerrainEntity = m_terrain;
+    collider.terrain.collisionLayer = physics::kLayerWorld;
     collider.terrain.thicknessMeters = 5.0f;
 
     auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::HighQualityDirtRockGrassLayer());
@@ -369,10 +486,13 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   m_animationSystem.tick(m_registry, ctx.deltaSeconds);
   // m_ikSystem.tick(m_registry, m_events);
   m_hierarchySystem.tick(m_registry);
-  m_socketSystem.tick(m_registry);
+  m_socketSystem.tick(m_registry, ctx.deltaSeconds);
   m_attachmentSystem.update(m_registry, ctx.deltaSeconds);
   m_rayDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
   m_sensorSystem.tick(m_registry, m_events);
+  (void)updatePlayerVisionDrivenIk(m_registry, m_events, m_player, m_demoNpc);
+  updatePlayerHeadFacingIk(m_registry, m_player, m_camera);
+  m_ikSystem.tick(m_registry, m_events);
 
   // --- Third-person camera follow ---
   m_thirdPersonCameraSystem.tick(m_registry, ctx.deltaSeconds);
@@ -398,13 +518,6 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   m_printTimer += ctx.deltaSeconds;
   if (m_printTimer >= 0.5) {
     m_printTimer = 0.0;
-
-    const auto* playerTr = m_registry.tryGet<ecs::TransformComponent>(m_player);
-    std::cout << "camera=(" << frame.camera.position.x << "," << frame.camera.position.y << "," << frame.camera.position.z
-              << ") forward=(" << frame.camera.forward.x << "," << frame.camera.forward.y << "," << frame.camera.forward.z
-              << ") player=(" << (playerTr ? playerTr->position.x : 0.0f) << "," << (playerTr ? playerTr->position.y : 0.0f)
-              << "," << (playerTr ? playerTr->position.z : 0.0f) << ") meshes=" << frame.meshes.size()
-              << " terrains=" << frame.terrains.size() << " lights=" << frame.lights.size();
 
     if (!frame.terrains.empty()) {
       std::cout << " terrain.shader=\"" << frame.terrains[0].shader.key << "\"";

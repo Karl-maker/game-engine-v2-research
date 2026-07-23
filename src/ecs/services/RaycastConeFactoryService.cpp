@@ -52,17 +52,19 @@ std::vector<EntityId> RaycastConeFactoryService::createCone(EntityRegistry& regi
     const EntityId rayEntity = registry.createEntity(name);
     registry.emplace<TransformComponent>(rayEntity);
 
-    // Attach the ray entity to the owner so it inherits rotation/position.
+    // Attach the ray entity either directly to the socket or to the sensor owner.
     auto& attach = registry.emplace<AttachmentComponent>(rayEntity);
     AttachmentComponent::Attachment a;
-    a.targetEntity = owner;
-    a.mode = AttachmentComponent::Mode::Parent;
+    a.targetEntity = cfg.socketKey.empty() || !registry.isAlive(cfg.socketTargetEntity) ? owner : cfg.socketTargetEntity;
+    a.mode = cfg.socketKey.empty() || !registry.isAlive(cfg.socketTargetEntity) ? AttachmentComponent::Mode::Parent
+                                                                                : AttachmentComponent::Mode::Socket;
     a.enabled = true;
     a.positionOffset = cfg.originLocalOffset;
     a.inheritPosition = true;
     a.inheritRotation = true;
     a.inheritScale = false;
     a.space = AttachmentComponent::Space::Local;
+    a.socketKey = cfg.socketKey;
     attach.attachments.push_back(a);
 
     // Describe the raycast. A raycast system can transform this local direction
@@ -133,6 +135,7 @@ EntityId RaycastConeFactoryService::createSensorCone(EntityRegistry& registry,
   socket.rotationOffset = cfg.socketRotationOffset;
   socket.scaleOffset = cfg.socketScaleOffset;
 
+  
   auto& sensor = registry.emplace<SensorComponent>(sensorEntity);
   sensor.parentEntity = targetEntity;
 
@@ -140,6 +143,8 @@ EntityId RaycastConeFactoryService::createSensorCone(EntityRegistry& registry,
   if (cone.baseName.empty()) {
     cone.baseName = sensorName + "_ray";
   }
+  cone.socketTargetEntity = targetEntity;
+  cone.socketKey = socket.name;
   createCone(registry, sensorEntity, cone);
 
   return sensorEntity;
