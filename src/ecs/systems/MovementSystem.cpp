@@ -3,6 +3,7 @@
 // Author: Karl-Johan Bailey
 
 #include "ecs/components/ControllerComponent.h"
+#include "ecs/components/CharacterComponent.h"
 #include "ecs/components/MotionComponent.h"
 #include "ecs/components/StatsComponent.h"
 #include "ecs/components/TransformComponent.h"
@@ -45,9 +46,14 @@ void MovementSystem::tick(ecs::EntityRegistry& registry, ecs::services::EventSer
         // Optional look intent (apply here so rotation is updated once, centralized with movement).
         if (auto* controller = registry.tryGet<ecs::ControllerComponent>(id)) {
           if (controller->enabled && controller->lookRequest.hasRequest) {
-            tr.rotation.x += controller->lookRequest.lookDelta.x;
-            tr.rotation.y += controller->lookRequest.lookDelta.y;
-            tr.rotation.z += controller->lookRequest.lookDelta.z;
+            const bool characterDriven = registry.has<ecs::CharacterComponent>(id);
+            if (characterDriven) {
+              tr.rotation.z += controller->lookRequest.lookDelta.z;
+            } else {
+              tr.rotation.x += controller->lookRequest.lookDelta.x;
+              tr.rotation.y += controller->lookRequest.lookDelta.y;
+              tr.rotation.z += controller->lookRequest.lookDelta.z;
+            }
           }
         }
 

@@ -13,10 +13,12 @@
 #include "ecs/EntityRegistry.h"
 #include "ecs/services/EventService.h"
 #include "ecs/systems/ControllerSystem.h"
+#include "ecs/systems/AnimationSystem.h"
 #include "ecs/systems/GraphicsSystem.h"
 #include "ecs/systems/MotionSystem.h"
 #include "ecs/systems/MovementSystem.h"
 #include "ecs/systems/SkyPresetSystem.h"
+#include "ecs/systems/ThirdPersonCameraSystem.h"
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
 #include "graphics/OpenGlRenderer.h"
@@ -35,9 +37,11 @@ class GameplayDemoGame final : public core::IGame {
   core::ControlService m_controls;
   ecs::services::EventService m_events;
   ecs::systems::ControllerSystem m_controllerSystem;
+  ecs::systems::AnimationSystem m_animationSystem;
   ecs::systems::MotionSystem m_motionSystem;
   ecs::systems::MovementSystem m_movementSystem;
   ecs::systems::SkyPresetSystem m_skyPresets;
+  ecs::systems::ThirdPersonCameraSystem m_thirdPersonCameraSystem;
   ecs::systems::GraphicsSystem m_graphics;
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
@@ -45,6 +49,7 @@ class GameplayDemoGame final : public core::IGame {
 #endif
 
   ecs::EntityId m_camera = ecs::kInvalidEntityId;
+  ecs::EntityId m_player = ecs::kInvalidEntityId;
   ecs::EntityId m_terrain = ecs::kInvalidEntityId;
   ecs::EntityId m_light = ecs::kInvalidEntityId;
 

@@ -8,6 +8,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(duppy
   src/main.cpp
   src/ecs/EntityRegistry.cpp
+  src/assets/MeshAssetService.cpp
+  src/ecs/systems/AnimationSystem.cpp
   src/ecs/systems/AttachmentSystem.cpp
   src/ecs/systems/ControllerSystem.cpp
   src/ecs/systems/GraphicsSystem.cpp
@@ -15,6 +17,7 @@ add_executable(duppy
   src/ecs/systems/MovementSystem.cpp
   src/ecs/systems/SkyPresetSystem.cpp
   src/ecs/systems/TargetSystem.cpp
+  src/ecs/systems/ThirdPersonCameraSystem.cpp
   src/ecs/services/RaycastConeFactoryService.cpp
   src/terrain/PerlinNoise2D.cpp
   src/core/ConsoleInputService.cpp

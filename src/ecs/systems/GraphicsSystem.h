@@ -131,9 +131,22 @@ class GraphicsSystem final {
     float shadowDistance = 50.0f;
   };
 
+  struct MeshDraw final {
+    EntityId entity = kInvalidEntityId;
+    math::Vec3 position{};
+    math::Vec3 rotation{};
+    math::Vec3 scale{1.0f, 1.0f, 1.0f};
+    render::AssetRef meshData{};
+    render::AssetRef shader{};
+    bool visible = true;
+    bool castShadows = true;
+    bool receiveShadows = true;
+  };
+
   struct FrameSnapshot final {
     ActiveCamera camera;
     std::vector<TerrainDraw> terrains;
+    std::vector<MeshDraw> meshes;
 
     struct FogDraw final {
       EntityId entity = kInvalidEntityId;

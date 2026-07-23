@@ -6,6 +6,7 @@
 // Minimal window + shader + terrain mesh renderer driven by GraphicsSystem snapshots.
 
 #include "ecs/systems/GraphicsSystem.h"
+#include "assets/MeshAssetService.h"
 #include "graphics/ShaderService.h"
 #include "graphics/TextureService.h"
 #include "math/Vec3.h"
@@ -98,12 +99,28 @@ class OpenGlRenderer final {
     std::vector<Chunk> chunks;
   };
 
+  struct GpuSubMesh final {
+    std::uint32_t vao = 0;
+    std::uint32_t vbo = 0;
+    std::uint32_t ebo = 0;
+    std::uint32_t indexCount = 0;
+    std::uint32_t materialIndex = 0;
+  };
+
+  struct GpuMeshAsset final {
+    bool ready = false;
+    assets::LoadedMeshAsset data{};
+    std::vector<GpuSubMesh> subMeshes;
+  };
+
   TerrainMesh* getOrCreateTerrainMesh(const ecs::systems::GraphicsSystem::TerrainDraw& terrain, int lodStep);
   RockMesh* getOrCreateRockMesh(const ecs::systems::GraphicsSystem::FrameSnapshot::RockDraw& rocks,
                                 const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain);
+  GpuMeshAsset* getOrCreateGpuMesh(const std::string& path);
 
   static void destroyTerrainMesh(TerrainMesh& m);
   static void destroyRockMesh(RockMesh& m);
+  static void destroyGpuMesh(GpuMeshAsset& m);
 
   GLFWwindow* m_window = nullptr;
   int m_fbWidth = 1;
@@ -145,8 +162,11 @@ class OpenGlRenderer final {
   ShaderService m_shaders;
   std::unordered_map<std::uint64_t, TerrainMesh> m_terrainMeshes;  // key: (entity id, lodStep)
   std::unordered_map<std::uint32_t, RockMesh> m_rockMeshes;        // key: entity id
+  std::unordered_map<std::string, GpuMeshAsset> m_gpuMeshes;       // key: source path
+  std::unordered_map<std::string, assets::MeshAssetService::State> m_meshLogState;
 
   TextureService m_textures;
+  assets::MeshAssetService m_meshAssets;
 
   // Runtime LOD state (hysteresis) to avoid flickering when hovering at thresholds.
   std::unordered_map<std::uint32_t, TerrainLodState> m_terrainLodState;  // key: terrain entity id

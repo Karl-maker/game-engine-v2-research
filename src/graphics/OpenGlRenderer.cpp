@@ -68,6 +68,15 @@ static math::Mat4 ortho(float left, float right, float bottom, float top, float 
   return out;
 }
 
+static math::Mat4 composeTransform(const math::Vec3& position, const math::Vec3& rotationDeg, const math::Vec3& scale) {
+  constexpr float kPi = 3.14159265358979323846f;
+  constexpr float kDegToRad = kPi / 180.0f;
+  return math::mul(math::translate(position),
+                   math::mul(math::rotateY(rotationDeg.y * kDegToRad),
+                             math::mul(math::rotateX(rotationDeg.x * kDegToRad),
+                                       math::mul(math::rotateZ(rotationDeg.z * kDegToRad), math::scale(scale)))));
+}
+
 static void ensureShadowMap(std::uint32_t& fbo, std::uint32_t& depthTex, int& curRes, int desiredRes) {
   desiredRes = std::max(128, std::min(4096, desiredRes));
   if (depthTex != 0 && fbo != 0 && curRes == desiredRes) return;
@@ -413,6 +422,7 @@ bool OpenGlRenderer::start(int width, int height, const char* title) {
   glCullFace(GL_BACK);
 
   m_textures.start();
+  m_meshAssets.start();
 
   // Cache GPU strings (available after context creation).
   if (const auto* s = glGetString(GL_VENDOR)) m_gpuVendor = reinterpret_cast<const char*>(s);
@@ -488,6 +498,12 @@ void OpenGlRenderer::stop() {
   }
   m_rockMeshes.clear();
 
+  for (auto& [_, m] : m_gpuMeshes) {
+    destroyGpuMesh(m);
+  }
+  m_gpuMeshes.clear();
+  m_meshLogState.clear();
+
   if (m_window) {
     glfwMakeContextCurrent(m_window);
     if (m_skyVao) glDeleteVertexArrays(1, &m_skyVao);
@@ -500,6 +516,7 @@ void OpenGlRenderer::stop() {
     glfwMakeContextCurrent(nullptr);
   }
   m_textures.stop();
+  m_meshAssets.stop();
 
   if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
   if (m_overlayVao) glDeleteVertexArrays(1, &m_overlayVao);
@@ -554,6 +571,85 @@ void OpenGlRenderer::destroyRockMesh(RockMesh& m) {
   if (m.vbo) glDeleteBuffers(1, &m.vbo);
   if (m.vao) glDeleteVertexArrays(1, &m.vao);
   m = {};
+}
+
+void OpenGlRenderer::destroyGpuMesh(GpuMeshAsset& m) {
+  for (auto& sm : m.subMeshes) {
+    if (sm.ebo) glDeleteBuffers(1, &sm.ebo);
+    if (sm.vbo) glDeleteBuffers(1, &sm.vbo);
+    if (sm.vao) glDeleteVertexArrays(1, &sm.vao);
+  }
+  m = {};
+}
+
+OpenGlRenderer::GpuMeshAsset* OpenGlRenderer::getOrCreateGpuMesh(const std::string& path) {
+  if (path.empty()) return nullptr;
+  auto it = m_gpuMeshes.find(path);
+  if (it != m_gpuMeshes.end() && it->second.ready) return &it->second;
+
+  const auto status = m_meshAssets.request(path);
+  auto& lastLogged = m_meshLogState[path];
+  if (lastLogged != status.state) {
+    lastLogged = status.state;
+    if (status.state == assets::MeshAssetService::State::Queued) {
+      std::cout << "Queued mesh asset: " << path << "\n";
+    } else if (status.state == assets::MeshAssetService::State::Loading) {
+      std::cout << "Loading mesh asset: " << path << "\n";
+    } else if (status.state == assets::MeshAssetService::State::Failed) {
+      std::cerr << "Mesh asset failed: " << path << " (" << status.error << ")\n";
+    }
+  }
+  auto ready = m_meshAssets.takeReady(path);
+  if (!ready) return nullptr;
+
+  GpuMeshAsset gpu;
+  gpu.ready = true;
+  gpu.data = std::move(*ready);
+  gpu.subMeshes.reserve(gpu.data.subMeshes.size());
+
+  for (const auto& cpu : gpu.data.subMeshes) {
+    GpuSubMesh sm;
+    sm.indexCount = static_cast<std::uint32_t>(cpu.indices.size());
+    sm.materialIndex = cpu.materialIndex;
+
+    glGenVertexArrays(1, &sm.vao);
+    glGenBuffers(1, &sm.vbo);
+    glGenBuffers(1, &sm.ebo);
+
+    glBindVertexArray(sm.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, sm.vbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(cpu.vertices.size() * sizeof(assets::MeshVertex)),
+                 cpu.vertices.data(),
+                 GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sm.ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(cpu.indices.size() * sizeof(std::uint32_t)),
+                 cpu.indices.data(),
+                 GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(assets::MeshVertex), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(assets::MeshVertex), reinterpret_cast<void*>(sizeof(float) * 3));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(assets::MeshVertex), reinterpret_cast<void*>(sizeof(float) * 6));
+    glEnableVertexAttribArray(3);
+    glVertexAttribIPointer(3, 4, GL_UNSIGNED_SHORT, sizeof(assets::MeshVertex), reinterpret_cast<void*>(sizeof(float) * 8));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(assets::MeshVertex),
+                          reinterpret_cast<void*>(sizeof(float) * 8 + sizeof(std::uint16_t) * 4));
+    glBindVertexArray(0);
+
+    gpu.subMeshes.push_back(sm);
+  }
+
+  auto [ins, _] = m_gpuMeshes.emplace(path, std::move(gpu));
+  std::cout << "Uploaded mesh asset: " << path << " subMeshes=" << ins->second.subMeshes.size()
+            << " materials=" << ins->second.data.materials.size()
+            << " bones=" << ins->second.data.skeleton.bones.size()
+            << " animations=" << ins->second.data.animations.size() << "\n";
+  return &ins->second;
 }
 
 static std::uint64_t terrainMeshKey(std::uint32_t id, int lodStep) {
@@ -1135,10 +1231,31 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         const GLenum mode = program->hasTessellation ? GL_PATCHES : GL_TRIANGLES;
         glDrawElements(mode, static_cast<GLsizei>(mesh->indexCount), GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
-      }
+	      }
 
-      // Rock casters (use existing instance chunks).
-      const ShaderService::Program* rockProg = m_shaders.getOrCreate("graphics/shaders/rocks_shadow");
+	      // Mesh casters.
+	      const ShaderService::Program* meshShadowProg = m_shaders.getOrCreate("graphics/shaders/model_shadow");
+	      if (meshShadowProg && meshShadowProg->programId) {
+	        glUseProgram(meshShadowProg->programId);
+	        const GLint locLvp = glGetUniformLocation(meshShadowProg->programId, "u_LightViewProj");
+	        if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
+	        for (const auto& m : frame.meshes) {
+	          if (!m.visible || !m.castShadows) continue;
+	          GpuMeshAsset* gpu = getOrCreateGpuMesh(m.meshData.key);
+	          if (!gpu || !gpu->ready) continue;
+	          const math::Mat4 model = composeTransform(m.position, m.rotation, m.scale);
+	          const GLint locModel = glGetUniformLocation(meshShadowProg->programId, "u_Model");
+	          if (locModel >= 0) glUniformMatrix4fv(locModel, 1, GL_FALSE, model.m);
+	          for (const auto& sm : gpu->subMeshes) {
+	            glBindVertexArray(sm.vao);
+	            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(sm.indexCount), GL_UNSIGNED_INT, nullptr);
+	          }
+	          glBindVertexArray(0);
+	        }
+	      }
+
+	      // Rock casters (use existing instance chunks).
+	      const ShaderService::Program* rockProg = m_shaders.getOrCreate("graphics/shaders/rocks_shadow");
       if (rockProg && rockProg->programId) {
         glUseProgram(rockProg->programId);
         const GLint locLvp = glGetUniformLocation(rockProg->programId, "u_LightViewProj");
@@ -1645,11 +1762,105 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glBindVertexArray(0);
   }
 
-  // Choose a ground terrain to anchor grass height (first terrain for now).
-  const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain = frame.terrains.empty() ? nullptr : &frame.terrains[0];
+	  // Choose a ground terrain to anchor grass height (first terrain for now).
+	  const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain = frame.terrains.empty() ? nullptr : &frame.terrains[0];
 
-  // Rocks pass (true 3D instances).
-  for (const auto& r : frame.rocks) {
+  // Mesh pass (async-loaded glTF/extension-based assets).
+  for (const auto& m : frame.meshes) {
+    if (!m.visible) continue;
+    const ShaderService::Program* program = m_shaders.getOrCreate(m.shader.key.empty() ? "graphics/shaders/model" : m.shader.key);
+    if (!program || !program->programId) continue;
+
+    GpuMeshAsset* gpu = getOrCreateGpuMesh(m.meshData.key);
+    if (!gpu || !gpu->ready) continue;
+
+    glUseProgram(program->programId);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
+    const math::Mat4 model = composeTransform(m.position, m.rotation, m.scale);
+    const GLint locModel = glGetUniformLocation(program->programId, "u_Model");
+    if (locModel >= 0) glUniformMatrix4fv(locModel, 1, GL_FALSE, model.m);
+    const GLint locViewProj = glGetUniformLocation(program->programId, "u_ViewProj");
+    if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
+    const GLint locCam = glGetUniformLocation(program->programId, "u_CameraPos");
+    if (locCam >= 0) glUniform3f(locCam, frame.camera.position.x, frame.camera.position.y, frame.camera.position.z);
+
+    math::Vec3 sunDir{-0.2f, -1.0f, -0.3f};
+    math::Vec3 sunCol{1.0f, 1.0f, 1.0f};
+    float sunIntensity = 1.0f;
+    for (const auto& l : frame.lights) {
+      if (l.type == 0) {
+        sunDir = math::normalize(l.direction);
+        sunCol = l.color;
+        sunIntensity = l.intensity;
+        break;
+      }
+    }
+    const GLint locSunDir = glGetUniformLocation(program->programId, "u_SunDir");
+    if (locSunDir >= 0) glUniform3f(locSunDir, sunDir.x, sunDir.y, sunDir.z);
+    const GLint locSunCol = glGetUniformLocation(program->programId, "u_SunColor");
+    if (locSunCol >= 0) glUniform3f(locSunCol, sunCol.x, sunCol.y, sunCol.z);
+    const GLint locSunInt = glGetUniformLocation(program->programId, "u_SunIntensity");
+    if (locSunInt >= 0) glUniform1f(locSunInt, sunIntensity);
+
+    const GLint locShadowOn = glGetUniformLocation(program->programId, "u_ShadowEnabled");
+    if (locShadowOn >= 0) glUniform1i(locShadowOn, (shadowOn && m.receiveShadows) ? 1 : 0);
+    if (shadowOn && m.receiveShadows) {
+      const GLint locLvp = glGetUniformLocation(program->programId, "u_LightViewProj");
+      if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
+      const GLint locBias = glGetUniformLocation(program->programId, "u_ShadowBias");
+      if (locBias >= 0) glUniform1f(locBias, shadowBias);
+      const GLint locStrength = glGetUniformLocation(program->programId, "u_ShadowStrength");
+      if (locStrength >= 0) glUniform1f(locStrength, shadowStrength);
+      const GLint locTexel = glGetUniformLocation(program->programId, "u_ShadowTexelSize");
+      if (locTexel >= 0) glUniform2f(locTexel, shadowTexelX, shadowTexelY);
+      glActiveTexture(GL_TEXTURE15);
+      glBindTexture(GL_TEXTURE_2D, m_shadowDepthTex);
+      const GLint locMap = glGetUniformLocation(program->programId, "u_ShadowMap");
+      if (locMap >= 0) glUniform1i(locMap, 15);
+      glActiveTexture(GL_TEXTURE0);
+    }
+
+    for (const auto& sm : gpu->subMeshes) {
+      const assets::MeshMaterial* mat =
+          sm.materialIndex < gpu->data.materials.size() ? &gpu->data.materials[sm.materialIndex] : nullptr;
+      const GLuint albedo = (mat && !mat->baseColorTexture.empty()) ? m_textures.requestTexture(mat->baseColorTexture, true) : 0;
+      const GLuint normal = (mat && !mat->normalTexture.empty()) ? m_textures.requestTexture(mat->normalTexture, false) : 0;
+      const GLint locBase = glGetUniformLocation(program->programId, "u_BaseColor");
+      if (locBase >= 0) {
+        const math::Vec3 c = mat ? mat->baseColorFactor : math::Vec3{1.0f, 1.0f, 1.0f};
+        glUniform3f(locBase, c.x, c.y, c.z);
+      }
+      const GLint locUseAlbedo = glGetUniformLocation(program->programId, "u_UseAlbedo");
+      if (locUseAlbedo >= 0) glUniform1i(locUseAlbedo, albedo != 0 ? 1 : 0);
+      if (albedo != 0) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, albedo);
+        const GLint loc = glGetUniformLocation(program->programId, "u_AlbedoTex");
+        if (loc >= 0) glUniform1i(loc, 0);
+      }
+      const GLint locUseNormal = glGetUniformLocation(program->programId, "u_UseNormal");
+      if (locUseNormal >= 0) glUniform1i(locUseNormal, normal != 0 ? 1 : 0);
+      if (normal != 0) {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, normal);
+        const GLint loc = glGetUniformLocation(program->programId, "u_NormalTex");
+        if (loc >= 0) glUniform1i(loc, 1);
+      }
+
+      glBindVertexArray(sm.vao);
+      glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(sm.indexCount), GL_UNSIGNED_INT, nullptr);
+    }
+    glBindVertexArray(0);
+    glActiveTexture(GL_TEXTURE0);
+  }
+
+	  // Rocks pass (true 3D instances).
+	  for (const auto& r : frame.rocks) {
     const ShaderService::Program* program = m_shaders.getOrCreate(r.shader.key);
     if (!program || !program->programId) continue;
 

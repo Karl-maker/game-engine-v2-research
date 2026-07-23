@@ -5,6 +5,7 @@
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/LightComponent.h"
+#include "ecs/components/MeshComponent.h"
 #include "ecs/components/RenderSettingsComponent.h"
 #include "ecs/components/RockScatterComponent.h"
 #include "ecs/components/ShaderComponent.h"
@@ -154,6 +155,7 @@ void extractRockLayerTextures(const ecs::ShaderComponent& shader, GraphicsSystem
 const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& registry) {
   m_frame.camera = {};
   m_frame.terrains.clear();
+  m_frame.meshes.clear();
   m_frame.fogVolumes.clear();
   m_frame.skies.clear();
   m_frame.rocks.clear();
@@ -231,6 +233,23 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(shader, "rockBlendStrength", draw.rockBlendStrength);
         (void)readFloatParam(shader, "rockNoiseScale", draw.rockNoiseScale);
         m_frame.terrains.push_back(std::move(draw));
+      });
+
+  // --- Mesh renderables ---
+  registry.view<ecs::MeshComponent, ecs::ShaderComponent, ecs::TransformComponent>(
+      [&](ecs::EntityId id, const ecs::MeshComponent& mesh, const ecs::ShaderComponent& shader, const ecs::TransformComponent& tr) {
+        if (!mesh.enabled || !mesh.visible || !shader.enabled) return;
+        MeshDraw draw;
+        draw.entity = id;
+        draw.position = tr.position;
+        draw.rotation = tr.rotation;
+        draw.scale = {tr.scale.x * mesh.scale.x, tr.scale.y * mesh.scale.y, tr.scale.z * mesh.scale.z};
+        draw.meshData = mesh.meshData;
+        draw.shader = shader.shader;
+        draw.visible = mesh.visible;
+        draw.castShadows = mesh.castShadows && shader.castShadows;
+        draw.receiveShadows = mesh.receiveShadows && shader.receiveShadows;
+        m_frame.meshes.push_back(std::move(draw));
       });
 
   // --- Lights ---

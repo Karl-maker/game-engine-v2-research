@@ -5,15 +5,21 @@
 #include "core/TickContext.h"
 
 #include "ecs/components/CameraComponent.h"
+#include "ecs/components/AnimationComponent.h"
+#include "ecs/components/CharacterComponent.h"
 #include "ecs/components/ControllerComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/MotionComponent.h"
+#include "ecs/components/MeshComponent.h"
 #include "ecs/components/RenderSettingsComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/StatsComponent.h"
 #include "ecs/components/SkyComponent.h"
 #include "ecs/components/TerrainComponent.h"
+#include "ecs/components/GrassPatchComponent.h"
+#include "ecs/components/SkeletonComponent.h"
+#include "ecs/components/ThirdPersonCameraComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "materials/presets/HighQualityDirtRockLayer.h"
 #include "materials/presets/StoneGrass.h"
@@ -38,19 +44,61 @@ void GameplayDemoGame::onStart() {
 
   m_camera = m_registry.createEntity("camera");
   auto& camTr = m_registry.emplace<ecs::TransformComponent>(m_camera);
-  camTr.position = {10.0f, 1.7f, -26.0f};
-  camTr.rotation = {10.0f, 343.0f, 0.0f};  // pitch/yaw/roll (deg)
+  camTr.position = {0.0f, 3.0f, -6.0f};
+  camTr.rotation = {12.0f, 0.0f, 0.0f};  // pitch/yaw/roll (deg)
   m_registry.emplace<ecs::CameraComponent>(m_camera);
-  m_registry.emplace<ecs::ControllerComponent>(m_camera);
+
+  m_player = m_registry.createEntity("business_man");
+  auto& playerTr = m_registry.emplace<ecs::TransformComponent>(m_player);
+  playerTr.position = {0.0f, 0.0f, -8.0f};
+  playerTr.rotation = {0.0f, 0.0f, 0.0f};
+  m_registry.emplace<ecs::ControllerComponent>(m_player);
+  m_registry.emplace<ecs::CharacterComponent>(m_player);
   {
-    auto& motion = m_registry.emplace<ecs::MotionComponent>(m_camera);
-    motion.mode = ecs::MotionComponent::Mode::Flying;
-    motion.isGrounded = false;
+    auto& motion = m_registry.emplace<ecs::MotionComponent>(m_player);
+    motion.mode = ecs::MotionComponent::Mode::Walking;
+    motion.isGrounded = true;
   }
   {
-    auto& stats = m_registry.emplace<ecs::StatsComponent>(m_camera);
-    stats.walkingSpeed = 10.0f;
-    stats.runningSpeed = 20.0f;
+    auto& stats = m_registry.emplace<ecs::StatsComponent>(m_player);
+    stats.walkingSpeed = 3.8f;
+    stats.runningSpeed = 7.0f;
+  }
+  {
+    auto& mesh = m_registry.emplace<ecs::MeshComponent>(m_player);
+    mesh.meshId = "business-man";
+    mesh.meshData.enabled = true;
+    mesh.meshData.key = "assets/models/business-man/scene.gltf";
+    mesh.meshType = ecs::MeshComponent::MeshType::Skinned;
+    mesh.scale = {1.25f, 1.25f, 1.25f};
+    mesh.skeletonId = "business-man#skin0";
+    mesh.castShadows = true;
+    mesh.receiveShadows = true;
+    mesh.tags = {"character", "player"};
+
+    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_player);
+    shader.shader.key = "graphics/shaders/model";
+    shader.castShadows = true;
+    shader.receiveShadows = true;
+  }
+  {
+    auto& skeleton = m_registry.emplace<ecs::SkeletonComponent>(m_player);
+    skeleton.skeletonId = "business-man#skin0";
+    skeleton.skeletonData = "assets/models/business-man/scene.gltf";
+    skeleton.updateMode = ecs::SkeletonComponent::UpdateMode::WhenVisible;
+  }
+  {
+    auto& animation = m_registry.emplace<ecs::AnimationComponent>(m_player);
+    animation.availableClips = {"IdleV4.2(maya_head)", "Idle", "Walk", "Run"};
+    animation.layers.push_back({"Base Layer", 1.0f, ecs::AnimationComponent::BlendMode::Override, {}, "IdleV4.2(maya_head)", "", 0.0f});
+  }
+  {
+    auto& thirdPerson = m_registry.emplace<ecs::ThirdPersonCameraComponent>(m_camera);
+    thirdPerson.target = m_player;
+    thirdPerson.targetOffset = {0.0f, 1.25f, 0.0f};
+    thirdPerson.distance = 4.2f;
+    thirdPerson.height = 0.8f;
+    thirdPerson.yawDeg = playerTr.rotation.y;
   }
 
   m_terrain = m_registry.createEntity("terrain");
@@ -200,6 +248,10 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   // --- Motion intent -> transform movement ---
   m_movementSystem.tick(m_registry, m_events, ctx.deltaSeconds);
 
+  // --- Animation + third-person camera follow ---
+  m_animationSystem.tick(m_registry, ctx.deltaSeconds);
+  m_thirdPersonCameraSystem.tick(m_registry, ctx.deltaSeconds);
+
   // --- Environment presets (SkyType -> sky/light/fog) ---
   m_skyPresets.tick(m_registry);
 
@@ -222,9 +274,12 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   if (m_printTimer >= 0.5) {
     m_printTimer = 0.0;
 
+    const auto* playerTr = m_registry.tryGet<ecs::TransformComponent>(m_player);
     std::cout << "camera=(" << frame.camera.position.x << "," << frame.camera.position.y << "," << frame.camera.position.z
               << ") forward=(" << frame.camera.forward.x << "," << frame.camera.forward.y << "," << frame.camera.forward.z
-              << ") terrains=" << frame.terrains.size() << " lights=" << frame.lights.size();
+              << ") player=(" << (playerTr ? playerTr->position.x : 0.0f) << "," << (playerTr ? playerTr->position.y : 0.0f)
+              << "," << (playerTr ? playerTr->position.z : 0.0f) << ") meshes=" << frame.meshes.size()
+              << " terrains=" << frame.terrains.size() << " lights=" << frame.lights.size();
 
     if (!frame.terrains.empty()) {
       std::cout << " terrain.shader=\"" << frame.terrains[0].shader.key << "\"";
