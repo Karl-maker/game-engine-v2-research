@@ -134,6 +134,12 @@ class OpenGlRenderer final {
   std::uint32_t m_overlayVao = 0;
   std::uint32_t m_overlayVbo = 0;
   std::size_t m_overlayCapacityVerts = 0;
+
+  // World-space debug line rendering.
+  std::uint32_t m_debugLineProgram = 0;
+  std::uint32_t m_debugLineVao = 0;
+  std::uint32_t m_debugLineVbo = 0;
+  std::size_t m_debugLineCapacityVerts = 0;
   std::string m_gpuVendor;
   std::string m_gpuRenderer;
   std::string m_glVersion;

@@ -3,7 +3,12 @@
 // Author: Karl-Johan Bailey
 
 #include "ecs/components/AttachmentComponent.h"
+#include "ecs/components/IdentityComponent.h"
+#include "ecs/components/MeshComponent.h"
+#include "ecs/components/SensorComponent.h"
+#include "ecs/components/SocketComponent.h"
 #include "ecs/components/RaycastComponent.h"
+#include "ecs/components/SkeletonComponent.h"
 #include "ecs/components/TransformComponent.h"
 
 #include <algorithm>
@@ -64,6 +69,8 @@ std::vector<EntityId> RaycastConeFactoryService::createCone(EntityRegistry& regi
     // by the ray entity's (inherited) rotation later.
     auto& rc = registry.emplace<RaycastComponent>(rayEntity);
     rc.enabled = true;
+    rc.sensorEntity = owner;
+    rc.raycastCategory = "sensor";
     rc.originMode = RaycastComponent::OriginMode::Entity;
     rc.originEntity = rayEntity;  // origin comes from this ray entity's transform
     rc.localOffset = {0.0f, 0.0f, 0.0f};
@@ -76,6 +83,12 @@ std::vector<EntityId> RaycastConeFactoryService::createCone(EntityRegistry& regi
     rc.ignoreTriggerColliders = cfg.ignoreTriggerColliders;
     rc.ignoreSelf = cfg.ignoreSelf;
     rc.maxHits = cfg.maxHits;
+    rc.debugDraw = true;
+    rc.debugColor = {0.0f, 1.0f, 0.0f, 1.0f};
+
+    if (auto* sensor = registry.tryGet<SensorComponent>(owner)) {
+      sensor->raycastEntities.push_back(rayEntity);
+    }
 
     out.push_back(rayEntity);
   }
@@ -83,5 +96,53 @@ std::vector<EntityId> RaycastConeFactoryService::createCone(EntityRegistry& regi
   return out;
 }
 
-}  // namespace ecs::services
+EntityId RaycastConeFactoryService::createSensorCone(EntityRegistry& registry,
+                                                     EntityId targetEntity,
+                                                     const SensorConeConfig& cfg) {
+  if (!registry.isAlive(targetEntity)) return ecs::kInvalidEntityId;
 
+  std::string targetName;
+  if (const auto* identity = registry.tryGet<ecs::IdentityComponent>(targetEntity)) {
+    targetName = identity->name;
+  }
+
+  std::string skeletonName = cfg.skeletonName;
+  if (skeletonName.empty()) {
+    if (const auto* skeleton = registry.tryGet<ecs::SkeletonComponent>(targetEntity)) {
+      skeletonName = skeleton->skeletonId;
+    }
+    if (skeletonName.empty()) {
+      if (const auto* mesh = registry.tryGet<ecs::MeshComponent>(targetEntity)) {
+        skeletonName = mesh->skeletonId;
+      }
+    }
+  }
+
+  const std::string sensorName = cfg.sensorName.empty() ? (targetName.empty() ? "head_sensor" : targetName + "_head_sensor")
+                                                        : cfg.sensorName;
+  const EntityId sensorEntity = registry.createEntity(sensorName);
+  registry.emplace<TransformComponent>(sensorEntity);
+
+  auto& socket = registry.emplace<SocketComponent>(sensorEntity);
+  socket.name = cfg.socketName.empty() ? "head_socket" : cfg.socketName;
+  socket.targetEntity = targetEntity;
+  socket.targetEntityName = targetName;
+  socket.skeletonName = skeletonName;
+  socket.boneName = "Head_6";
+  socket.positionOffset = cfg.socketPositionOffset;
+  socket.rotationOffset = cfg.socketRotationOffset;
+  socket.scaleOffset = cfg.socketScaleOffset;
+
+  auto& sensor = registry.emplace<SensorComponent>(sensorEntity);
+  sensor.parentEntity = targetEntity;
+
+  RaycastConeConfig cone = cfg.cone;
+  if (cone.baseName.empty()) {
+    cone.baseName = sensorName + "_ray";
+  }
+  createCone(registry, sensorEntity, cone);
+
+  return sensorEntity;
+}
+
+}  // namespace ecs::services

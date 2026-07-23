@@ -289,8 +289,8 @@ class GltfMeshLoader final : public IMeshAssetLoader {
     out.boundsMax = {-999999.0f, -999999.0f, -999999.0f};
 
     readMaterials(root, baseDir, out);
-    readSkeleton(root, out);
-    readAnimations(root, out);
+    readSkeleton(root, bin, out);
+    readAnimations(root, bin, out);
     readMeshes(root, bin, out);
 
     if (out.subMeshes.empty()) {
@@ -334,6 +334,20 @@ class GltfMeshLoader final : public IMeshAssetLoader {
     for (int i = 0; i < v.count; ++i) {
       for (int c = 0; c < v.elementCount; ++c) {
         out[static_cast<std::size_t>(i * v.elementCount + c)] = readFloat(v.data + i * v.stride + c * sizeof(float));
+      }
+    }
+    return out;
+  }
+
+  static std::vector<math::Mat4> readMat4Accessor(const Json& root, const std::vector<std::uint8_t>& bin, int idx) {
+    const auto values = readFloatAccessor(root, bin, idx);
+    std::vector<math::Mat4> out;
+    if (values.empty()) return out;
+    const std::size_t count = values.size() / 16;
+    out.resize(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      for (int c = 0; c < 16; ++c) {
+        out[i].m[c] = values[i * 16 + static_cast<std::size_t>(c)];
       }
     }
     return out;
@@ -389,7 +403,39 @@ class GltfMeshLoader final : public IMeshAssetLoader {
     }
   }
 
-  static void readSkeleton(const Json& root, LoadedMeshAsset& out) {
+  static math::Vec3 readVec3(const Json& node, const char* key, const math::Vec3& def) {
+    const Json& value = node.at(key);
+    if (!value.isArray() || value.a.size() < 3) return def;
+    return {value.at(static_cast<std::size_t>(0)).floatOr(def.x),
+            value.at(static_cast<std::size_t>(1)).floatOr(def.y),
+            value.at(static_cast<std::size_t>(2)).floatOr(def.z)};
+  }
+
+  static math::Quat readQuat(const Json& node, const char* key, const math::Quat& def) {
+    const Json& value = node.at(key);
+    if (!value.isArray() || value.a.size() < 4) return def;
+    return {value.at(static_cast<std::size_t>(0)).floatOr(def.x),
+            value.at(static_cast<std::size_t>(1)).floatOr(def.y),
+            value.at(static_cast<std::size_t>(2)).floatOr(def.z),
+            value.at(static_cast<std::size_t>(3)).floatOr(def.w)};
+  }
+
+  static math::Mat4 readNodeLocalTransform(const Json& node) {
+    const Json& matrix = node.at("matrix");
+    if (matrix.isArray() && matrix.a.size() >= 16) {
+      math::Mat4 out{};
+      for (int i = 0; i < 16; ++i) {
+        out.m[i] = matrix.at(static_cast<std::size_t>(i)).floatOr(out.m[i]);
+      }
+      return out;
+    }
+    const math::Vec3 t = readVec3(node, "translation", {0.0f, 0.0f, 0.0f});
+    const math::Quat r = readQuat(node, "rotation", {});
+    const math::Vec3 s = readVec3(node, "scale", {1.0f, 1.0f, 1.0f});
+    return math::compose(t, r, s);
+  }
+
+  static void readSkeleton(const Json& root, const std::vector<std::uint8_t>& bin, LoadedMeshAsset& out) {
     const Json& skins = root.at("skins");
     if (!skins.isArray() || skins.a.empty()) return;
 
@@ -403,7 +449,9 @@ class GltfMeshLoader final : public IMeshAssetLoader {
       const int nodeIndex = joints.at(i).intOr(-1);
       nodeToBone[nodeIndex] = static_cast<int>(i);
       LoadedSkeleton::Bone b;
+      b.nodeIndex = nodeIndex;
       b.name = root.at("nodes").at(static_cast<std::size_t>(nodeIndex)).at("name").stringOr("bone");
+      b.localBindTransform = readNodeLocalTransform(root.at("nodes").at(static_cast<std::size_t>(nodeIndex)));
       out.skeleton.bones.push_back(std::move(b));
     }
 
@@ -424,11 +472,22 @@ class GltfMeshLoader final : public IMeshAssetLoader {
     const int rootNode = skin.at("skeleton").intOr(-1);
     const auto rootIt = nodeToBone.find(rootNode);
     out.skeleton.rootBone = rootIt == nodeToBone.end() ? 0 : rootIt->second;
+
+    const auto inverseBinds = readMat4Accessor(root, bin, skin.at("inverseBindMatrices").intOr(-1));
+    for (std::size_t i = 0; i < out.skeleton.bones.size() && i < inverseBinds.size(); ++i) {
+      out.skeleton.bones[i].inverseBindMatrix = inverseBinds[i];
+    }
   }
 
-  static void readAnimations(const Json& root, LoadedMeshAsset& out) {
+  static void readAnimations(const Json& root, const std::vector<std::uint8_t>& bin, LoadedMeshAsset& out) {
     const Json& animations = root.at("animations");
     if (!animations.isArray()) return;
+
+    std::unordered_map<int, int> nodeToBone;
+    for (std::size_t i = 0; i < out.skeleton.bones.size(); ++i) {
+      nodeToBone[out.skeleton.bones[i].nodeIndex] = static_cast<int>(i);
+    }
+
     for (const auto& ja : animations.a) {
       LoadedAnimation clip;
       clip.name = ja.at("name").stringOr("Animation");
@@ -441,6 +500,54 @@ class GltfMeshLoader final : public IMeshAssetLoader {
             if (max.isArray() && !max.a.empty()) {
               clip.durationSeconds = std::max(clip.durationSeconds, max.at(static_cast<std::size_t>(0)).floatOr());
             }
+          }
+        }
+      }
+      const Json& channels = ja.at("channels");
+      if (channels.isArray() && samplers.isArray()) {
+        for (const auto& jc : channels.a) {
+          const int samplerIndex = jc.at("sampler").intOr(-1);
+          if (samplerIndex < 0 || static_cast<std::size_t>(samplerIndex) >= samplers.a.size()) continue;
+          const Json& target = jc.at("target");
+          const auto boneIt = nodeToBone.find(target.at("node").intOr(-1));
+          if (boneIt == nodeToBone.end()) continue;
+
+          const Json& sampler = samplers.at(static_cast<std::size_t>(samplerIndex));
+          const auto times = readFloatAccessor(root, bin, sampler.at("input").intOr(-1));
+          const auto values = readFloatAccessor(root, bin, sampler.at("output").intOr(-1));
+          if (times.empty() || values.empty()) continue;
+
+          LoadedAnimation::Channel channel;
+          channel.boneIndex = boneIt->second;
+          channel.times = times;
+
+          const std::string path = target.at("path").stringOr();
+          if (path == "rotation") {
+            channel.path = LoadedAnimation::Path::Rotation;
+            const std::size_t count = values.size() / 4;
+            channel.quatValues.reserve(count);
+            for (std::size_t i = 0; i < count; ++i) {
+              channel.quatValues.push_back({values[i * 4 + 0], values[i * 4 + 1], values[i * 4 + 2], values[i * 4 + 3]});
+            }
+          } else if (path == "scale") {
+            channel.path = LoadedAnimation::Path::Scale;
+            const std::size_t count = values.size() / 3;
+            channel.vec3Values.reserve(count);
+            for (std::size_t i = 0; i < count; ++i) {
+              channel.vec3Values.push_back({values[i * 3 + 0], values[i * 3 + 1], values[i * 3 + 2]});
+            }
+          } else {
+            channel.path = LoadedAnimation::Path::Translation;
+            const std::size_t count = values.size() / 3;
+            channel.vec3Values.reserve(count);
+            for (std::size_t i = 0; i < count; ++i) {
+              channel.vec3Values.push_back({values[i * 3 + 0], values[i * 3 + 1], values[i * 3 + 2]});
+            }
+          }
+
+          if (!channel.times.empty()) {
+            clip.durationSeconds = std::max(clip.durationSeconds, channel.times.back());
+            clip.channels.push_back(std::move(channel));
           }
         }
       }

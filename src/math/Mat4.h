@@ -7,6 +7,7 @@
 
 #include "math/Vec3.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace math {
@@ -19,6 +20,13 @@ struct Mat4 {
       0, 0, 1, 0,  //
       0, 0, 0, 1,  //
   };
+};
+
+struct Quat {
+  float x = 0.0f;
+  float y = 0.0f;
+  float z = 0.0f;
+  float w = 1.0f;
 };
 
 inline Mat4 identity() { return {}; }
@@ -83,6 +91,60 @@ inline Mat4 rotateZ(float radians) {
   return out;
 }
 
+inline Quat normalize(const Quat& q) {
+  const float len = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+  if (len <= 0.000001f) return {};
+  const float inv = 1.0f / len;
+  return {q.x * inv, q.y * inv, q.z * inv, q.w * inv};
+}
+
+inline Quat slerp(const Quat& a, const Quat& b, float t) {
+  Quat qb = b;
+  float d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+  if (d < 0.0f) {
+    qb = {-b.x, -b.y, -b.z, -b.w};
+    d = -d;
+  }
+  if (d > 0.9995f) {
+    return normalize({a.x + (qb.x - a.x) * t, a.y + (qb.y - a.y) * t, a.z + (qb.z - a.z) * t, a.w + (qb.w - a.w) * t});
+  }
+  const float theta0 = std::acos(std::max(-1.0f, std::min(1.0f, d)));
+  const float theta = theta0 * t;
+  const float sinTheta = std::sin(theta);
+  const float sinTheta0 = std::sin(theta0);
+  const float s0 = std::cos(theta) - d * sinTheta / sinTheta0;
+  const float s1 = sinTheta / sinTheta0;
+  return {a.x * s0 + qb.x * s1, a.y * s0 + qb.y * s1, a.z * s0 + qb.z * s1, a.w * s0 + qb.w * s1};
+}
+
+inline Mat4 rotate(const Quat& qIn) {
+  const Quat q = normalize(qIn);
+  Mat4 out = identity();
+  const float xx = q.x * q.x;
+  const float yy = q.y * q.y;
+  const float zz = q.z * q.z;
+  const float xy = q.x * q.y;
+  const float xz = q.x * q.z;
+  const float yz = q.y * q.z;
+  const float wx = q.w * q.x;
+  const float wy = q.w * q.y;
+  const float wz = q.w * q.z;
+  out.m[0] = 1.0f - 2.0f * (yy + zz);
+  out.m[1] = 2.0f * (xy + wz);
+  out.m[2] = 2.0f * (xz - wy);
+  out.m[4] = 2.0f * (xy - wz);
+  out.m[5] = 1.0f - 2.0f * (xx + zz);
+  out.m[6] = 2.0f * (yz + wx);
+  out.m[8] = 2.0f * (xz + wy);
+  out.m[9] = 2.0f * (yz - wx);
+  out.m[10] = 1.0f - 2.0f * (xx + yy);
+  return out;
+}
+
+inline Mat4 compose(const Vec3& translation, const Quat& rotation, const Vec3& scaleValue) {
+  return mul(mul(translate(translation), rotate(rotation)), scale(scaleValue));
+}
+
 inline Mat4 perspective(float fovYRadians, float aspect, float zNear, float zFar) {
   const float f = 1.0f / std::tan(fovYRadians * 0.5f);
   Mat4 out{};
@@ -123,5 +185,38 @@ inline Mat4 lookAt(const Vec3& eye, const Vec3& center, const Vec3& up) {
   return out;
 }
 
-}  // namespace math
+inline Mat4 inverseAffine(const Mat4& m) {
+  const float a00 = m.m[0], a01 = m.m[4], a02 = m.m[8];
+  const float a10 = m.m[1], a11 = m.m[5], a12 = m.m[9];
+  const float a20 = m.m[2], a21 = m.m[6], a22 = m.m[10];
+  const float det = a00 * (a11 * a22 - a12 * a21) - a01 * (a10 * a22 - a12 * a20) + a02 * (a10 * a21 - a11 * a20);
+  if (std::fabs(det) <= 1e-8f) {
+    return identity();
+  }
+  const float invDet = 1.0f / det;
 
+  Mat4 out{};
+  out.m[0] = (a11 * a22 - a12 * a21) * invDet;
+  out.m[1] = (a12 * a20 - a10 * a22) * invDet;
+  out.m[2] = (a10 * a21 - a11 * a20) * invDet;
+  out.m[3] = 0.0f;
+
+  out.m[4] = (a02 * a21 - a01 * a22) * invDet;
+  out.m[5] = (a00 * a22 - a02 * a20) * invDet;
+  out.m[6] = (a01 * a20 - a00 * a21) * invDet;
+  out.m[7] = 0.0f;
+
+  out.m[8] = (a01 * a12 - a02 * a11) * invDet;
+  out.m[9] = (a02 * a10 - a00 * a12) * invDet;
+  out.m[10] = (a00 * a11 - a01 * a10) * invDet;
+  out.m[11] = 0.0f;
+
+  const Vec3 t{m.m[12], m.m[13], m.m[14]};
+  out.m[12] = -(out.m[0] * t.x + out.m[4] * t.y + out.m[8] * t.z);
+  out.m[13] = -(out.m[1] * t.x + out.m[5] * t.y + out.m[9] * t.z);
+  out.m[14] = -(out.m[2] * t.x + out.m[6] * t.y + out.m[10] * t.z);
+  out.m[15] = 1.0f;
+  return out;
+}
+
+}  // namespace math

@@ -8,7 +8,9 @@
 #include "ecs/components/MeshComponent.h"
 #include "ecs/components/RenderSettingsComponent.h"
 #include "ecs/components/RockScatterComponent.h"
+#include "ecs/components/RaycastComponent.h"
 #include "ecs/components/ShaderComponent.h"
+#include "ecs/components/SkeletonComponent.h"
 #include "ecs/components/SkyComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
@@ -42,6 +44,41 @@ math::Vec3 forwardFromPitchYawDeg(const ecs::TransformComponent& tr) {
   };
 
   return math::normalize(fwd);
+}
+
+math::Vec3 forwardFromRotationDeg(const math::Vec3& rotation) {
+  const float pitch = rotation.x * kDegToRad;
+  const float yaw = rotation.y * kDegToRad;
+  return math::normalize(math::Vec3{std::cos(pitch) * std::sin(yaw), -std::sin(pitch), std::cos(pitch) * std::cos(yaw)});
+}
+
+math::Vec3 rotateVector(const math::Vec3& v, const math::Vec3& rotation) {
+  const float rx = rotation.x * kDegToRad;
+  const float ry = rotation.y * kDegToRad;
+  const float rz = rotation.z * kDegToRad;
+
+  const float cx = std::cos(rx);
+  const float sx = std::sin(rx);
+  const float cy = std::cos(ry);
+  const float sy = std::sin(ry);
+  const float cz = std::cos(rz);
+  const float sz = std::sin(rz);
+
+  math::Vec3 out = v;
+  out = {out.x, out.y * cx - out.z * sx, out.y * sx + out.z * cx};
+  out = {out.x * cy + out.z * sy, out.y, -out.x * sy + out.z * cy};
+  out = {out.x * cz - out.y * sz, out.x * sz + out.y * cz, out.z};
+  return out;
+}
+
+math::Mat4 boneWorldMatrix(const ecs::SkeletonComponent& skeleton, int boneIndex) {
+  if (boneIndex < 0 || boneIndex >= static_cast<int>(skeleton.bones.size())) return math::identity();
+  math::Mat4 local = skeleton.currentPose.size() > static_cast<std::size_t>(boneIndex)
+                         ? skeleton.currentPose[static_cast<std::size_t>(boneIndex)]
+                         : skeleton.bones[static_cast<std::size_t>(boneIndex)].localBindTransform;
+  const int parent = skeleton.bones[static_cast<std::size_t>(boneIndex)].parentIndex;
+  if (parent < 0 || skeleton.space == ecs::SkeletonComponent::Space::World) return local;
+  return math::mul(boneWorldMatrix(skeleton, parent), local);
 }
 
 bool readFloatParam(const ecs::ShaderComponent& shader, const char* name, float& out) {
@@ -156,6 +193,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
   m_frame.camera = {};
   m_frame.terrains.clear();
   m_frame.meshes.clear();
+  m_frame.rays.clear();
   m_frame.fogVolumes.clear();
   m_frame.skies.clear();
   m_frame.rocks.clear();
@@ -249,7 +287,74 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.visible = mesh.visible;
         draw.castShadows = mesh.castShadows && shader.castShadows;
         draw.receiveShadows = mesh.receiveShadows && shader.receiveShadows;
+        if (const auto* skeleton = registry.tryGet<ecs::SkeletonComponent>(id)) {
+          const std::size_t count = std::min<std::size_t>(96, std::min(skeleton->bones.size(), skeleton->inverseBindMatrices.size()));
+          if (skeleton->enabled && count > 0) {
+            draw.hasSkinning = true;
+            draw.skinMatrices.reserve(count);
+            for (std::size_t i = 0; i < count; ++i) {
+              draw.skinMatrices.push_back(math::mul(boneWorldMatrix(*skeleton, static_cast<int>(i)), skeleton->inverseBindMatrices[i]));
+            }
+          }
+        }
         m_frame.meshes.push_back(std::move(draw));
+      });
+
+  // --- Ray debug lines ---
+  registry.view<ecs::RaycastComponent, ecs::TransformComponent>(
+      [&](ecs::EntityId id, const ecs::RaycastComponent& ray, const ecs::TransformComponent& tr) {
+        if (!ray.enabled || !ray.debugDraw) return;
+
+        math::Vec3 origin{};
+        if (ray.originMode == ecs::RaycastComponent::OriginMode::WorldPosition) {
+          if (!ray.hasWorldPosition) return;
+          origin = ray.worldPosition;
+        } else {
+          origin = tr.position + ray.localOffset;
+        }
+
+        math::Vec3 direction{0.0f, 0.0f, 1.0f};
+        switch (ray.directionMode) {
+          case ecs::RaycastComponent::DirectionMode::Forward:
+            direction = forwardFromRotationDeg(tr.rotation);
+            break;
+          case ecs::RaycastComponent::DirectionMode::Up:
+            direction = rotateVector({0.0f, 1.0f, 0.0f}, tr.rotation);
+            break;
+          case ecs::RaycastComponent::DirectionMode::Down:
+            direction = rotateVector({0.0f, -1.0f, 0.0f}, tr.rotation);
+            break;
+          case ecs::RaycastComponent::DirectionMode::Right:
+            direction = rotateVector({1.0f, 0.0f, 0.0f}, tr.rotation);
+            break;
+          case ecs::RaycastComponent::DirectionMode::Left:
+            direction = rotateVector({-1.0f, 0.0f, 0.0f}, tr.rotation);
+            break;
+          case ecs::RaycastComponent::DirectionMode::TowardTarget: {
+            const auto* targetTr = registry.tryGet<ecs::TransformComponent>(ray.towardTargetEntity);
+            if (!targetTr) return;
+            direction = math::normalize((targetTr->position + ray.towardTargetOffset) - origin);
+            break;
+          }
+          case ecs::RaycastComponent::DirectionMode::CustomVector:
+          default:
+            direction = rotateVector(ray.customDirection, tr.rotation);
+            break;
+        }
+
+        direction = math::normalize(direction);
+        if (math::lengthSq(direction) <= 0.0f) return;
+
+        ecs::systems::GraphicsSystem::FrameSnapshot::RayDraw draw;
+        draw.entity = id;
+        draw.sensorEntity = ray.sensorEntity;
+        draw.start = origin;
+        draw.hit = !ray.hitResults.empty();
+        draw.end = draw.hit ? ray.hitResults.front().hitPosition : (origin + direction * ray.length);
+        draw.color = draw.hit ? render::Color{1.0f, 0.15f, 0.15f, 1.0f}
+                               : render::Color{ray.debugColor.r, ray.debugColor.g, ray.debugColor.b, ray.debugColor.a};
+        draw.category = ray.raycastCategory;
+        m_frame.rays.push_back(std::move(draw));
       });
 
   // --- Lights ---

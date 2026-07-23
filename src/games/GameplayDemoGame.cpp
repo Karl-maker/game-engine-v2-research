@@ -10,6 +10,7 @@
 #include "ecs/components/ColliderComponent.h"
 #include "ecs/components/ControllerComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
+#include "ecs/components/IKComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/MotionComponent.h"
 #include "ecs/components/MeshComponent.h"
@@ -23,6 +24,7 @@
 #include "ecs/components/SkeletonComponent.h"
 #include "ecs/components/ThirdPersonCameraComponent.h"
 #include "ecs/components/TransformComponent.h"
+#include "ecs/services/RaycastConeFactoryService.h"
 #include "materials/presets/HighQualityDirtRockLayer.h"
 #include "materials/presets/StoneGrass.h"
 #include "materials/presets/HighQualityDirtRockGrassLayer.h"
@@ -43,6 +45,8 @@ void GameplayDemoGame::onStart() {
   std::cout << "- Runs GraphicsSystem each tick (prints a snapshot)\n";
 #endif
   std::cout << "Type `q` then Enter to quit.\n\n";
+
+  m_meshAssets.start();
 
   m_camera = m_registry.createEntity("camera");
   auto& camTr = m_registry.emplace<ecs::TransformComponent>(m_camera);
@@ -105,6 +109,19 @@ void GameplayDemoGame::onStart() {
     auto& animation = m_registry.emplace<ecs::AnimationComponent>(m_player);
     animation.availableClips = {"IdleV4.2(maya_head)", "Idle", "Walk", "Run"};
     animation.layers.push_back({"Base Layer", 1.0f, ecs::AnimationComponent::BlendMode::Override, {}, "IdleV4.2(maya_head)", "", 0.0f});
+    animation.idleAnimationClip = "IdleV4.2(maya_head)";
+    animation.idleDelaySeconds = 5.0f;
+  }
+  {
+    auto& ik = m_registry.emplace<ecs::IKComponent>(m_player);
+    ecs::IKComponent::Chain headChain;
+    headChain.name = "look_at_camera";
+    headChain.boneNames = {"Neck_7", "Head_6"};
+    headChain.targetEntity = m_camera;
+    headChain.targetOffset = {0.0f, -0.10f, 0.0f};
+    headChain.weight = 1.0f;
+    headChain.iterations = 6;
+    ik.chains.push_back(headChain);
   }
   {
     auto& thirdPerson = m_registry.emplace<ecs::ThirdPersonCameraComponent>(m_camera);
@@ -113,6 +130,74 @@ void GameplayDemoGame::onStart() {
     thirdPerson.distance = 4.2f;
     thirdPerson.height = 0.8f;
     thirdPerson.yawDeg = playerTr.rotation.y;
+  }
+
+  // Head sensor cone for the player.
+  {
+    ecs::services::RaycastConeFactoryService rayFactory;
+    ecs::services::SensorConeConfig cfg;
+    cfg.sensorName = "player_head_sensor";
+    cfg.socketName = "player_head_socket";
+    cfg.cone.baseName = "player_head_ray";
+    cfg.cone.rayCount = 12;
+    cfg.cone.coneAngleDeg = 35.0f;
+    cfg.cone.length = 10.0f;
+    cfg.cone.radius = 0.0f;
+    cfg.cone.collisionLayers = physics::kAllLayers;
+    cfg.cone.ignoreLayers = 0;
+    cfg.cone.ignoreSelf = true;
+    cfg.cone.maxHits = 1;
+    cfg.cone.originLocalOffset = {0.0f, 0.18f, 0.05f};
+    rayFactory.createSensorCone(m_registry, m_player, cfg);
+  }
+
+  // A second character that just stands there.
+  {
+    const auto npc = m_registry.createEntity("business_man_npc");
+    auto& npcTr = m_registry.emplace<ecs::TransformComponent>(npc);
+    npcTr.position = {3.25f, 0.0f, -8.0f};
+    npcTr.rotation = {0.0f, 180.0f, 0.0f};
+
+    auto& npcMesh = m_registry.emplace<ecs::MeshComponent>(npc);
+    npcMesh.meshId = "business-man";
+    npcMesh.meshData.enabled = true;
+    npcMesh.meshData.key = "assets/models/business-man/scene.gltf";
+    npcMesh.meshType = ecs::MeshComponent::MeshType::Skinned;
+    npcMesh.scale = {1.25f, 1.25f, 1.25f};
+    npcMesh.skeletonId = "business-man#skin0";
+    npcMesh.castShadows = true;
+    npcMesh.receiveShadows = true;
+
+    auto& npcShader = m_registry.emplace<ecs::ShaderComponent>(npc);
+    npcShader.shader.key = "graphics/shaders/model";
+    npcShader.castShadows = true;
+    npcShader.receiveShadows = true;
+
+    m_registry.emplace<ecs::SkeletonComponent>(npc);
+    m_registry.emplace<ecs::CharacterComponent>(npc);
+    {
+      auto& npcMotion = m_registry.emplace<ecs::MotionComponent>(npc);
+      npcMotion.mode = ecs::MotionComponent::Mode::Walking;
+      npcMotion.isGrounded = true;
+      npcMotion.isMoving = false;
+    }
+    {
+      auto& npcBody = m_registry.emplace<ecs::RigidbodyComponent>(npc);
+      npcBody.mass = 90.0f;
+      npcBody.inverseMass = 1.0f / npcBody.mass;
+      npcBody.useGravity = true;
+    }
+    {
+      auto& npcCollider = m_registry.emplace<ecs::ColliderComponent>(npc);
+      npcCollider.shape = ecs::ColliderComponent::Shape::Capsule;
+      npcCollider.size = {0.38f, 1.85f, 0.38f};
+      npcCollider.offset = {0.0f, 0.925f, 0.0f};
+    }
+    auto& npcAnim = m_registry.emplace<ecs::AnimationComponent>(npc);
+    npcAnim.availableClips = {"IdleV4.2(maya_head)", "Idle", "Walk", "Run"};
+    npcAnim.layers.push_back({"Base Layer", 1.0f, ecs::AnimationComponent::BlendMode::Override, {}, "Idle", "", 0.0f});
+    npcAnim.idleAnimationClip = "IdleV4.2(maya_head)";
+    npcAnim.idleDelaySeconds = 5.0f;
   }
 
   m_terrain = m_registry.createEntity("terrain");
@@ -278,8 +363,18 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   m_collisionDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
   m_collisionResolutionSystem.tick(m_registry, m_events);
 
-  // --- Animation + third-person camera follow ---
+  // --- Skeleton assets -> animation -> IK -> sockets -> attachments -> rays -> sensors ---
+  m_skeletonAssetSyncSystem.tick(m_registry, m_meshAssets);
+  m_idleAnimationSystem.tick(m_registry, ctx.deltaSeconds);
   m_animationSystem.tick(m_registry, ctx.deltaSeconds);
+  // m_ikSystem.tick(m_registry, m_events);
+  m_hierarchySystem.tick(m_registry);
+  m_socketSystem.tick(m_registry);
+  m_attachmentSystem.update(m_registry, ctx.deltaSeconds);
+  m_rayDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
+  m_sensorSystem.tick(m_registry, m_events);
+
+  // --- Third-person camera follow ---
   m_thirdPersonCameraSystem.tick(m_registry, ctx.deltaSeconds);
 
   // --- Environment presets (SkyType -> sky/light/fog) ---
@@ -322,6 +417,7 @@ void GameplayDemoGame::onStop() {
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   m_renderer.stop();
 #endif
+  m_meshAssets.stop();
   std::cout << "\nStopped gameplay demo.\n";
 }
 

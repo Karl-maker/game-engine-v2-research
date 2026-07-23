@@ -27,6 +27,11 @@ struct AnimationComponent final {
   float currentFrame = 0.0f;
   std::vector<std::string> availableClips;
   std::vector<AnimationLayer> layers;
+
+  float idleElapsedSeconds = 0.0f;
+  float idleDelaySeconds = 5.0f;
+  std::string idleAnimationClip = "Idle";
+  std::string idleAnimationLayer = "Base Layer";
 };
 
 }  // namespace ecs

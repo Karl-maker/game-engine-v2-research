@@ -11,17 +11,26 @@
 
 #include "ecs/EntityId.h"
 #include "ecs/EntityRegistry.h"
+#include "assets/MeshAssetService.h"
 #include "ecs/services/EventService.h"
 #include "ecs/systems/ControllerSystem.h"
 #include "ecs/systems/AnimationSystem.h"
+#include "ecs/systems/AttachmentSystem.h"
 #include "ecs/systems/CollisionDetectionSystem.h"
 #include "ecs/systems/CollisionResolutionSystem.h"
+#include "ecs/systems/HierarchySystem.h"
 #include "ecs/systems/GraphicsSystem.h"
 #include "ecs/systems/GravitySystem.h"
+#include "ecs/systems/IdleAnimationSystem.h"
+#include "ecs/systems/IKSystem.h"
 #include "ecs/systems/JumpSystem.h"
 #include "ecs/systems/MotionSystem.h"
 #include "ecs/systems/MovementSystem.h"
+#include "ecs/systems/RayDetectionSystem.h"
+#include "ecs/systems/SensorSystem.h"
+#include "ecs/systems/SkeletonAssetSyncSystem.h"
 #include "ecs/systems/SkyPresetSystem.h"
+#include "ecs/systems/SocketSystem.h"
 #include "ecs/systems/ThirdPersonCameraSystem.h"
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
@@ -39,15 +48,24 @@ class GameplayDemoGame final : public core::IGame {
  private:
  ecs::EntityRegistry m_registry;
   core::ControlService m_controls;
+  assets::MeshAssetService m_meshAssets;
   ecs::services::EventService m_events;
   ecs::systems::ControllerSystem m_controllerSystem;
   ecs::systems::AnimationSystem m_animationSystem;
+  ecs::systems::IdleAnimationSystem m_idleAnimationSystem;
+  ecs::systems::IKSystem m_ikSystem;
+  ecs::systems::AttachmentSystem m_attachmentSystem;
   ecs::systems::GravitySystem m_gravitySystem;
   ecs::systems::JumpSystem m_jumpSystem;
   ecs::systems::CollisionDetectionSystem m_collisionDetectionSystem;
   ecs::systems::CollisionResolutionSystem m_collisionResolutionSystem;
+  ecs::systems::HierarchySystem m_hierarchySystem;
   ecs::systems::MotionSystem m_motionSystem;
   ecs::systems::MovementSystem m_movementSystem;
+  ecs::systems::SocketSystem m_socketSystem;
+  ecs::systems::RayDetectionSystem m_rayDetectionSystem;
+  ecs::systems::SensorSystem m_sensorSystem;
+  ecs::systems::SkeletonAssetSyncSystem m_skeletonAssetSyncSystem;
   ecs::systems::SkyPresetSystem m_skyPresets;
   ecs::systems::ThirdPersonCameraSystem m_thirdPersonCameraSystem;
   ecs::systems::GraphicsSystem m_graphics;

@@ -32,6 +32,10 @@ class SpatialHashGridService final {
   void clear();
   void setCellSize(float cellSizeMeters);
   void insert(const Proxy& proxy);
+  std::vector<ecs::EntityId> queryAabb(const Aabb& bounds) const;
+  std::vector<ecs::EntityId> entitiesAlongRay(const math::Vec3& origin,
+                                              const math::Vec3& direction,
+                                              float length) const;
 
   std::vector<std::pair<ecs::EntityId, ecs::EntityId>> candidatePairs() const;
 

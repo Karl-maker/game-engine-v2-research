@@ -13,12 +13,14 @@
 #include "ecs/EntityId.h"
 #include "ecs/EntityRegistry.h"
 #include "math/Vec3.h"
+#include "math/Mat4.h"
 #include "render/AssetRef.h"
 #include "render/Color.h"
 #include "terrain/NoiseConfig.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace ecs::systems {
@@ -141,12 +143,20 @@ class GraphicsSystem final {
     bool visible = true;
     bool castShadows = true;
     bool receiveShadows = true;
+    bool hasSkinning = false;
+    std::vector<math::Mat4> skinMatrices;
   };
 
   struct FrameSnapshot final {
-    ActiveCamera camera;
-    std::vector<TerrainDraw> terrains;
-    std::vector<MeshDraw> meshes;
+    struct RayDraw final {
+      EntityId entity = kInvalidEntityId;
+      EntityId sensorEntity = kInvalidEntityId;
+      math::Vec3 start{};
+      math::Vec3 end{};
+      render::Color color{0.0f, 1.0f, 0.0f, 1.0f};
+      bool hit = false;
+      std::string category;
+    };
 
     struct FogDraw final {
       EntityId entity = kInvalidEntityId;
@@ -159,7 +169,6 @@ class GraphicsSystem final {
       float heightFalloff = 0.06f;
       float baseHeightOffset = 0.0f;
     };
-    std::vector<FogDraw> fogVolumes;
 
     struct SkyDraw final {
       EntityId entity = kInvalidEntityId;
@@ -172,9 +181,9 @@ class GraphicsSystem final {
       float sunDiscIntensity = 1.0f;
       float sunDiscSize = 1.0f;
       bool cloudsEnabled = true;
-      int skyType = 0;       // ecs::SkyComponent::SkyType
-      int cloudType = 0;     // ecs::SkyComponent::CloudType
-      int quality = 1;       // ecs::SkyComponent::Quality
+      int skyType = 0;   // ecs::SkyComponent::SkyType
+      int cloudType = 0; // ecs::SkyComponent::CloudType
+      int quality = 1;   // ecs::SkyComponent::Quality
       float cloudCoverage = 0.35f;
       float cloudDensity = 0.6f;
       float cloudSpeed = 0.02f;
@@ -194,7 +203,6 @@ class GraphicsSystem final {
       float starsTwinkleSpeed = 0.6f;
       std::uint32_t starsSeed = 1337u;
     };
-    std::vector<SkyDraw> skies;
 
     struct RockDraw final {
       EntityId entity = kInvalidEntityId;
@@ -211,8 +219,6 @@ class GraphicsSystem final {
       bool receiveShadows = true;
       render::AssetRef shader{};
     };
-    std::vector<RockDraw> rocks;
-    std::vector<LightDraw> lights;
 
     struct RenderSettingsDraw final {
       bool present = false;
@@ -221,6 +227,15 @@ class GraphicsSystem final {
       float shadowStrength = 1.0f;
       bool shadowUseTessellation = false;
     };
+
+    ActiveCamera camera;
+    std::vector<TerrainDraw> terrains;
+    std::vector<MeshDraw> meshes;
+    std::vector<RayDraw> rays;
+    std::vector<FogDraw> fogVolumes;
+    std::vector<SkyDraw> skies;
+    std::vector<RockDraw> rocks;
+    std::vector<LightDraw> lights;
     RenderSettingsDraw settings{};
   };
 

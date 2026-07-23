@@ -48,7 +48,9 @@ struct LoadedSubMesh final {
 struct LoadedSkeleton final {
   struct Bone final {
     std::string name;
+    int nodeIndex = -1;
     int parentIndex = -1;
+    math::Mat4 localBindTransform{};
     math::Mat4 inverseBindMatrix{};
   };
 
@@ -58,8 +60,23 @@ struct LoadedSkeleton final {
 };
 
 struct LoadedAnimation final {
+  enum class Path {
+    Translation,
+    Rotation,
+    Scale,
+  };
+
+  struct Channel final {
+    int boneIndex = -1;
+    Path path = Path::Translation;
+    std::vector<float> times;
+    std::vector<math::Vec3> vec3Values;
+    std::vector<math::Quat> quatValues;
+  };
+
   std::string name;
   float durationSeconds = 0.0f;
+  std::vector<Channel> channels;
 };
 
 struct LoadedMeshAsset final {

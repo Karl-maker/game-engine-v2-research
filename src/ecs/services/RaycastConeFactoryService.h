@@ -42,12 +42,27 @@ struct RaycastConeConfig {
   std::string baseName = "cone_raycast";
 };
 
+struct SensorConeConfig {
+  std::string sensorName = "head_sensor";
+  std::string socketName = "head_socket";
+
+  std::string skeletonName;
+
+  math::Vec3 socketPositionOffset{0.0f, 0.0f, 0.0f};
+  math::Vec3 socketRotationOffset{0.0f, 0.0f, 0.0f};
+  math::Vec3 socketScaleOffset{0.0f, 0.0f, 0.0f};
+
+  RaycastConeConfig cone{};
+};
+
 class RaycastConeFactoryService final {
  public:
   // Creates raycast entities attached to `owner`.
   // Returns the created entity ids (caller owns them and may destroy later).
   std::vector<EntityId> createCone(EntityRegistry& registry, EntityId owner, const RaycastConeConfig& cfg);
+
+  // Creates a socket-backed sensor entity on a character bone and attaches a cone of rays to it.
+  EntityId createSensorCone(EntityRegistry& registry, EntityId targetEntity, const SensorConeConfig& cfg);
 };
 
 }  // namespace ecs::services
-

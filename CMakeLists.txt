@@ -16,10 +16,17 @@ add_executable(duppy
   src/ecs/systems/ControllerSystem.cpp
   src/ecs/systems/GraphicsSystem.cpp
   src/ecs/systems/GravitySystem.cpp
+  src/ecs/systems/HierarchySystem.cpp
+  src/ecs/systems/IdleAnimationSystem.cpp
+  src/ecs/systems/IKSystem.cpp
   src/ecs/systems/JumpSystem.cpp
   src/ecs/systems/MotionSystem.cpp
   src/ecs/systems/MovementSystem.cpp
+  src/ecs/systems/RayDetectionSystem.cpp
+  src/ecs/systems/SensorSystem.cpp
+  src/ecs/systems/SkeletonAssetSyncSystem.cpp
   src/ecs/systems/SkyPresetSystem.cpp
+  src/ecs/systems/SocketSystem.cpp
   src/ecs/systems/TargetSystem.cpp
   src/ecs/systems/ThirdPersonCameraSystem.cpp
   src/ecs/services/RaycastConeFactoryService.cpp

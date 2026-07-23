@@ -116,6 +116,16 @@ struct OverlayVert final {
   float a;
 };
 
+struct DebugLineVert final {
+  float x;
+  float y;
+  float z;
+  float r;
+  float g;
+  float b;
+  float a;
+};
+
 // 5x7 font. 96 glyphs for ASCII 32..127. Each glyph = 7 rows, 5 bits per row.
 // Public-domain style table (compact).
 static const unsigned char kFont5x7[96][7] = {
@@ -486,6 +496,55 @@ bool OpenGlRenderer::start(int width, int height, const char* title) {
     m_overlayCapacityVerts = 0;
   }
 
+  // World-space debug line program.
+  {
+    const std::string vsSrc =
+        "#version 410 core\n"
+        "layout(location=0) in vec3 a_Pos;\n"
+        "layout(location=1) in vec4 a_Color;\n"
+        "uniform mat4 u_ViewProj;\n"
+        "out vec4 v_Color;\n"
+        "void main(){ v_Color=a_Color; gl_Position=u_ViewProj*vec4(a_Pos,1.0); }\n";
+    const std::string fsSrc =
+        "#version 410 core\n"
+        "in vec4 v_Color;\n"
+        "out vec4 o_Color;\n"
+        "void main(){ o_Color=v_Color; }\n";
+
+    std::string err;
+    const GLuint vs = compileGlShader(GL_VERTEX_SHADER, vsSrc, &err);
+    if (!vs) {
+      std::cerr << "Debug line vertex shader compile failed:\n" << err << "\n";
+      return true;
+    }
+    const GLuint fs = compileGlShader(GL_FRAGMENT_SHADER, fsSrc, &err);
+    if (!fs) {
+      std::cerr << "Debug line fragment shader compile failed:\n" << err << "\n";
+      glDeleteShader(vs);
+      return true;
+    }
+    const GLuint prog = linkGlProgram(vs, fs, &err);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    if (!prog) {
+      std::cerr << "Debug line program link failed:\n" << err << "\n";
+      return true;
+    }
+    m_debugLineProgram = prog;
+
+    glGenVertexArrays(1, &m_debugLineVao);
+    glGenBuffers(1, &m_debugLineVbo);
+    glBindVertexArray(m_debugLineVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_debugLineVbo);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DebugLineVert), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(DebugLineVert), reinterpret_cast<void*>(sizeof(float) * 3));
+    glBindVertexArray(0);
+    m_debugLineCapacityVerts = 0;
+  }
+
   // Sky VAO (core profile requires a VAO even for gl_VertexID fullscreen triangles).
   glGenVertexArrays(1, &m_skyVao);
 
@@ -529,10 +588,17 @@ void OpenGlRenderer::stop() {
   if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
   if (m_overlayVao) glDeleteVertexArrays(1, &m_overlayVao);
   if (m_overlayProgram) glDeleteProgram(m_overlayProgram);
+  if (m_debugLineVbo) glDeleteBuffers(1, &m_debugLineVbo);
+  if (m_debugLineVao) glDeleteVertexArrays(1, &m_debugLineVao);
+  if (m_debugLineProgram) glDeleteProgram(m_debugLineProgram);
   m_overlayVbo = 0;
   m_overlayVao = 0;
   m_overlayProgram = 0;
   m_overlayCapacityVerts = 0;
+  m_debugLineVbo = 0;
+  m_debugLineVao = 0;
+  m_debugLineProgram = 0;
+  m_debugLineCapacityVerts = 0;
   m_skyVao = 0;
 
   if (m_window) {
@@ -1275,7 +1341,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain =
             frame.terrains.empty() ? nullptr : &frame.terrains[0];
 
-        for (const auto& r : frame.rocks) {
+  for (const auto& r : frame.rocks) {
           if (!r.castShadows) continue;
           RockMesh* mesh = getOrCreateRockMesh(r, groundTerrain);
           if (!mesh || !mesh->vao || mesh->instanceCapacity == 0 || mesh->chunks.empty()) continue;
@@ -1798,6 +1864,17 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
     const GLint locCam = glGetUniformLocation(program->programId, "u_CameraPos");
     if (locCam >= 0) glUniform3f(locCam, frame.camera.position.x, frame.camera.position.y, frame.camera.position.z);
+    const GLint locSkinned = glGetUniformLocation(program->programId, "u_Skinned");
+    if (locSkinned >= 0) glUniform1i(locSkinned, m.hasSkinning ? 1 : 0);
+    if (m.hasSkinning && !m.skinMatrices.empty()) {
+      const GLint locBones = glGetUniformLocation(program->programId, "u_Bones[0]");
+      if (locBones >= 0) {
+        glUniformMatrix4fv(locBones,
+                           static_cast<GLsizei>(std::min<std::size_t>(96, m.skinMatrices.size())),
+                           GL_FALSE,
+                           m.skinMatrices.front().m);
+      }
+    }
 
     math::Vec3 sunDir{-0.2f, -1.0f, -0.3f};
     math::Vec3 sunCol{1.0f, 1.0f, 1.0f};
@@ -1952,6 +2029,37 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     }
 
     glBindVertexArray(0);
+  }
+
+  // Ray debug lines.
+  if (!frame.rays.empty() && m_debugLineProgram && m_debugLineVao && m_debugLineVbo) {
+    std::vector<DebugLineVert> verts;
+    verts.reserve(frame.rays.size() * 2);
+    for (const auto& ray : frame.rays) {
+      verts.push_back({ray.start.x, ray.start.y, ray.start.z, ray.color.r, ray.color.g, ray.color.b, ray.color.a});
+      verts.push_back({ray.end.x, ray.end.y, ray.end.z, ray.color.r, ray.color.g, ray.color.b, ray.color.a});
+    }
+
+    glUseProgram(m_debugLineProgram);
+    const GLint locViewProj = glGetUniformLocation(m_debugLineProgram, "u_ViewProj");
+    if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+
+    glBindVertexArray(m_debugLineVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_debugLineVbo);
+    if (verts.size() > m_debugLineCapacityVerts) {
+      m_debugLineCapacityVerts = std::max<std::size_t>(verts.size(), m_debugLineCapacityVerts * 2 + 128);
+      glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(m_debugLineCapacityVerts * sizeof(DebugLineVert)), nullptr,
+                   GL_DYNAMIC_DRAW);
+    }
+    glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(verts.size() * sizeof(DebugLineVert)), verts.data());
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(verts.size()));
+    glBindVertexArray(0);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
   }
 
   // Allow escape to close.

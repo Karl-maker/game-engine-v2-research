@@ -27,6 +27,26 @@ struct SkeletonComponent final {
     math::Mat4 localBindTransform{};
   };
 
+  struct AnimationClip final {
+    enum class Path {
+      Translation,
+      Rotation,
+      Scale,
+    };
+
+    struct Channel final {
+      int boneIndex = -1;
+      Path path = Path::Translation;
+      std::vector<float> times;
+      std::vector<math::Vec3> vec3Values;
+      std::vector<math::Quat> quatValues;
+    };
+
+    std::string name;
+    float durationSeconds = 0.0f;
+    std::vector<Channel> channels;
+  };
+
   bool enabled = true;
   std::string skeletonId;
   std::string skeletonData;
@@ -36,6 +56,7 @@ struct SkeletonComponent final {
   std::vector<math::Mat4> currentPose;
   std::vector<math::Mat4> bindPose;
   std::vector<math::Mat4> inverseBindMatrices;
+  std::vector<AnimationClip> animationClips;
   UpdateMode updateMode = UpdateMode::WhenVisible;
   Space space = Space::Local;
 };

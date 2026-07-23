@@ -14,6 +14,7 @@
 #include "physics/RaycastHit.h"
 
 #include <vector>
+#include <string>
 
 namespace ecs {
 
@@ -34,6 +35,11 @@ struct RaycastComponent {
   };
 
   bool enabled = true;
+
+  // Logical ownership and filtering metadata.
+  EntityId sensorEntity = kInvalidEntityId;
+  std::string raycastCategory = "default";
+  physics::LayerMask raycastLayer = physics::kAllLayers;
 
   // Origin
   OriginMode originMode = OriginMode::Entity;
@@ -71,4 +77,3 @@ struct RaycastComponent {
 };
 
 }  // namespace ecs
-

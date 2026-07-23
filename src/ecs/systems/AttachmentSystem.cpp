@@ -3,6 +3,8 @@
 // Author: Karl-Johan Bailey
 
 #include "ecs/components/AttachmentComponent.h"
+#include "ecs/components/IdentityComponent.h"
+#include "ecs/components/SocketComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "ecs/systems/Angle.h"
 
@@ -62,6 +64,14 @@ static void applyOrbit(TransformComponent& self,
   self.position = target.position + orbitOffset + a.positionOffset;
 }
 
+static bool socketMatchesTarget(const ecs::SocketComponent& socket, ecs::EntityId targetId, const ecs::IdentityComponent* targetIdentity) {
+  if (socket.targetEntity != ecs::kInvalidEntityId) {
+    return socket.targetEntity == targetId;
+  }
+  if (socket.targetEntityName.empty() || !targetIdentity) return false;
+  return socket.targetEntityName == targetIdentity->name;
+}
+
 void AttachmentSystem::update(EntityRegistry& registry, double deltaSeconds) {
   const float dt = static_cast<float>(deltaSeconds);
 
@@ -74,6 +84,7 @@ void AttachmentSystem::update(EntityRegistry& registry, double deltaSeconds) {
 
           const auto* targetTr = registry.tryGet<TransformComponent>(a.targetEntity);
           if (!targetTr) continue;
+          const auto* targetIdentity = registry.tryGet<IdentityComponent>(a.targetEntity);
 
           // Local vs world space support is system-defined; this demo treats offsets as world-space.
           // In a full engine, you would interpret `a.space` + inheritance flags properly.
@@ -83,9 +94,22 @@ void AttachmentSystem::update(EntityRegistry& registry, double deltaSeconds) {
               break;
             case AttachmentComponent::Mode::Follow:
             case AttachmentComponent::Mode::Spring:
-            case AttachmentComponent::Mode::Socket:
               applyFollow(self, *targetTr, a, dt);
               break;
+            case AttachmentComponent::Mode::Socket: {
+              bool foundSocket = false;
+              registry.view<SocketComponent, TransformComponent>([&](ecs::EntityId, const SocketComponent& socket, const TransformComponent& socketTr) {
+                if (foundSocket || !socket.enabled) return;
+                if (socket.name != a.socketKey) return;
+                if (!socketMatchesTarget(socket, a.targetEntity, targetIdentity)) return;
+                self = socketTr;
+                foundSocket = true;
+              });
+              if (!foundSocket) {
+                applyFollow(self, *targetTr, a, dt);
+              }
+              break;
+            }
             case AttachmentComponent::Mode::Orbit:
               applyOrbit(self, *targetTr, a, dt);
               break;
@@ -99,4 +123,3 @@ void AttachmentSystem::update(EntityRegistry& registry, double deltaSeconds) {
 }
 
 }  // namespace ecs::systems
-
