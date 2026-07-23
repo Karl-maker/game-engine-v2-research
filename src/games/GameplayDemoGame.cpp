@@ -369,33 +369,40 @@ void GameplayDemoGame::onStart() {
     gp.sourceTerrainEntity = m_terrain;
     gp.area = {42.0f, 0.0f, 42.0f};
     gp.seed = 9001u;
-    gp.densityMultiplier = 1.0f;
+    gp.densityMultiplier = 1.15f;
     gp.densityNoise.seed = 1777u;
     gp.densityNoise.frequency = 0.022f;
     gp.densityNoise.octaves = 2;
     gp.densityNoise.persistence = 0.50f;
     gp.densityNoise.lacunarity = 2.0f;
-    gp.densityNoiseThreshold = 0.18f;
-    gp.densityNoiseContrast = 0.95f;
+    gp.densityNoiseThreshold = 0.12f;
+    gp.densityNoiseContrast = 0.82f;
     gp.densityNoiseStrength = 1.0f;
     gp.interactionEnabled = true;
     gp.interactionRadiusMeters = 1.25f;
     gp.interactionStrength = 1.0f;
 
-    // Heavier patchiness so the field isn't uniformly dense.
+    // Layered, heavy patchiness: dense lush pockets with softer thin edges.
     if (!gp.layers.empty()) {
-      gp.layers[0].noiseScale = 0.05f;
-      gp.layers[0].noiseStrength = 0.78f;
-      gp.layers[0].bendStrength = 0.30f;
-      gp.layers[0].curveStrength = 0.18f;
-      gp.layers[0].twistStrength = 0.08f;
-      gp.layers[1].noiseScale = 0.05f;
-      gp.layers[1].noiseStrength = 0.70f;
-      gp.layers[1].bendStrength = 0.38f;
-      gp.layers[1].curveStrength = 0.22f;
-      gp.layers[1].twistStrength = 0.10f;
-      gp.layers[1].minScale = 0.55f;
-      gp.layers[1].maxScale = 0.88f;
+      gp.layers[0].noiseScale = 0.070f;
+      gp.layers[0].noiseStrength = 0.56f;
+      gp.layers[0].bendStrength = 0.24f;
+      gp.layers[0].curveStrength = 0.22f;
+      gp.layers[0].twistStrength = 0.10f;
+      gp.layers[1].noiseScale = 0.045f;
+      gp.layers[1].noiseStrength = 0.74f;
+      gp.layers[1].bendStrength = 0.44f;
+      gp.layers[1].curveStrength = 0.30f;
+      gp.layers[1].twistStrength = 0.12f;
+      gp.layers[1].minScale = 0.58f;
+      gp.layers[1].maxScale = 1.08f;
+      if (gp.layers.size() > 2) {
+        gp.layers[2].noiseScale = 0.060f;
+        gp.layers[2].noiseStrength = 0.66f;
+        gp.layers[2].bendStrength = 0.32f;
+        gp.layers[2].curveStrength = 0.26f;
+        gp.layers[2].twistStrength = 0.10f;
+      }
     }
 
     auto& sh = m_registry.emplace<ecs::ShaderComponent>(grass);
@@ -405,7 +412,7 @@ void GameplayDemoGame::onStart() {
     sh.receiveShadows = true;
     sh.castShadows = false;
     sh.textures.push_back({"grass_albedo", render::AssetRef{true, "assets/textures/grass/grass_color.jpg", 0}, true});
-    sh.parameters.push_back({"grassAlbedoUvScale", 0.22f});
+    sh.parameters.push_back({"grassAlbedoUvScale", 0.18f});
   }
 
   m_light = m_registry.createEntity("sun");

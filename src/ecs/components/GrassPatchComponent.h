@@ -67,7 +67,7 @@ struct GrassPatchComponent {
   math::Vec3 area{14.0f, 0.0f, 14.0f};
 
   // Base density multiplier applied to each layer's density.
-  float densityMultiplier = 1.0f;
+  float densityMultiplier = 1.25f;
 
   std::uint32_t seed = 12345u;
 
@@ -83,8 +83,42 @@ struct GrassPatchComponent {
 
   // Layers (micro/hero/secondary vegetation). More layers = more variation.
   std::vector<GrassLayer> layers = {
-      GrassLayer{.species = "GroundCover", .density = 8.0f, .minScale = 0.28f, .maxScale = 0.46f, .maxDistance = 18.0f},
-      GrassLayer{.species = "TallGrass", .density = 3.5f, .minScale = 0.55f, .maxScale = 0.88f, .maxDistance = 30.0f},
+      GrassLayer{.species = "GroundCover",
+                 .density = 13.0f,
+                 .minScale = 0.24f,
+                 .maxScale = 0.50f,
+                 .bladeSpacing = 0.12f,
+                 .bendStrength = 0.26f,
+                 .curveStrength = 0.20f,
+                 .twistStrength = 0.10f,
+                 .noiseScale = 0.075f,
+                 .noiseStrength = 0.55f,
+                 .windStrength = 0.75f,
+                 .maxDistance = 20.0f},
+      GrassLayer{.species = "TallGrass",
+                 .density = 5.8f,
+                 .minScale = 0.56f,
+                 .maxScale = 1.05f,
+                 .bladeSpacing = 0.16f,
+                 .bendStrength = 0.42f,
+                 .curveStrength = 0.28f,
+                 .twistStrength = 0.12f,
+                 .noiseScale = 0.050f,
+                 .noiseStrength = 0.72f,
+                 .windStrength = 1.0f,
+                 .maxDistance = 34.0f},
+      GrassLayer{.species = "BroadLeafGrass",
+                 .density = 1.9f,
+                 .minScale = 0.42f,
+                 .maxScale = 0.82f,
+                 .bladeSpacing = 0.18f,
+                 .bendStrength = 0.34f,
+                 .curveStrength = 0.24f,
+                 .twistStrength = 0.10f,
+                 .noiseScale = 0.060f,
+                 .noiseStrength = 0.68f,
+                 .windStrength = 0.85f,
+                 .maxDistance = 27.0f},
   };
 
   // Interaction (player/actors) handled in shader as a set of influence spheres.

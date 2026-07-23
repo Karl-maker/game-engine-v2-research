@@ -1162,51 +1162,51 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
     float var;
   };
 
-  // Build a simple "3D clump" mesh: many vertical ribbons (segmented quads) arranged radially.
+  // Build a rich "3D clump" mesh: many curved ribbons arranged in a tufted disk.
   int bladeCount = 10;
-  int segments = 4;
+  int segments = 5;
   float baseWidth = 0.055f;
   float radialSpread = 0.080f;
   float bladeHeightMin = 0.70f;
   float bladeHeightMax = 1.00f;
   float leanStrength = 0.08f;
   if (mesh.species == "GroundCover") {
-    bladeCount = 8;
-    segments = 3;
-    baseWidth = 0.048f;
-    radialSpread = 0.060f;
-    bladeHeightMin = 0.45f;
-    bladeHeightMax = 0.78f;
-    leanStrength = 0.06f;
-  } else if (mesh.species == "TallGrass") {
-    bladeCount = 12;
+    bladeCount = 16;
     segments = 4;
     baseWidth = 0.052f;
-    radialSpread = 0.090f;
-    bladeHeightMin = 0.65f;
-    bladeHeightMax = 0.92f;
-    leanStrength = 0.12f;
+    radialSpread = 0.110f;
+    bladeHeightMin = 0.34f;
+    bladeHeightMax = 0.76f;
+    leanStrength = 0.075f;
+  } else if (mesh.species == "TallGrass") {
+    bladeCount = 18;
+    segments = 5;
+    baseWidth = 0.058f;
+    radialSpread = 0.140f;
+    bladeHeightMin = 0.58f;
+    bladeHeightMax = 1.06f;
+    leanStrength = 0.16f;
   } else if (mesh.species == "BroadLeafGrass") {
-    bladeCount = 7;
+    bladeCount = 11;
     segments = 4;
-    baseWidth = 0.095f;
-    radialSpread = 0.085f;
-    bladeHeightMin = 0.55f;
-    bladeHeightMax = 0.86f;
-    leanStrength = 0.10f;
+    baseWidth = 0.105f;
+    radialSpread = 0.120f;
+    bladeHeightMin = 0.44f;
+    bladeHeightMax = 0.88f;
+    leanStrength = 0.13f;
   } else if (mesh.species == "DryGrass") {
-    bladeCount = 10;
-    segments = 4;
+    bladeCount = 14;
+    segments = 5;
     baseWidth = 0.050f;
-    radialSpread = 0.090f;
+    radialSpread = 0.130f;
     bladeHeightMin = 0.58f;
     bladeHeightMax = 0.88f;
     leanStrength = 0.12f;
   } else if (mesh.species == "Weed") {
-    bladeCount = 9;
-    segments = 4;
-    baseWidth = 0.060f;
-    radialSpread = 0.090f;
+    bladeCount = 13;
+    segments = 5;
+    baseWidth = 0.070f;
+    radialSpread = 0.130f;
     bladeHeightMin = 0.58f;
     bladeHeightMax = 0.94f;
     leanStrength = 0.10f;
@@ -1249,11 +1249,12 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   const float twoPi = 6.2831853f;
   for (int b = 0; b < bladeCount; ++b) {
     const float rb = rand01(geoSeed + static_cast<std::uint32_t>(b) * 2654435761u);
-    const float yaw = (static_cast<float>(b) / std::max(1.0f, static_cast<float>(bladeCount))) * twoPi + (rb - 0.5f) * 0.55f;
+    const float yaw = (static_cast<float>(b) / std::max(1.0f, static_cast<float>(bladeCount))) * twoPi + (rb - 0.5f) * 0.90f;
     const float c = std::cos(yaw);
     const float s = std::sin(yaw);
-    const float w = baseWidth * (0.75f + 0.70f * rand01(geoSeed + static_cast<std::uint32_t>(b) * 97531u));
-    const float ro = radialSpread * (rand01(geoSeed + static_cast<std::uint32_t>(b) * 71237u) - 0.5f);
+    const float w = baseWidth * (0.65f + 0.85f * rand01(geoSeed + static_cast<std::uint32_t>(b) * 97531u));
+    const float offsetYaw = rand01(geoSeed + static_cast<std::uint32_t>(b) * 53189u) * twoPi;
+    const float ro = radialSpread * std::sqrt(rand01(geoSeed + static_cast<std::uint32_t>(b) * 71237u));
     const float bladeHeight =
         bladeHeightMin + (bladeHeightMax - bladeHeightMin) * rand01(geoSeed + static_cast<std::uint32_t>(b) * 42437u);
     const float leanYaw = rand01(geoSeed + static_cast<std::uint32_t>(b) * 17713u) * twoPi;
@@ -1261,16 +1262,17 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
     const float leanX = std::cos(leanYaw) * leanAmount;
     const float leanZ = std::sin(leanYaw) * leanAmount;
     const float curl = (rand01(geoSeed + static_cast<std::uint32_t>(b) * 22013u) - 0.5f) * 0.06f;
-    const float ox = c * ro;
-    const float oz = s * ro;
+    const float ox = std::cos(offsetYaw) * ro;
+    const float oz = std::sin(offsetYaw) * ro;
 
     const std::uint32_t base = static_cast<std::uint32_t>(verts.size());
     for (int i = 0; i <= segments; ++i) {
       const float v = static_cast<float>(i) / std::max(1.0f, static_cast<float>(segments));
-      const float taper = std::pow(1.0f - v, 1.25f);
-      const float ww = w * (0.18f + 0.82f * taper);
+      const float taper = std::pow(1.0f - v, 1.35f);
+      const float shoulder = std::sin(v * 3.14159f);
+      const float ww = w * (0.14f + 0.78f * taper + 0.10f * shoulder);
       const float h = bladeHeight * v;
-      const float bend = h * h * (0.45f + curl);
+      const float bend = h * h * (0.52f + curl);
 
       const float lx0 = -0.5f * ww;
       const float lx1 = 0.5f * ww;
