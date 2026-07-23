@@ -437,7 +437,7 @@ void GameplayDemoGame::onStart() {
     m_registry.emplace<ecs::TransformComponent>(skyEntity);
 
     auto& skyc = m_registry.emplace<ecs::SkyComponent>(skyEntity);
-    skyc.skyType = ecs::SkyComponent::SkyType::Night;
+    skyc.skyType = ecs::SkyComponent::SkyType::Day;
     skyc.useSkyTypePreset = true;
     skyc.linkedDirectionalLightEntity = m_light;
     skyc.cloudType = ecs::SkyComponent::CloudType::Scattered;

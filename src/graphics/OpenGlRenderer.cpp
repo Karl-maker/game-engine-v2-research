@@ -44,12 +44,12 @@ struct GrassBillboardTexturePreset final {
 };
 
 static constexpr GrassBillboardTexturePreset kGrassBillboardPresets[] = {
-    {"assets/textures/vegitation/grass_patch_01/material_basecolor.png", 0.34f},
+    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.34f},
     {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.28f},
-    {"assets/textures/vegitation/grass_blade_01/Grass_Mat_diffuse.png", 0.11f},
-    {"assets/textures/vegitation/grass_blade_02/Grass1_Mat_diffuse.png", 0.10f},
-    {"assets/textures/vegitation/grass_blade_03/Grass2_Mat_diffuse.png", 0.09f},
-    {"assets/textures/vegitation/grass_blade_04/Grass3_Mat_diffuse.png", 0.08f},
+    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.11f},
+    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.10f},
+    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.09f},
+    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.08f},
 };
 
 static constexpr int kGrassBillboardPresetCount =
