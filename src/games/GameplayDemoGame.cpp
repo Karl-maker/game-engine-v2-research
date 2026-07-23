@@ -7,12 +7,14 @@
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/AnimationComponent.h"
 #include "ecs/components/CharacterComponent.h"
+#include "ecs/components/ColliderComponent.h"
 #include "ecs/components/ControllerComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/MotionComponent.h"
 #include "ecs/components/MeshComponent.h"
 #include "ecs/components/RenderSettingsComponent.h"
+#include "ecs/components/RigidbodyComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/StatsComponent.h"
 #include "ecs/components/SkyComponent.h"
@@ -57,7 +59,19 @@ void GameplayDemoGame::onStart() {
   {
     auto& motion = m_registry.emplace<ecs::MotionComponent>(m_player);
     motion.mode = ecs::MotionComponent::Mode::Walking;
-    motion.isGrounded = true;
+    motion.isGrounded = false;
+  }
+  {
+    auto& body = m_registry.emplace<ecs::RigidbodyComponent>(m_player);
+    body.mass = 80.0f;
+    body.inverseMass = 1.0f / body.mass;
+    body.useGravity = true;
+  }
+  {
+    auto& collider = m_registry.emplace<ecs::ColliderComponent>(m_player);
+    collider.shape = ecs::ColliderComponent::Shape::Capsule;
+    collider.size = {0.38f, 1.85f, 0.38f};
+    collider.offset = {0.0f, 0.925f, 0.0f};
   }
   {
     auto& stats = m_registry.emplace<ecs::StatsComponent>(m_player);
@@ -114,6 +128,11 @@ void GameplayDemoGame::onStart() {
     terrain.noise.octaves = 2;
     terrain.noise.persistence = 0.45f;
     terrain.noise.lacunarity = 2.0f;
+    auto& collider = m_registry.emplace<ecs::ColliderComponent>(m_terrain);
+    collider.shape = ecs::ColliderComponent::Shape::Terrain;
+    collider.terrain.enabled = true;
+    collider.terrain.sourceTerrainEntity = m_terrain;
+    collider.terrain.thicknessMeters = 5.0f;
 
     auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::HighQualityDirtRockGrassLayer());
     // Render using the current OpenGL demo shader (textures are ignored for now).
@@ -245,8 +264,15 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   // --- Controller requests -> motion intent ---
   m_motionSystem.tick(m_registry);
 
+  // --- Gravity only updates velocities ---
+  m_gravitySystem.tick(m_registry, ctx.deltaSeconds);
+
   // --- Motion intent -> transform movement ---
   m_movementSystem.tick(m_registry, m_events, ctx.deltaSeconds);
+
+  // --- Collision detection emits contacts; resolution consumes them and separates bodies ---
+  m_collisionDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
+  m_collisionResolutionSystem.tick(m_registry, m_events);
 
   // --- Animation + third-person camera follow ---
   m_animationSystem.tick(m_registry, ctx.deltaSeconds);

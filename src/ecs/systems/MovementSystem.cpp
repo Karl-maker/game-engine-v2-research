@@ -59,15 +59,11 @@ void MovementSystem::tick(ecs::EntityRegistry& registry, ecs::services::EventSer
 
         math::Vec3 desiredVel = motion.desiredVelocity;
 
-        // Grounded/walking modes don't move vertically.
+        // Grounded/walking modes keep vertical physics velocity while controller input owns horizontal intent.
         if (motion.mode == ecs::MotionComponent::Mode::Walking ||
             motion.mode == ecs::MotionComponent::Mode::Running ||
             motion.mode == ecs::MotionComponent::Mode::Crouching) {
-          desiredVel.y = 0.0f;
-          motion.velocity.y = 0.0f;
-          motion.isGrounded = true;
-        } else {
-          motion.isGrounded = false;
+          desiredVel.y = motion.velocity.y;
         }
 
         const ecs::StatsComponent* stats = registry.tryGet<ecs::StatsComponent>(id);

@@ -11,14 +11,18 @@ add_executable(duppy
   src/assets/MeshAssetService.cpp
   src/ecs/systems/AnimationSystem.cpp
   src/ecs/systems/AttachmentSystem.cpp
+  src/ecs/systems/CollisionDetectionSystem.cpp
+  src/ecs/systems/CollisionResolutionSystem.cpp
   src/ecs/systems/ControllerSystem.cpp
   src/ecs/systems/GraphicsSystem.cpp
+  src/ecs/systems/GravitySystem.cpp
   src/ecs/systems/MotionSystem.cpp
   src/ecs/systems/MovementSystem.cpp
   src/ecs/systems/SkyPresetSystem.cpp
   src/ecs/systems/TargetSystem.cpp
   src/ecs/systems/ThirdPersonCameraSystem.cpp
   src/ecs/services/RaycastConeFactoryService.cpp
+  src/ecs/services/SpatialHashGridService.cpp
   src/terrain/PerlinNoise2D.cpp
   src/core/ConsoleInputService.cpp
   src/core/ControlService.cpp
