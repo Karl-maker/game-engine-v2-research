@@ -8,9 +8,12 @@
 #include "ecs/components/TransformComponent.h"
 #include "ecs/events/IKEvents.h"
 #include "math/Mat4.h"
+#include "core/ThreadService.h"
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -202,78 +205,132 @@ static math::Vec3 solveFabrik(const std::vector<math::Vec3>& starts,
 namespace ecs::systems {
 
 void IKSystem::tick(EntityRegistry& registry, ecs::services::EventService& events, double deltaSeconds) const {
+  tick(registry, events, deltaSeconds, nullptr);
+}
+
+void IKSystem::tick(EntityRegistry& registry,
+                    ecs::services::EventService& events,
+                    double deltaSeconds,
+                    core::ThreadService* threads) const {
   const float dt = static_cast<float>(std::max(0.0, deltaSeconds));
+  struct IkTask final {
+    ecs::EntityId id = ecs::kInvalidEntityId;
+    ecs::IKComponent ik;
+    ecs::SkeletonComponent skeleton;
+    ecs::TransformComponent tr;
+    std::vector<ecs::events::IKChainSolvedEvent> solvedEvents;
+  };
+
+  std::vector<IkTask> tasks;
+  tasks.reserve(32);
+
   registry.view<ecs::IKComponent, ecs::SkeletonComponent, ecs::TransformComponent>(
       [&](ecs::EntityId id, ecs::IKComponent& ik, ecs::SkeletonComponent& skeleton, ecs::TransformComponent& tr) {
         if (!ik.enabled || !skeleton.enabled || skeleton.bones.empty()) return;
-
-        ik.solvedBoneNames.clear();
-
-        for (auto& chain : ik.chains) {
-          if (!chain.overrideAnimation || chain.boneNames.empty()) continue;
-
-          const float blendIn = std::max(0.0001f, chain.blendInSeconds);
-          const float blendOut = std::max(0.0001f, chain.blendOutSeconds);
-          const float targetBlend = chain.enabled ? 1.0f : 0.0f;
-          const float blendRate = chain.enabled ? (dt / blendIn) : (dt / blendOut);
-          chain.currentBlend = std::clamp(chain.currentBlend + (targetBlend - chain.currentBlend) * blendRate, 0.0f, 1.0f);
-          if (chain.currentBlend <= 0.0001f) continue;
-
-          math::Vec3 target = chain.worldTarget;
-          if (chain.targetMode == ecs::IKComponent::Chain::TargetMode::Entity) {
-            ecs::EntityId targetEntity = chain.targetEntity;
-            if (targetEntity == ecs::kInvalidEntityId && !chain.targetEntityName.empty()) {
-              targetEntity = resolveEntityByName(registry, chain.targetEntityName);
-            }
-
-            target = tr.position + chain.targetOffset;
-            if (registry.isAlive(targetEntity)) {
-              if (const auto* targetTr = registry.tryGet<ecs::TransformComponent>(targetEntity)) {
-                target = targetTr->position + chain.targetOffset + rotateVector(chain.targetLocalOffset, targetTr->rotation);
-              }
-            }
-          }
-
-          std::vector<int> chainIndices;
-          collectChainIndices(skeleton, chain.boneNames, chainIndices);
-          if (chainIndices.size() < 2) continue;
-
-          auto startPositions = collectWorldPositions(skeleton, tr, chainIndices);
-          std::vector<math::Vec3> solvedPositions;
-          solveFabrik(startPositions, target, solvedPositions, chain.iterations);
-
-          const math::Mat4 rootWorld = composeWorld(tr);
-          math::Mat4 parentWorld = rootWorld;
-          for (std::size_t i = 0; i < chainIndices.size(); ++i) {
-            const int boneIndex = chainIndices[i];
-            auto& pose = skeleton.currentPose[static_cast<std::size_t>(boneIndex)];
-            const math::Mat4 inverseParent = math::inverseAffine(parentWorld);
-            const math::Vec3 currentTranslation = translationFromMat4(pose);
-            const math::Vec3 currentScale = scaleFromMat4(pose);
-            const math::Vec3 currentRotation = rotationFromMat4(pose);
-
-            math::Vec3 targetRotation = currentRotation;
-            if (i + 1 < solvedPositions.size()) {
-              const math::Vec3 worldDir = solvedPositions[i + 1] - solvedPositions[i];
-              const math::Vec3 localDir = transformVector(inverseParent, worldDir);
-              targetRotation = directionToRotation(localDir);
-              targetRotation.z = currentRotation.z;
-            }
-
-            const float weight = std::clamp(chain.weight * chain.currentBlend, 0.0f, 1.0f);
-            const math::Vec3 blendedRotation{
-                math::lerp(currentRotation, targetRotation, weight).x,
-                math::lerp(currentRotation, targetRotation, weight).y,
-                math::lerp(currentRotation, targetRotation, weight).z,
-            };
-            pose = composeLocal(currentTranslation, blendedRotation, currentScale);
-            parentWorld = math::mul(parentWorld, pose);
-            ik.solvedBoneNames.push_back(skeleton.bones[static_cast<std::size_t>(boneIndex)].key);
-          }
-
-          events.emit<ecs::events::IKChainSolvedEvent>({id, chain.name});
-        }
+        IkTask t{};
+        t.id = id;
+        t.ik = ik;
+        t.skeleton = skeleton;
+        t.tr = tr;
+        tasks.push_back(std::move(t));
       });
+
+  auto runOne = [&](IkTask& task) {
+    auto& ik = task.ik;
+    auto& skeleton = task.skeleton;
+    const auto& tr = task.tr;
+
+    ik.solvedBoneNames.clear();
+    task.solvedEvents.clear();
+
+    for (auto& chain : ik.chains) {
+      if (!chain.overrideAnimation || chain.boneNames.empty()) continue;
+
+      const float blendIn = std::max(0.0001f, chain.blendInSeconds);
+      const float blendOut = std::max(0.0001f, chain.blendOutSeconds);
+      const float targetBlend = chain.enabled ? 1.0f : 0.0f;
+      const float blendRate = chain.enabled ? (dt / blendIn) : (dt / blendOut);
+      chain.currentBlend = std::clamp(chain.currentBlend + (targetBlend - chain.currentBlend) * blendRate, 0.0f, 1.0f);
+      if (chain.currentBlend <= 0.0001f) continue;
+
+      math::Vec3 target = chain.worldTarget;
+      if (chain.targetMode == ecs::IKComponent::Chain::TargetMode::Entity) {
+        ecs::EntityId targetEntity = chain.targetEntity;
+        if (targetEntity == ecs::kInvalidEntityId && !chain.targetEntityName.empty()) {
+          targetEntity = resolveEntityByName(registry, chain.targetEntityName);
+        }
+
+        target = tr.position + chain.targetOffset;
+        if (registry.isAlive(targetEntity)) {
+          if (const auto* targetTr = registry.tryGet<ecs::TransformComponent>(targetEntity)) {
+            target = targetTr->position + chain.targetOffset + rotateVector(chain.targetLocalOffset, targetTr->rotation);
+          }
+        }
+      }
+
+      std::vector<int> chainIndices;
+      collectChainIndices(skeleton, chain.boneNames, chainIndices);
+      if (chainIndices.size() < 2) continue;
+
+      auto startPositions = collectWorldPositions(skeleton, tr, chainIndices);
+      std::vector<math::Vec3> solvedPositions;
+      solveFabrik(startPositions, target, solvedPositions, chain.iterations);
+
+      const math::Mat4 rootWorld = composeWorld(tr);
+      math::Mat4 parentWorld = rootWorld;
+      for (std::size_t i = 0; i < chainIndices.size(); ++i) {
+        const int boneIndex = chainIndices[i];
+        auto& pose = skeleton.currentPose[static_cast<std::size_t>(boneIndex)];
+        const math::Mat4 inverseParent = math::inverseAffine(parentWorld);
+        const math::Vec3 currentTranslation = translationFromMat4(pose);
+        const math::Vec3 currentScale = scaleFromMat4(pose);
+        const math::Vec3 currentRotation = rotationFromMat4(pose);
+
+        math::Vec3 targetRotation = currentRotation;
+        if (i + 1 < solvedPositions.size()) {
+          const math::Vec3 worldDir = solvedPositions[i + 1] - solvedPositions[i];
+          const math::Vec3 localDir = transformVector(inverseParent, worldDir);
+          targetRotation = directionToRotation(localDir);
+          targetRotation.z = currentRotation.z;
+        }
+
+        const float weight = std::clamp(chain.weight * chain.currentBlend, 0.0f, 1.0f);
+        const math::Vec3 blendedRotation{
+            math::lerp(currentRotation, targetRotation, weight).x,
+            math::lerp(currentRotation, targetRotation, weight).y,
+            math::lerp(currentRotation, targetRotation, weight).z,
+        };
+        pose = composeLocal(currentTranslation, blendedRotation, currentScale);
+        parentWorld = math::mul(parentWorld, pose);
+        ik.solvedBoneNames.push_back(skeleton.bones[static_cast<std::size_t>(boneIndex)].key);
+      }
+
+      task.solvedEvents.push_back({task.id, chain.name});
+    }
+  };
+
+  if (threads && threads->workerCount() > 0 && tasks.size() >= 8) {
+    threads->parallelFor(tasks.size(), 1, [&](std::size_t i) { runOne(tasks[i]); });
+  } else {
+    for (auto& t : tasks) runOne(t);
+  }
+
+  // Apply results on the main thread to avoid registry races.
+  for (auto& t : tasks) {
+    if (auto* ik = registry.tryGet<ecs::IKComponent>(t.id)) {
+      ik->solvedBoneNames = std::move(t.ik.solvedBoneNames);
+      const std::size_t n = std::min(ik->chains.size(), t.ik.chains.size());
+      for (std::size_t ci = 0; ci < n; ++ci) {
+        ik->chains[ci].currentBlend = t.ik.chains[ci].currentBlend;
+      }
+    }
+    if (auto* sk = registry.tryGet<ecs::SkeletonComponent>(t.id)) {
+      sk->currentPose = std::move(t.skeleton.currentPose);
+    }
+    for (const auto& e : t.solvedEvents) {
+      events.emit<ecs::events::IKChainSolvedEvent>(e);
+    }
+  }
 }
 
 }  // namespace ecs::systems

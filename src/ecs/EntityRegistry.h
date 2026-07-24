@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -208,7 +209,10 @@ class EntityRegistry final {
   T& emplace(EntityId id, Args&&... args) {
     ensureAlive(id);
     auto& storage = storageFor<T>();
-    return storage.emplace(id, std::forward<Args>(args)...);
+    const bool had = storage.has(id);
+    T& out = storage.emplace(id, std::forward<Args>(args)...);
+    if (!had) bumpStructuralVersion();
+    return out;
   }
 
   template <typename T>
@@ -258,8 +262,21 @@ class EntityRegistry final {
   void remove(EntityId id) {
     if (!isAlive(id)) return;
     if (auto* s = tryStorageFor<T>()) {
+      const bool had = s->has(id);
       s->remove(id);
+      if (had) bumpStructuralVersion();
     }
+  }
+
+  // Monotonic version that increments when entity/component presence changes.
+  // Intended for caching entity queries across ticks.
+  std::uint64_t structuralVersion() const { return m_structuralVersion; }
+
+  template <typename... Components>
+  // Collects entity ids that have ALL listed components.
+  void collectEntities(std::vector<EntityId>& out) {
+    out.clear();
+    view<Components...>([&](EntityId id, Components&...) { out.push_back(id); });
   }
 
   // Efficient filtering:
@@ -344,6 +361,7 @@ class EntityRegistry final {
 
  private:
   void ensureAlive(EntityId id) const;
+  void bumpStructuralVersion() { m_structuralVersion += 1; }
 
   template <typename T>
   detail::SparseSetStorage<T>& storageFor() const {
@@ -400,6 +418,7 @@ class EntityRegistry final {
   std::vector<std::uint8_t> m_alive;  // index by EntityId (0 unused)
   std::unordered_map<std::type_index, std::unique_ptr<detail::IStorage>> m_storages;
   detail::CommandQueue m_commands;
+  std::uint64_t m_structuralVersion = 1;
 };
 
 }  // namespace ecs

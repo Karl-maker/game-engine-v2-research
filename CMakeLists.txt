@@ -40,6 +40,7 @@ add_executable(duppy
   src/core/ControlService.cpp
   src/core/GameLoopService.cpp
   src/core/SteadyTimeSource.cpp
+  src/core/ThreadService.cpp
   src/games/AttachmentDemoGame.cpp
   src/games/GameplayDemoGame.cpp
   src/games/TargetDemoGame.cpp

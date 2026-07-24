@@ -8,6 +8,7 @@
 
 #include "core/IGame.h"
 #include "core/ControlService.h"
+#include "core/ThreadService.h"
 
 #include "ecs/EntityId.h"
 #include "ecs/EntityRegistry.h"
@@ -51,6 +52,7 @@ class GameplayDemoGame final : public core::IGame {
  private:
  ecs::EntityRegistry m_registry;
   core::ControlService m_controls;
+  core::ThreadService m_threads;
   assets::MeshAssetService m_meshAssets;
   ecs::services::EventService m_events;
   ecs::systems::ControllerSystem m_controllerSystem;

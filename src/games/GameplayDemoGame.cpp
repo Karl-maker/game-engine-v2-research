@@ -665,7 +665,7 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   m_sensorSystem.tick(m_registry, m_events);
   (void)updatePlayerVisionDrivenIk(m_registry, m_events, m_player, m_demoNpc);
   updatePlayerHeadFacingIk(m_registry, m_player, m_camera);
-  m_ikSystem.tick(m_registry, m_events, ctx.deltaSeconds);
+  m_ikSystem.tick(m_registry, m_events, ctx.deltaSeconds, &m_threads);
   m_poseSystem.tick(m_registry);
    m_socketSystem.tick(m_registry, ctx.deltaSeconds);
   m_hitDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);

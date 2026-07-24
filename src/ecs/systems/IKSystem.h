@@ -5,11 +5,19 @@
 #include "ecs/EntityRegistry.h"
 #include "ecs/services/EventService.h"
 
+namespace core {
+class ThreadService;
+}
+
 namespace ecs::systems {
 
 class IKSystem final {
  public:
   void tick(EntityRegistry& registry, ecs::services::EventService& events, double deltaSeconds) const;
+  void tick(EntityRegistry& registry,
+            ecs::services::EventService& events,
+            double deltaSeconds,
+            core::ThreadService* threads) const;
 };
 
 }  // namespace ecs::systems

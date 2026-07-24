@@ -14,6 +14,7 @@ EntityId EntityRegistry::createEntity(std::string name) {
     m_alive.resize(static_cast<std::size_t>(id) + 1, 0);
   }
   m_alive[static_cast<std::size_t>(id)] = 1;
+  bumpStructuralVersion();
 
   auto& ident = emplace<IdentityComponent>(id);
   ident.id = id;
@@ -28,6 +29,7 @@ void EntityRegistry::destroyEntity(EntityId id) {
   }
 
   m_alive[static_cast<std::size_t>(id)] = 0;
+  bumpStructuralVersion();
 
   for (auto& [_, storage] : m_storages) {
     storage->remove(id);
@@ -51,4 +53,3 @@ void EntityRegistry::ensureAlive(EntityId id) const {
 }
 
 }  // namespace ecs
-
