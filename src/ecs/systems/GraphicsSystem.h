@@ -275,6 +275,11 @@ class GraphicsSystem final {
       bool hasAlbedoTex = false;
       float albedoUvScale = 0.22f;  // world->uv scale (meters^-1)
 
+      // Optional explicit texture set for grass shaders. Slots are intended to be:
+      // `grass_tex0..grass_tex5` (or a single `grass_albedo`/`albedo` as a fallback).
+      // When present, renderers may choose between them per-instance for variation.
+      std::vector<render::AssetRef> grassTextures;
+
       std::vector<GrassLayerDraw> layers;
     };
 

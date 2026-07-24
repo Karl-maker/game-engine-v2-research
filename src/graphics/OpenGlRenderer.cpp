@@ -38,22 +38,8 @@ struct RockInstance final {
   float rot;
 };
 
-struct GrassBillboardTexturePreset final {
-  const char* path = "";
-  float weight = 0.0f;
-};
-
-static constexpr GrassBillboardTexturePreset kGrassBillboardPresets[] = {
-    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.34f},
-    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.28f},
-    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.41f},
-    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.0f},
-    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.6f},
-    {"assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0.5f},
-};
-
-static constexpr int kGrassBillboardPresetCount =
-    static_cast<int>(sizeof(kGrassBillboardPresets) / sizeof(kGrassBillboardPresets[0]));
+static constexpr const char* kDefaultGrassBillboardTexture =
+    "assets/textures/vegitation/grass_patch_02/Material_baseColor.png";
 
 struct GrassBillboardFactory final {
   struct PlaneSpec final {
@@ -1231,10 +1217,10 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   if (mesh.species == "BillboardGrassPlanes") {
     bladeCount = 3;
     segments = 3;
-    baseWidth = 0.46f;
+    baseWidth = 0.42f;
     radialSpread = 0.06f;
-    bladeHeightMin = 0.78f;
-    bladeHeightMax = 1.20f;
+    bladeHeightMin = 0.42f;
+    bladeHeightMax = 0.74f;
     leanStrength = 0.06f;
   } else if (mesh.species == "ShaderGrassCarpet") {
     bladeCount = 4;
@@ -1334,7 +1320,7 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
         const float taper = std::pow(1.0f - v, 1.05f);
         const float h = localHeight * v;
         const float halfW = localWidth * (0.40f + 0.26f * taper);
-        const float bendForward = (p == 2) ? std::pow(v, 1.65f) * (0.12f + 0.05f * rand01(geoSeed + 991u)) : 0.0f;
+        const float bendForward = (p == 2) ? std::pow(v, 1.65f) * (0.07f + 0.04f * rand01(geoSeed + 991u)) : 0.0f;
         verts.push_back(GrassVert{-halfW + spec.offset.x, h, bendForward + spec.offset.z, 0.0f, v, static_cast<float>(p)});
         verts.push_back(GrassVert{halfW + spec.offset.x, h, bendForward + spec.offset.z, 1.0f, v, static_cast<float>(p)});
       }
@@ -1554,7 +1540,9 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
     float strength = 1.0f;
   };
 
-  const int clusterCount = std::clamp(static_cast<int>(std::ceil(areaM2 / 300.0f)), 3, 8);
+  int clusterCount = std::clamp(static_cast<int>(std::ceil(areaM2 / 300.0f)), 3, 8);
+  // Billboard planes should read like a more even carpet (islands/noise do the shaping).
+  if (mesh.species == "BillboardGrassPlanes") clusterCount = 0;
   std::vector<Cluster> clusters;
   clusters.reserve(static_cast<std::size_t>(clusterCount));
   for (int i = 0; i < clusterCount; ++i) {
@@ -1569,9 +1557,10 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
     clusters.push_back(c);
   }
 
-  const float clusterBlend = 0.40f + 0.35f * std::clamp(layer.noiseStrength, 0.0f, 1.0f);
+  float clusterBlend = 0.40f + 0.35f * std::clamp(layer.noiseStrength, 0.0f, 1.0f);
   float clusterSharpness = 1.35f + 1.75f * std::clamp(layer.noiseStrength, 0.0f, 1.0f);
   if (mesh.species == "ShaderGrassCarpet") clusterSharpness *= 0.62f;
+  if (mesh.species == "BillboardGrassPlanes") clusterBlend = 0.0f;
 
   std::uint32_t attempts = 0;
   const std::uint32_t maxAttempts = maxInstances * 12u + 2048u;
@@ -2465,10 +2454,9 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       const ecs::systems::GraphicsSystem::TerrainDraw* gt =
           (gr.sourceTerrainEntity != ecs::kInvalidEntityId) ? findTerrain(gr.sourceTerrainEntity) : groundTerrain;
 
-      const std::string shaderKey = gr.shader.key.empty() ? "graphics/shaders/grass_clumps" : gr.shader.key;
+      const std::string shaderKey = gr.shader.key.empty() ? "graphics/shaders/grass" : gr.shader.key;
       const ShaderService::Program* program = m_shaders.getOrCreate(shaderKey);
       if (!program || !program->programId) continue;
-      const bool useBillboardPlanes = shaderKey == "graphics/shaders/grass_planes";
 
       glUseProgram(program->programId);
 
@@ -2486,37 +2474,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       const GLint locSunInt = glGetUniformLocation(program->programId, "u_SunIntensity");
       if (locSunInt >= 0) glUniform1f(locSunInt, sunIntensity);
 
-      if (useBillboardPlanes) {
-        const char* samplerNames[kGrassBillboardPresetCount] = {
-            "u_GrassTex0",
-            "u_GrassTex1",
-            "u_GrassTex2",
-            "u_GrassTex3",
-            "u_GrassTex4",
-            "u_GrassTex5",
-        };
-        for (int texIndex = 0; texIndex < kGrassBillboardPresetCount; ++texIndex) {
-          const GLuint texId = m_textures.requestTexture(kGrassBillboardPresets[texIndex].path, true);
-          glActiveTexture(GL_TEXTURE0 + texIndex);
-          glBindTexture(GL_TEXTURE_2D, texId);
-          const GLint loc = glGetUniformLocation(program->programId, samplerNames[texIndex]);
-          if (loc >= 0) glUniform1i(loc, texIndex);
-        }
-      } else {
-        const std::string albedoPath = gr.hasAlbedoTex ? gr.albedoTex.key : "assets/textures/grass/grass_color.jpg";
-        const GLuint albedoId = m_textures.requestTexture(albedoPath, true);
-        const bool useAlbedo = albedoId != 0;
-        const GLint locUseAlb = glGetUniformLocation(program->programId, "u_UseAlbedo");
-        if (locUseAlb >= 0) glUniform1i(locUseAlb, useAlbedo ? 1 : 0);
-        const GLint locAlbScale = glGetUniformLocation(program->programId, "u_AlbedoUvScale");
-        if (locAlbScale >= 0) glUniform1f(locAlbScale, gr.albedoUvScale);
-        if (useAlbedo) {
-          glActiveTexture(GL_TEXTURE0);
-          glBindTexture(GL_TEXTURE_2D, albedoId);
-          const GLint loc = glGetUniformLocation(program->programId, "u_AlbedoTex");
-          if (loc >= 0) glUniform1i(loc, 0);
-        }
-      }
+      int maxBoundTextureUnits = 0;
 
       const int interactionCount = gr.interactionEnabled ? 1 : 0;
       const GLint locIc = glGetUniformLocation(program->programId, "u_InteractionCount");
@@ -2536,6 +2494,80 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
       for (std::size_t li = 0; li < gr.layers.size(); ++li) {
         const auto& layer = gr.layers[li];
+        const bool planeMode = (layer.species == "BillboardGrassPlanes");
+
+        const GLint locMode = glGetUniformLocation(program->programId, "u_GrassMode");
+        if (locMode >= 0) glUniform1i(locMode, planeMode ? 1 : 0);
+
+        if (planeMode) {
+          const char* samplerNames[6] = {
+              "u_GrassTex0",
+              "u_GrassTex1",
+              "u_GrassTex2",
+              "u_GrassTex3",
+              "u_GrassTex4",
+              "u_GrassTex5",
+          };
+
+          struct BoundGrassTex final {
+            GLuint id = 0;
+            float aspect = 1.0f;
+          };
+          BoundGrassTex bound[6]{};
+          int texCount = 0;
+
+          if (!gr.grassTextures.empty()) {
+            texCount = std::min(6, static_cast<int>(gr.grassTextures.size()));
+            for (int i = 0; i < texCount; ++i) {
+              const std::string& path = gr.grassTextures[static_cast<std::size_t>(i)].key;
+              bound[i].id = m_textures.requestTexture(path, true);
+            }
+          } else if (gr.hasAlbedoTex && !gr.albedoTex.key.empty()) {
+            texCount = 1;
+            bound[0].id = m_textures.requestTexture(gr.albedoTex.key, true);
+          } else {
+            texCount = 1;
+            bound[0].id = m_textures.requestTexture(kDefaultGrassBillboardTexture, true);
+          }
+
+          for (int texIndex = 0; texIndex < texCount; ++texIndex) {
+            glActiveTexture(GL_TEXTURE0 + texIndex);
+            glBindTexture(GL_TEXTURE_2D, bound[texIndex].id);
+
+            GLint w = 1;
+            GLint h = 1;
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+            bound[texIndex].aspect = (h > 0) ? (static_cast<float>(w) / static_cast<float>(h)) : 1.0f;
+
+            const GLint loc = glGetUniformLocation(program->programId, samplerNames[texIndex]);
+            if (loc >= 0) glUniform1i(loc, texIndex);
+          }
+
+          const GLint locCount = glGetUniformLocation(program->programId, "u_GrassTexCount");
+          if (locCount >= 0) glUniform1i(locCount, texCount);
+          float aspects[6] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+          for (int i = 0; i < texCount; ++i) aspects[i] = bound[i].aspect;
+          const GLint locAspect = glGetUniformLocation(program->programId, "u_GrassTexAspect[0]");
+          if (locAspect >= 0) glUniform1fv(locAspect, 6, aspects);
+
+          maxBoundTextureUnits = std::max(maxBoundTextureUnits, texCount);
+        } else {
+          const std::string albedoPath = gr.hasAlbedoTex ? gr.albedoTex.key : "assets/textures/grass/grass_color.jpg";
+          const GLuint albedoId = m_textures.requestTexture(albedoPath, true);
+          const bool useAlbedo = albedoId != 0;
+          const GLint locUseAlb = glGetUniformLocation(program->programId, "u_UseAlbedo");
+          if (locUseAlb >= 0) glUniform1i(locUseAlb, useAlbedo ? 1 : 0);
+          const GLint locAlbScale = glGetUniformLocation(program->programId, "u_AlbedoUvScale");
+          if (locAlbScale >= 0) glUniform1f(locAlbScale, gr.albedoUvScale);
+          if (useAlbedo) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, albedoId);
+            const GLint loc = glGetUniformLocation(program->programId, "u_AlbedoTex");
+            if (loc >= 0) glUniform1i(loc, 0);
+          }
+          maxBoundTextureUnits = std::max(maxBoundTextureUnits, 1);
+        }
 
         GrassMesh* mesh = getOrCreateGrassMesh(gr, li, gt);
         if (!mesh || !mesh->vao || mesh->instanceCapacity == 0 || mesh->chunks.empty()) continue;
@@ -2554,7 +2586,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         float carpetHaze = 0.35f;
         float stylizedBands = 0.35f;
         float carpetThickness = 0.65f;
-        if (useBillboardPlanes || layer.species == "BillboardGrassPlanes") {
+        if (planeMode || layer.species == "BillboardGrassPlanes") {
           tint = {0.93f, 1.00f, 0.92f};
           carpetHaze = 0.60f;
           stylizedBands = 0.22f;
@@ -2577,7 +2609,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         const GLint locThickness = glGetUniformLocation(program->programId, "u_CarpetThickness");
         if (locThickness >= 0) glUniform1f(locThickness, carpetThickness);
 
-        if (useBillboardPlanes) {
+        if (planeMode) {
           const float lodTwoPlaneDist = std::max(4.0f, maxDist * 0.36f);
           const float lodOnePlaneDist = std::max(lodTwoPlaneDist + 3.0f, maxDist * 0.72f);
           const GLint locLodTwo = glGetUniformLocation(program->programId, "u_LodTwoPlaneDist");
@@ -2636,8 +2668,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         glBindVertexArray(0);
       }
 
-      const int boundTextureCount = useBillboardPlanes ? kGrassBillboardPresetCount : 1;
-      for (int texIndex = 0; texIndex < boundTextureCount; ++texIndex) {
+      for (int texIndex = 0; texIndex < maxBoundTextureUnits; ++texIndex) {
         glActiveTexture(GL_TEXTURE0 + texIndex);
         glBindTexture(GL_TEXTURE_2D, 0);
       }

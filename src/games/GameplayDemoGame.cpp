@@ -407,25 +407,26 @@ void GameplayDemoGame::onStart() {
         ecs::GrassPatchComponent::GrassLayer{.species = "BillboardGrassPlanes",
                                              .description =
                                                  "Three off-center intersecting billboard planes with random heights and texture variation.",
-                                             .density = 4.8f,
-                                             .minScale = 0.70f,
-                                             .maxScale = 1.18f,
-                                             .bladeSpacing = 1.70f,
+                                             .density = 6.2f,
+                                             .minScale = 0.56f,
+                                             .maxScale = 0.98f,
+                                             .bladeSpacing = 0.70f,
                                              .bendStrength = 0.16f,
                                              .curveStrength = 0.16f,
                                              .twistStrength = 0.0f,
-                                             .noiseScale = 0.52f,
-                                             .noiseStrength = 1.56f,
+                                             .noiseScale = 0.052f,
+                                             .noiseStrength = 0.56f,
                                              .windStrength = 0.0f,
                                              .maxDistance = 42.0f},
     };
 
     auto& sh = m_registry.emplace<ecs::ShaderComponent>(grass);
-    sh.shader.key = "graphics/shaders/grass_planes";
+    sh.shader.key = "graphics/shaders/grass";
     sh.doubleSided = true;
     sh.depthWrite = true;
     sh.receiveShadows = false;
     sh.castShadows = false;
+    sh.textures.push_back({"grass_tex0", render::AssetRef{true, "assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0}, true});
   }
 
   m_light = m_registry.createEntity("sun");

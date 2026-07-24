@@ -291,8 +291,24 @@ void extractGrassTextures(const ecs::ShaderComponent& shader, GraphicsSystem::Fr
     }
   };
 
+  out.grassTextures.clear();
+  out.grassTextures.reserve(6);
+  for (int i = 0; i < 6; ++i) {
+    const std::string slot = std::string("grass_tex") + std::to_string(i);
+    for (const auto& t : shader.textures) {
+      if (t.slot == slot && t.texture.enabled && !t.texture.key.empty()) {
+        out.grassTextures.push_back(t.texture);
+        break;
+      }
+    }
+  }
+
+  // Back-compat: if no explicit list, fall back to the existing single-slot albedo.
   tryBind("grass_albedo", out.albedoTex, out.hasAlbedoTex);
   if (!out.hasAlbedoTex) tryBind("albedo", out.albedoTex, out.hasAlbedoTex);
+  if (out.grassTextures.empty() && out.hasAlbedoTex) {
+    out.grassTextures.push_back(out.albedoTex);
+  }
 }
 
 }  // namespace
