@@ -23,6 +23,7 @@
 #include "ecs/systems/HitDetectionSystem.h"
 #include "ecs/systems/HierarchySystem.h"
 #include "ecs/systems/GraphicsSystem.h"
+#include "ecs/systems/HudSystem.h"
 #include "ecs/systems/GravitySystem.h"
 #include "ecs/systems/IdleAnimationSystem.h"
 #include "ecs/systems/IKSystem.h"
@@ -99,6 +100,7 @@ class GameplayDemoGame final : public core::IGame {
   ecs::systems::SkyPresetSystem m_skyPresets;
   ecs::systems::ThirdPersonCameraSystem m_thirdPersonCameraSystem;
   ecs::systems::GraphicsSystem m_graphics;
+  ecs::systems::HudSystem m_hudSystem;
   ecs::services::EntityFactoryRegistry m_factoryRegistry;
   ecs::services::ChunkStreamingService m_chunkStreaming;
   std::unique_ptr<ecs::services::IChunkSource> m_chunkSource;
@@ -113,6 +115,7 @@ class GameplayDemoGame final : public core::IGame {
   ecs::EntityId m_terrain = ecs::kInvalidEntityId;
   ecs::EntityId m_light = ecs::kInvalidEntityId;
   ecs::EntityId m_renderSettings = ecs::kInvalidEntityId;
+  ecs::EntityId m_hud = ecs::kInvalidEntityId;
   ecs::EntityId m_playerHandSocket = ecs::kInvalidEntityId;
   ecs::EntityId m_playerHitVolume = ecs::kInvalidEntityId;
   ecs::EntityId m_demoNpcHurtVolume = ecs::kInvalidEntityId;

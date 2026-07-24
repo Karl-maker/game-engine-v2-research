@@ -195,6 +195,12 @@ class OpenGlRenderer final {
   std::uint32_t m_overlayVbo = 0;
   std::size_t m_overlayCapacityVerts = 0;
 
+  // HUD quad rendering.
+  std::uint32_t m_hudProgram = 0;
+  std::uint32_t m_hudVao = 0;
+  std::uint32_t m_hudVbo = 0;
+  std::size_t m_hudCapacityVerts = 0;
+
   // World-space debug line rendering.
   std::uint32_t m_debugLineProgram = 0;
   std::uint32_t m_debugLineVao = 0;

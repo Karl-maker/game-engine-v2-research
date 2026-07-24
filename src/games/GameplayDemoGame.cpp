@@ -12,6 +12,7 @@
 #include "ecs/components/CombatVolumeComponent.h"
 #include "ecs/components/ControllerComponent.h"
 #include "ecs/components/AudioComponent.h"
+#include "ecs/components/HudComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/IKComponent.h"
 #include "ecs/components/IdentityComponent.h"
@@ -477,6 +478,59 @@ void GameplayDemoGame::onStart() {
     sh.textures.push_back({"grass_tex0", render::AssetRef{true, "assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0}, true});
   }
 
+  // HUD example: flat screen image/bar + world-space label.
+  {
+    m_hud = m_registry.createEntity("hud");
+    auto& hud = m_registry.emplace<ecs::HudComponent>(m_hud);
+
+    ecs::HudComponent::Widget portrait;
+    portrait.name = "portrait";
+    portrait.space = ecs::HudComponent::Space::Screen;
+    portrait.kind = ecs::HudComponent::Kind::Image;
+    portrait.positionPx = {24.0f, 24.0f};
+    portrait.sizePx = {64.0f, 64.0f};
+    portrait.textureEnabled = true;
+    portrait.texture = {true, "assets/textures/stone/stone_color.jpg", 0};
+    portrait.tint = {1.0f, 1.0f, 1.0f, 1.0f};
+    portrait.showBackground = true;
+    portrait.backgroundColor = {0.08f, 0.08f, 0.08f, 0.55f};
+    hud.widgets.push_back(portrait);
+
+    ecs::HudComponent::Widget lifeBar;
+    lifeBar.name = "life_bar";
+    lifeBar.space = ecs::HudComponent::Space::Screen;
+    lifeBar.kind = ecs::HudComponent::Kind::Bar;
+    lifeBar.positionPx = {96.0f, 28.0f};
+    lifeBar.sizePx = {320.0f, 24.0f};
+    lifeBar.sourceEntity = m_player;
+    lifeBar.valueSource = ecs::HudComponent::ValueSource::StatsHealth;
+    lifeBar.showValueText = true;
+    lifeBar.label = "Life";
+    lifeBar.text = "Life";
+    lifeBar.backgroundColor = {0.10f, 0.10f, 0.10f, 0.80f};
+    lifeBar.fillBackgroundColor = {0.20f, 0.20f, 0.20f, 0.88f};
+    lifeBar.fillColor = {0.82f, 0.16f, 0.18f, 1.0f};
+    hud.widgets.push_back(lifeBar);
+
+    ecs::HudComponent::Widget lifeLabel3d;
+    lifeLabel3d.name = "life_world_label";
+    lifeLabel3d.space = ecs::HudComponent::Space::World;
+    lifeLabel3d.kind = ecs::HudComponent::Kind::Text;
+    lifeLabel3d.worldOffset = {0.0f, 2.25f, 0.0f};
+    lifeLabel3d.sizeMeters = {1.8f, 0.24f};
+    lifeLabel3d.billboard = true;
+    lifeLabel3d.sourceEntity = m_player;
+    lifeLabel3d.valueSource = ecs::HudComponent::ValueSource::StatsHealth;
+    lifeLabel3d.showValueText = true;
+    lifeLabel3d.label = "Life";
+    lifeLabel3d.text = "Life";
+    lifeLabel3d.textScalePx = 18.0f;
+    lifeLabel3d.showBackground = false;
+    lifeLabel3d.showBorder = false;
+    lifeLabel3d.textColor = {1.0f, 0.95f, 0.90f, 1.0f};
+    hud.widgets.push_back(lifeLabel3d);
+  }
+
   // VFX examples: fire, electricity, and sparks.
   {
     const ecs::EntityId fire = m_registry.createEntity("campfire_vfx");
@@ -778,6 +832,7 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
 
   // --- Environment presets (SkyType -> sky/light/fog) ---
   m_skyPresets.tick(m_registry);
+  m_hudSystem.tick(m_registry);
 
   const auto& frame = m_graphics.tick(m_registry);
 

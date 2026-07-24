@@ -232,6 +232,19 @@ struct DebugLineVert final {
   float a;
 };
 
+struct HudVert final {
+  float x;
+  float y;
+  float z;
+  float u;
+  float v;
+  float r;
+  float g;
+  float b;
+  float a;
+  float mode;
+};
+
 struct VfxVert final {
   float x;
   float y;
@@ -849,6 +862,77 @@ bool OpenGlRenderer::start(const WindowConfig& cfg, const char* title) {
     m_vfxCapacityVerts = 0;
   }
 
+  // HUD quad program (screen-space or world-space textured quads).
+  {
+    const std::string vsSrc =
+        "#version 410 core\n"
+        "layout(location=0) in vec3 a_Pos;\n"
+        "layout(location=1) in vec2 a_Uv;\n"
+        "layout(location=2) in vec4 a_Color;\n"
+        "layout(location=3) in float a_Mode;\n"
+        "uniform mat4 u_ViewProj;\n"
+        "out vec2 v_Uv;\n"
+        "out vec4 v_Color;\n"
+        "flat out float v_Mode;\n"
+        "void main(){\n"
+        "  v_Uv = a_Uv;\n"
+        "  v_Color = a_Color;\n"
+        "  v_Mode = a_Mode;\n"
+        "  gl_Position = (a_Mode < 0.5) ? vec4(a_Pos, 1.0) : (u_ViewProj * vec4(a_Pos, 1.0));\n"
+        "}\n";
+    const std::string fsSrc =
+        "#version 410 core\n"
+        "in vec2 v_Uv;\n"
+        "in vec4 v_Color;\n"
+        "flat in float v_Mode;\n"
+        "uniform sampler2D u_Texture;\n"
+        "uniform int u_UseTexture;\n"
+        "out vec4 o_Color;\n"
+        "void main(){\n"
+        "  vec4 col = v_Color;\n"
+        "  if (u_UseTexture != 0) col *= texture(u_Texture, v_Uv);\n"
+        "  if (col.a <= 0.01) discard;\n"
+        "  o_Color = col;\n"
+        "}\n";
+
+    std::string err;
+    const GLuint vs = compileGlShader(GL_VERTEX_SHADER, vsSrc, &err);
+    if (!vs) {
+      std::cerr << "HUD vertex shader compile failed:\n" << err << "\n";
+      return true;
+    }
+    const GLuint fs = compileGlShader(GL_FRAGMENT_SHADER, fsSrc, &err);
+    if (!fs) {
+      std::cerr << "HUD fragment shader compile failed:\n" << err << "\n";
+      glDeleteShader(vs);
+      return true;
+    }
+    const GLuint prog = linkGlProgram(vs, fs, &err);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    if (!prog) {
+      std::cerr << "HUD program link failed:\n" << err << "\n";
+      return true;
+    }
+    m_hudProgram = prog;
+
+    glGenVertexArrays(1, &m_hudVao);
+    glGenBuffers(1, &m_hudVbo);
+    glBindVertexArray(m_hudVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_hudVbo);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(HudVert), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(HudVert), reinterpret_cast<void*>(sizeof(float) * 3));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(HudVert), reinterpret_cast<void*>(sizeof(float) * 5));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(HudVert), reinterpret_cast<void*>(sizeof(float) * 9));
+    glBindVertexArray(0);
+    m_hudCapacityVerts = 0;
+  }
+
   // Sky VAO (core profile requires a VAO even for gl_VertexID fullscreen triangles).
   glGenVertexArrays(1, &m_skyVao);
 
@@ -912,6 +996,9 @@ void OpenGlRenderer::stop() {
   if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
   if (m_overlayVao) glDeleteVertexArrays(1, &m_overlayVao);
   if (m_overlayProgram) glDeleteProgram(m_overlayProgram);
+  if (m_hudVbo) glDeleteBuffers(1, &m_hudVbo);
+  if (m_hudVao) glDeleteVertexArrays(1, &m_hudVao);
+  if (m_hudProgram) glDeleteProgram(m_hudProgram);
   if (m_debugLineVbo) glDeleteBuffers(1, &m_debugLineVbo);
   if (m_debugLineVao) glDeleteVertexArrays(1, &m_debugLineVao);
   if (m_debugLineProgram) glDeleteProgram(m_debugLineProgram);
@@ -922,6 +1009,10 @@ void OpenGlRenderer::stop() {
   m_overlayVao = 0;
   m_overlayProgram = 0;
   m_overlayCapacityVerts = 0;
+  m_hudVbo = 0;
+  m_hudVao = 0;
+  m_hudProgram = 0;
+  m_hudCapacityVerts = 0;
   m_debugLineVbo = 0;
   m_debugLineVao = 0;
   m_debugLineProgram = 0;
@@ -3402,6 +3493,262 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       glDisable(GL_PROGRAM_POINT_SIZE);
       glEnable(GL_CULL_FACE);
     }
+  }
+
+  // HUD pass.
+  if (!frame.hud.empty() && m_hudProgram && m_hudVao && m_hudVbo) {
+    struct ClipPos final {
+      float x = 0.0f;
+      float y = 0.0f;
+      float z = 0.0f;
+      float w = 1.0f;
+    };
+
+    const math::Vec3 camFwd = math::normalize(frame.camera.forward);
+    math::Vec3 camRight = math::normalize(math::cross(camFwd, {0.0f, 1.0f, 0.0f}));
+    if (math::lengthSq(camRight) < 1e-6f) camRight = {1.0f, 0.0f, 0.0f};
+    const math::Vec3 camUp = math::normalize(math::cross(camRight, camFwd));
+
+    const auto clipFromPoint = [](const math::Mat4& m, const math::Vec3& p) -> ClipPos {
+      return {
+          m.m[0] * p.x + m.m[4] * p.y + m.m[8] * p.z + m.m[12],
+          m.m[1] * p.x + m.m[5] * p.y + m.m[9] * p.z + m.m[13],
+          m.m[2] * p.x + m.m[6] * p.y + m.m[10] * p.z + m.m[14],
+          m.m[3] * p.x + m.m[7] * p.y + m.m[11] * p.z + m.m[15],
+      };
+    };
+
+    const auto pixelToNdc = [&](float px, float py) -> math::Vec3 {
+      return {px / static_cast<float>(m_fbWidth) * 2.0f - 1.0f, 1.0f - py / static_cast<float>(m_fbHeight) * 2.0f, 0.0f};
+    };
+
+    const auto appendQuad = [](std::vector<HudVert>& out,
+                               const math::Vec3& p0,
+                               const math::Vec3& p1,
+                               const math::Vec3& p2,
+                               const math::Vec3& p3,
+                               const render::Color& color,
+                               float mode,
+                               float u0 = 0.0f,
+                               float v0 = 0.0f,
+                               float u1 = 1.0f,
+                               float v1 = 1.0f) {
+      out.push_back({p0.x, p0.y, p0.z, u0, v1, color.r, color.g, color.b, color.a, mode});
+      out.push_back({p1.x, p1.y, p1.z, u1, v1, color.r, color.g, color.b, color.a, mode});
+      out.push_back({p2.x, p2.y, p2.z, u1, v0, color.r, color.g, color.b, color.a, mode});
+      out.push_back({p0.x, p0.y, p0.z, u0, v1, color.r, color.g, color.b, color.a, mode});
+      out.push_back({p2.x, p2.y, p2.z, u1, v0, color.r, color.g, color.b, color.a, mode});
+      out.push_back({p3.x, p3.y, p3.z, u0, v0, color.r, color.g, color.b, color.a, mode});
+    };
+
+    const auto formatHudText = [](const ecs::systems::GraphicsSystem::FrameSnapshot::HudDraw& h) {
+      std::string base = !h.text.empty() ? h.text : h.label;
+      if (h.showValueText) {
+        if (!base.empty()) base += " ";
+        std::ostringstream ss;
+        const float maxValue = (h.maxValue > 0.0f) ? h.maxValue : h.value;
+        if (maxValue > 0.0f) {
+          ss << static_cast<int>(std::round(h.value)) << "/" << static_cast<int>(std::round(maxValue));
+        } else {
+          ss << static_cast<int>(std::round(h.value));
+        }
+        base += ss.str();
+      }
+      return base;
+    };
+
+    const auto drawTextAt = [&](float xPx, float yPx, const std::string& text, const render::Color& color, float scalePx) {
+      if (text.empty()) return;
+      std::vector<OverlayVert> verts;
+      buildTextQuads(verts, m_fbWidth, m_fbHeight, xPx + 1.0f, yPx + 1.0f, scalePx, text, 0.0f, 0.0f, 0.0f, color.a * 0.7f);
+      buildTextQuads(verts, m_fbWidth, m_fbHeight, xPx, yPx, scalePx, text, color.r, color.g, color.b, color.a);
+      glUseProgram(m_overlayProgram);
+      glBindVertexArray(m_overlayVao);
+      glBindBuffer(GL_ARRAY_BUFFER, m_overlayVbo);
+      if (verts.size() > m_overlayCapacityVerts) {
+        m_overlayCapacityVerts = std::max<std::size_t>(verts.size(), m_overlayCapacityVerts * 2 + 1024);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(m_overlayCapacityVerts * sizeof(OverlayVert)), nullptr,
+                     GL_DYNAMIC_DRAW);
+      }
+      glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(verts.size() * sizeof(OverlayVert)), verts.data());
+      glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(verts.size()));
+      glBindVertexArray(0);
+    };
+
+    const auto drawWidgetQuads = [&](const std::vector<HudVert>& verts, bool useTexture, std::uint32_t textureId) {
+      if (verts.empty()) return;
+      glUseProgram(m_hudProgram);
+      const GLint locViewProj = glGetUniformLocation(m_hudProgram, "u_ViewProj");
+      if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
+      const GLint locUseTex = glGetUniformLocation(m_hudProgram, "u_UseTexture");
+      if (locUseTex >= 0) glUniform1i(locUseTex, useTexture ? 1 : 0);
+      if (useTexture && textureId != 0) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, textureId);
+        const GLint locTex = glGetUniformLocation(m_hudProgram, "u_Texture");
+        if (locTex >= 0) glUniform1i(locTex, 0);
+      }
+
+      glBindVertexArray(m_hudVao);
+      glBindBuffer(GL_ARRAY_BUFFER, m_hudVbo);
+      if (verts.size() > m_hudCapacityVerts) {
+        m_hudCapacityVerts = std::max<std::size_t>(verts.size(), m_hudCapacityVerts * 2 + 256);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(m_hudCapacityVerts * sizeof(HudVert)), nullptr, GL_DYNAMIC_DRAW);
+      }
+      glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(verts.size() * sizeof(HudVert)), verts.data());
+      glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(verts.size()));
+      glBindVertexArray(0);
+      if (useTexture && textureId != 0) {
+        glBindTexture(GL_TEXTURE_2D, 0);
+      }
+      glActiveTexture(GL_TEXTURE0);
+    };
+
+    const auto drawScreenRect = [&](const ecs::systems::GraphicsSystem::FrameSnapshot::HudDraw& h,
+                                    const math::Vec2& posPx,
+                                    const math::Vec2& sizePx,
+                                    const render::Color& color,
+                                    bool useTexture,
+                                    std::uint32_t textureId) {
+      const math::Vec3 p0 = pixelToNdc(posPx.x, posPx.y);
+      const math::Vec3 p1 = pixelToNdc(posPx.x + sizePx.x, posPx.y);
+      const math::Vec3 p2 = pixelToNdc(posPx.x + sizePx.x, posPx.y + sizePx.y);
+      const math::Vec3 p3 = pixelToNdc(posPx.x, posPx.y + sizePx.y);
+      std::vector<HudVert> verts;
+      verts.reserve(6);
+      appendQuad(verts, p0, p1, p2, p3, color, 0.0f);
+      drawWidgetQuads(verts, useTexture, textureId);
+
+      const std::string text = formatHudText(h);
+      if (!text.empty() && (h.kind == ecs::HudComponent::Kind::Text || h.kind == ecs::HudComponent::Kind::Bar)) {
+        const float textX = posPx.x + 8.0f;
+        const float textY = posPx.y + std::max(2.0f, (sizePx.y - h.textScalePx) * 0.5f);
+        drawTextAt(textX, textY, text, h.textColor, h.textScalePx);
+      }
+    };
+
+    const auto drawWorldRect = [&](const ecs::systems::GraphicsSystem::FrameSnapshot::HudDraw& h,
+                                   const math::Vec3& center,
+                                   const math::Vec2& sizeMeters,
+                                   const render::Color& color,
+                                   bool useTexture,
+                                   std::uint32_t textureId) {
+      const math::Vec3 right = h.billboard ? camRight : math::Vec3{1.0f, 0.0f, 0.0f};
+      const math::Vec3 up = h.billboard ? camUp : math::Vec3{0.0f, 1.0f, 0.0f};
+      const math::Vec3 halfW = right * (sizeMeters.x * 0.5f);
+      const math::Vec3 halfH = up * (sizeMeters.y * 0.5f);
+      const math::Vec3 p0 = center - halfW + halfH;
+      const math::Vec3 p1 = center + halfW + halfH;
+      const math::Vec3 p2 = center + halfW - halfH;
+      const math::Vec3 p3 = center - halfW - halfH;
+      std::vector<HudVert> verts;
+      verts.reserve(6);
+      appendQuad(verts, p0, p1, p2, p3, color, 1.0f);
+      drawWidgetQuads(verts, useTexture, textureId);
+
+      const std::string text = formatHudText(h);
+      if (!text.empty() && (h.kind == ecs::HudComponent::Kind::Text || h.kind == ecs::HudComponent::Kind::Bar)) {
+        const ClipPos clip = clipFromPoint(viewProj, center + up * (sizeMeters.y * 0.65f));
+        if (clip.w > 0.01f) {
+          const float invW = 1.0f / clip.w;
+          const float ndcX = clip.x * invW;
+          const float ndcY = clip.y * invW;
+          const float xPx = (ndcX * 0.5f + 0.5f) * static_cast<float>(m_fbWidth);
+          const float yPx = (1.0f - (ndcY * 0.5f + 0.5f)) * static_cast<float>(m_fbHeight);
+          drawTextAt(xPx - 28.0f, yPx - h.textScalePx * 0.5f, text, h.textColor, h.textScalePx);
+        }
+      }
+    };
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // World-space widgets first so they sit in the scene.
+    for (const auto& h : frame.hud) {
+      if (!h.enabled || h.space != ecs::HudComponent::Space::World || !h.hasWorldPosition) continue;
+      const float maxValue = (h.maxValue > 0.0f) ? h.maxValue : 1.0f;
+      const float ratio = std::clamp(h.value / maxValue, 0.0f, 1.0f);
+      const math::Vec3 worldRight = h.billboard ? camRight : math::Vec3{1.0f, 0.0f, 0.0f};
+      if (h.kind == ecs::HudComponent::Kind::Bar) {
+        if (h.showBackground) {
+          drawWorldRect(h, h.worldPosition, h.sizeMeters, h.backgroundColor, false, 0);
+        }
+        const math::Vec2 fillSize{h.sizeMeters.x * ratio, h.sizeMeters.y};
+        const math::Vec3 fillCenter = h.worldPosition + worldRight * (-(h.sizeMeters.x * 0.5f) + fillSize.x * 0.5f);
+        drawWorldRect(h, fillCenter, fillSize, h.fillColor, false, 0);
+      } else if (h.kind == ecs::HudComponent::Kind::Image) {
+        const std::uint32_t texId = (h.textureEnabled && h.texture.enabled && !h.texture.key.empty())
+                                        ? m_textures.requestTexture(h.texture.key, true)
+                                        : 0;
+        drawWorldRect(h, h.worldPosition, h.sizeMeters, h.tint, texId != 0, texId);
+      } else if (h.kind == ecs::HudComponent::Kind::Text) {
+        if (h.showBackground) {
+          drawWorldRect(h, h.worldPosition, h.sizeMeters, h.backgroundColor, false, 0);
+        } else {
+          const std::string text = formatHudText(h);
+          if (!text.empty()) {
+            const ClipPos clip = clipFromPoint(viewProj, h.worldPosition + camUp * (h.sizeMeters.y * 0.65f));
+            if (clip.w > 0.01f) {
+              const float invW = 1.0f / clip.w;
+              const float ndcX = clip.x * invW;
+              const float ndcY = clip.y * invW;
+              const float xPx = (ndcX * 0.5f + 0.5f) * static_cast<float>(m_fbWidth);
+              const float yPx = (1.0f - (ndcY * 0.5f + 0.5f)) * static_cast<float>(m_fbHeight);
+              drawTextAt(xPx - 28.0f, yPx - h.textScalePx * 0.5f, text, h.textColor, h.textScalePx);
+            }
+          }
+        }
+      } else {
+        if (h.showBackground) {
+          drawWorldRect(h, h.worldPosition, h.sizeMeters, h.backgroundColor, false, 0);
+        }
+      }
+    }
+
+    // Screen-space widgets over the top.
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    for (const auto& h : frame.hud) {
+      if (!h.enabled || h.space != ecs::HudComponent::Space::Screen) continue;
+      const float maxValue = (h.maxValue > 0.0f) ? h.maxValue : 1.0f;
+      const float ratio = std::clamp(h.value / maxValue, 0.0f, 1.0f);
+
+      if (h.kind == ecs::HudComponent::Kind::Bar) {
+        if (h.showBackground) {
+          drawScreenRect(h, h.positionPx, h.sizePx, h.backgroundColor, false, 0);
+        }
+        const float border = std::max(0.0f, h.borderThicknessPx);
+        const math::Vec2 innerPos{h.positionPx.x + border, h.positionPx.y + border};
+        const math::Vec2 innerSize{std::max(0.0f, h.sizePx.x - border * 2.0f), std::max(0.0f, h.sizePx.y - border * 2.0f)};
+        drawScreenRect(h, innerPos, innerSize, h.fillBackgroundColor, false, 0);
+        const math::Vec2 fillSize{innerSize.x * ratio, innerSize.y};
+        drawScreenRect(h, innerPos, fillSize, h.fillColor, false, 0);
+      } else if (h.kind == ecs::HudComponent::Kind::Image) {
+        if (h.showBackground) {
+          drawScreenRect(h, h.positionPx, h.sizePx, h.backgroundColor, false, 0);
+        }
+        const std::uint32_t texId = (h.textureEnabled && h.texture.enabled && !h.texture.key.empty())
+                                        ? m_textures.requestTexture(h.texture.key, true)
+                                        : 0;
+        drawScreenRect(h, h.positionPx, h.sizePx, h.tint, texId != 0, texId);
+      } else if (h.kind == ecs::HudComponent::Kind::Panel) {
+        const std::uint32_t texId = (h.textureEnabled && h.texture.enabled && !h.texture.key.empty())
+                                        ? m_textures.requestTexture(h.texture.key, true)
+                                        : 0;
+        drawScreenRect(h, h.positionPx, h.sizePx, h.tint, texId != 0, texId);
+      } else if (h.kind == ecs::HudComponent::Kind::Text) {
+        if (h.showBackground) {
+          drawScreenRect(h, h.positionPx, h.sizePx, h.backgroundColor, false, 0);
+        }
+        const std::string text = formatHudText(h);
+        if (!text.empty()) {
+          drawTextAt(h.positionPx.x, h.positionPx.y, text, h.textColor, h.textScalePx);
+        }
+      }
+    }
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
   }
 
   // World-space debug lines.
