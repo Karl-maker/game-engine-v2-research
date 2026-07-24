@@ -145,6 +145,7 @@ Components are data only. Systems read them and decide how to simulate or render
 
 ### Rendering and World
 
+- `BillboardComponent` — world-space textured quads with camera-facing modes and animated frame playback
 - `MeshComponent` — mesh asset reference and visibility
 - `MeshRendererComponent` — render-oriented mesh state
 - `ShaderComponent` — shader key, textures, parameters
@@ -332,6 +333,7 @@ Texture usage:
 
 - set `textureEnabled = true`
 - assign `texture = {true, "assets/textures/your_image.png", 0}`
+- optionally fill `animatedTexture.frames` with extracted video frames or a flipbook sequence
 - use `Kind::Image` for a portrait/icon
 - use `Kind::Panel` for a textured panel background
 
@@ -347,6 +349,15 @@ World-space HUD:
 - set `billboard = true` for a camera-facing label
 - attach the widget to a source entity with `sourceEntity`
 - use `worldOffset` to place it above the actor
+
+## Billboards
+
+Billboards are lightweight world-space textured quads.
+
+- Use `BillboardComponent::FaceMode::CameraPlane` for effects or floating cards that should fully face the camera.
+- Use `BillboardComponent::FaceMode::YawOnly` for upright signs and markers.
+- Use `BillboardComponent::FaceMode::None` when authored transform rotation should stay in control.
+- Use `animatedTexture.frames` plus `framesPerSecond` for video-style playback from a frame sequence.
 
 The runtime updater lives in `HudSystem`; the renderer snapshot lives in `GraphicsSystem`; and the actual draw calls happen in `OpenGlRenderer`.
 

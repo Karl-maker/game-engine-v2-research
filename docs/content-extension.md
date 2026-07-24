@@ -134,6 +134,7 @@ Widget fields that matter most:
 - `positionPx` / `sizePx` — screen-space layout in pixels
 - `worldOffset` / `sizeMeters` — world-space layout in meters
 - `textureEnabled` and `texture` — use an image on the widget
+- `animatedTexture` — cycle a frame sequence for lightweight video-style playback
 - `text`, `label`, and `showValueText` — dynamic text
 - `sourceEntity` and `valueSource` — bind to gameplay state such as health
 
@@ -161,6 +162,7 @@ Texture tips:
 - use `Kind::Panel` for a textured frame
 - use `Kind::Bar` if you want a colored fill over a panel
 - set `textureEnabled = true` and point `texture.key` at an image path
+- fill `animatedTexture.frames` when the widget should cycle multiple images over time
 
 Dynamic text tips:
 
@@ -175,7 +177,17 @@ World-space tips:
 - use `worldOffset` to float the widget above the actor
 - bind the widget to the player or NPC with `sourceEntity`
 
-## 7) Useful terminal commands
+## 7) Billboards
+
+Use `ecs::BillboardComponent` for simple world-space textured quads.
+
+- set `faceMode = ecs::BillboardComponent::FaceMode::CameraPlane` for full camera-facing quads
+- set `faceMode = ecs::BillboardComponent::FaceMode::YawOnly` for upright signs or markers
+- assign `texture` for a single image
+- fill `animatedTexture.frames` for extracted video frames or flipbook playback
+- tune `sizeMeters`, `pivot`, and `maxRenderDistance` for the final presentation
+
+## 8) Useful terminal commands
 
 Build:
 
@@ -214,8 +226,8 @@ Inspect mesh loader registration:
 rg -n 'registerLoader|makeGltfMeshLoader|IMeshAssetLoader' src/assets src/graphics
 ```
 
-Inspect HUD rendering and bindings:
+Inspect HUD and billboard rendering:
 
 ```bash
-rg -n 'HudComponent|HudSystem|m_hudProgram|showValueText|textureEnabled' src
+rg -n 'HudComponent|BillboardComponent|HudSystem|m_hudProgram|showValueText|textureEnabled|animatedTexture' src
 ```

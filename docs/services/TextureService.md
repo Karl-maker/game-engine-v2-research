@@ -29,7 +29,9 @@ textures.flushUploads();
 
 - Resolves image paths into live GPU textures.
 - Must flush uploads on the render thread before drawing textured content.
+- Animated HUD widgets and billboards request their current frame through this service, so frame sequences still reuse the same texture cache behavior as normal images.
 
 ## Notes
 
 - Call `flushUploads()` on the GL thread before drawing textured content.
+- Video-style playback currently means cycling image frames; author those as multiple still images and let components advance them over time.

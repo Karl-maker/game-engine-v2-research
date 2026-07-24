@@ -107,6 +107,42 @@ static math::Mat4 composeTransform(const math::Vec3& position, const math::Vec3&
                                        math::mul(math::rotateZ(rotationDeg.z * kDegToRad), math::scale(scale)))));
 }
 
+static std::size_t resolveAnimatedFrameIndex(const render::AnimatedTexture& animatedTexture, double timeSeconds) {
+  const std::size_t frameCount = animatedTexture.frames.size();
+  if (frameCount == 0) return 0;
+
+  const int startFrame = std::max(0, animatedTexture.startFrame);
+  if (frameCount == 1 || animatedTexture.framesPerSecond <= 0.0001f) {
+    return std::min<std::size_t>(static_cast<std::size_t>(startFrame), frameCount - 1);
+  }
+
+  const double frameValue = std::floor(std::max(0.0, timeSeconds * static_cast<double>(animatedTexture.framesPerSecond)));
+  const std::size_t frameStep = static_cast<std::size_t>(frameValue) + static_cast<std::size_t>(startFrame);
+
+  if (animatedTexture.pingPong && frameCount > 1) {
+    const std::size_t cycle = frameCount * 2 - 2;
+    std::size_t local = animatedTexture.looping ? (frameStep % cycle) : std::min(frameStep, cycle - 1);
+    if (local >= frameCount) local = cycle - local;
+    return std::min(local, frameCount - 1);
+  }
+
+  if (animatedTexture.looping) return frameStep % frameCount;
+  if (frameStep >= frameCount) return animatedTexture.holdLastFrame ? (frameCount - 1) : 0;
+  return frameStep;
+}
+
+static const render::AssetRef* resolveAnimatedTextureAsset(const render::AssetRef& baseTexture,
+                                                           const render::AnimatedTexture* animatedTexture,
+                                                           double timeSeconds) {
+  if (!animatedTexture || !animatedTexture->enabled || animatedTexture->frames.empty()) {
+    return (baseTexture.enabled && !baseTexture.key.empty()) ? &baseTexture : nullptr;
+  }
+
+  const render::AssetRef& frame = animatedTexture->frames[resolveAnimatedFrameIndex(*animatedTexture, timeSeconds)];
+  if (frame.enabled && !frame.key.empty()) return &frame;
+  return (baseTexture.enabled && !baseTexture.key.empty()) ? &baseTexture : nullptr;
+}
+
 static void ensureShadowMap(std::uint32_t& fbo, std::uint32_t& depthTex, int& curRes, int desiredRes) {
   desiredRes = std::max(128, std::min(4096, desiredRes));
   if (depthTex != 0 && fbo != 0 && curRes == desiredRes) return;
@@ -591,6 +627,20 @@ int OpenGlRenderer::uniformLocation(std::uint32_t programId, const char* name) {
   const GLint location = glGetUniformLocation(programId, name);
   perProgram.emplace(name, location);
   return location;
+}
+
+std::uint32_t OpenGlRenderer::requestTextureAsset(const render::AssetRef& texture,
+                                                  const render::AnimatedTexture* animatedTexture,
+                                                  bool srgb,
+                                                  double timeSeconds) {
+  if (animatedTexture && animatedTexture->enabled) {
+    for (const auto& frame : animatedTexture->frames) {
+      if (frame.enabled && !frame.key.empty()) m_textures.requestTexture(frame.key, srgb);
+    }
+  }
+  const render::AssetRef* selected = resolveAnimatedTextureAsset(texture, animatedTexture, timeSeconds);
+  if (!selected || !selected->enabled || selected->key.empty()) return 0;
+  return m_textures.requestTexture(selected->key, srgb);
 }
 
 void OpenGlRenderer::pollGpuTimerQueries() {
@@ -3607,6 +3657,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     math::Vec3 camRight = math::normalize(math::cross(camFwd, {0.0f, 1.0f, 0.0f}));
     if (math::lengthSq(camRight) < 1e-6f) camRight = {1.0f, 0.0f, 0.0f};
     const math::Vec3 camUp = math::normalize(math::cross(camRight, camFwd));
+    const double textureTimeSeconds = glfwGetTime();
 
     const auto clipFromPoint = [](const math::Mat4& m, const math::Vec3& p) -> ClipPos {
       return {
@@ -3638,6 +3689,14 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       out.push_back({p0.x, p0.y, p0.z, u0, v1, color.r, color.g, color.b, color.a, mode});
       out.push_back({p2.x, p2.y, p2.z, u1, v0, color.r, color.g, color.b, color.a, mode});
       out.push_back({p3.x, p3.y, p3.z, u0, v0, color.r, color.g, color.b, color.a, mode});
+    };
+
+    const auto axesFromRotation = [](const math::Vec3& rotationDeg, math::Vec3& outRight, math::Vec3& outUp) {
+      const math::Mat4 rotationMatrix = composeTransform({0.0f, 0.0f, 0.0f}, rotationDeg, {1.0f, 1.0f, 1.0f});
+      outRight = math::normalize(math::Vec3{rotationMatrix.m[0], rotationMatrix.m[1], rotationMatrix.m[2]});
+      outUp = math::normalize(math::Vec3{rotationMatrix.m[4], rotationMatrix.m[5], rotationMatrix.m[6]});
+      if (math::lengthSq(outRight) < 1e-6f) outRight = {1.0f, 0.0f, 0.0f};
+      if (math::lengthSq(outUp) < 1e-6f) outUp = {0.0f, 1.0f, 0.0f};
     };
 
     const auto formatHudText = [](const ecs::systems::GraphicsSystem::FrameSnapshot::HudDraw& h) {
@@ -3759,8 +3818,71 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       }
     };
 
+    const auto drawBillboardRect = [&](const ecs::systems::GraphicsSystem::FrameSnapshot::BillboardDraw& b,
+                                       bool useTexture,
+                                       std::uint32_t textureId) {
+      math::Vec3 right = camRight;
+      math::Vec3 up = camUp;
+      if (b.faceMode == ecs::BillboardComponent::FaceMode::YawOnly) {
+        math::Vec3 toCamera = frame.camera.position - b.position;
+        toCamera.y = 0.0f;
+        if (math::lengthSq(toCamera) > 1e-6f) {
+          toCamera = math::normalize(toCamera);
+          right = math::normalize(math::cross({0.0f, 1.0f, 0.0f}, toCamera));
+          if (math::lengthSq(right) < 1e-6f) right = camRight;
+        }
+        up = {0.0f, 1.0f, 0.0f};
+      } else if (b.faceMode == ecs::BillboardComponent::FaceMode::None) {
+        axesFromRotation(b.rotation, right, up);
+      }
+
+      const float left = -b.pivot.x * b.sizeMeters.x;
+      const float rightExtent = (1.0f - b.pivot.x) * b.sizeMeters.x;
+      const float down = -b.pivot.y * b.sizeMeters.y;
+      const float upExtent = (1.0f - b.pivot.y) * b.sizeMeters.y;
+      const math::Vec3 p0 = b.position + right * left + up * upExtent;
+      const math::Vec3 p1 = b.position + right * rightExtent + up * upExtent;
+      const math::Vec3 p2 = b.position + right * rightExtent + up * down;
+      const math::Vec3 p3 = b.position + right * left + up * down;
+
+      std::vector<HudVert> verts;
+      verts.reserve(6);
+      appendQuad(verts, p0, p1, p2, p3, b.tint, 1.0f);
+      drawWidgetQuads(verts, useTexture, textureId);
+    };
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    std::vector<const ecs::systems::GraphicsSystem::FrameSnapshot::BillboardDraw*> sortedBillboards;
+    sortedBillboards.reserve(frame.billboards.size());
+    for (const auto& b : frame.billboards) {
+      if (!b.enabled || !b.visible) continue;
+      sortedBillboards.push_back(&b);
+    }
+    std::sort(sortedBillboards.begin(), sortedBillboards.end(), [&](const auto* a, const auto* b) {
+      const float distA = math::lengthSq(frame.camera.position - a->position);
+      const float distB = math::lengthSq(frame.camera.position - b->position);
+      return distA > distB;
+    });
+
+    for (const auto* billboardPtr : sortedBillboards) {
+      const auto& b = *billboardPtr;
+      if (!b.enabled || !b.visible) continue;
+      const math::Vec3 toCamera = frame.camera.position - b.position;
+      const float distSq = math::lengthSq(toCamera);
+      if (distSq > b.maxRenderDistance * b.maxRenderDistance) continue;
+
+      if (b.doubleSided) glDisable(GL_CULL_FACE);
+      else glEnable(GL_CULL_FACE);
+
+      glDepthMask(b.depthWrite ? GL_TRUE : GL_FALSE);
+      const std::uint32_t texId =
+          b.textureEnabled ? requestTextureAsset(b.texture, &b.animatedTexture, true, textureTimeSeconds) : 0u;
+      drawBillboardRect(b, texId != 0u, texId);
+    }
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
 
     // World-space widgets first so they sit in the scene.
     for (const auto& h : frame.hud) {
@@ -3776,9 +3898,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         const math::Vec3 fillCenter = h.worldPosition + worldRight * (-(h.sizeMeters.x * 0.5f) + fillSize.x * 0.5f);
         drawWorldRect(h, fillCenter, fillSize, h.fillColor, false, 0);
       } else if (h.kind == ecs::HudComponent::Kind::Image) {
-        const std::uint32_t texId = (h.textureEnabled && h.texture.enabled && !h.texture.key.empty())
-                                        ? m_textures.requestTexture(h.texture.key, true)
-                                        : 0;
+        const std::uint32_t texId = h.textureEnabled ? requestTextureAsset(h.texture, &h.animatedTexture, true, textureTimeSeconds) : 0u;
         drawWorldRect(h, h.worldPosition, h.sizeMeters, h.tint, texId != 0, texId);
       } else if (h.kind == ecs::HudComponent::Kind::Text) {
         if (h.showBackground) {
@@ -3826,14 +3946,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         if (h.showBackground) {
           drawScreenRect(h, h.positionPx, h.sizePx, h.backgroundColor, false, 0);
         }
-        const std::uint32_t texId = (h.textureEnabled && h.texture.enabled && !h.texture.key.empty())
-                                        ? m_textures.requestTexture(h.texture.key, true)
-                                        : 0;
+        const std::uint32_t texId = h.textureEnabled ? requestTextureAsset(h.texture, &h.animatedTexture, true, textureTimeSeconds) : 0u;
         drawScreenRect(h, h.positionPx, h.sizePx, h.tint, texId != 0, texId);
       } else if (h.kind == ecs::HudComponent::Kind::Panel) {
-        const std::uint32_t texId = (h.textureEnabled && h.texture.enabled && !h.texture.key.empty())
-                                        ? m_textures.requestTexture(h.texture.key, true)
-                                        : 0;
+        const std::uint32_t texId = h.textureEnabled ? requestTextureAsset(h.texture, &h.animatedTexture, true, textureTimeSeconds) : 0u;
         drawScreenRect(h, h.positionPx, h.sizePx, h.tint, texId != 0, texId);
       } else if (h.kind == ecs::HudComponent::Kind::Text) {
         if (h.showBackground) {

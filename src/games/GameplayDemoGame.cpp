@@ -7,6 +7,7 @@
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/AnimationComponent.h"
 #include "ecs/components/AttachmentComponent.h"
+#include "ecs/components/BillboardComponent.h"
 #include "ecs/components/CharacterComponent.h"
 #include "ecs/components/ColliderComponent.h"
 #include "ecs/components/CombatVolumeComponent.h"
@@ -211,6 +212,7 @@ std::string formatSceneCounts(const ecs::systems::GraphicsSystem::FrameSnapshot&
   out << " meshes=" << frame.meshes.size();
   out << " grasses=" << frame.grasses.size();
   out << " rocks=" << frame.rocks.size();
+  out << " billboards=" << frame.billboards.size();
   out << " vfx=" << frame.vfx.size();
   out << " hud=" << frame.hud.size();
   out << " rays=" << frame.rays.size();
@@ -543,6 +545,13 @@ void GameplayDemoGame::onStart() {
     portrait.sizePx = {64.0f, 64.0f};
     portrait.textureEnabled = true;
     portrait.texture = {true, "assets/textures/stone/stone_color.jpg", 0};
+    portrait.animatedTexture.enabled = true;
+    portrait.animatedTexture.framesPerSecond = 1.5f;
+    portrait.animatedTexture.frames = {
+        {true, "assets/textures/stone/stone_color.jpg", 0},
+        {true, "assets/textures/ground/ground_color.jpg", 0},
+        {true, "assets/textures/dirt/dirt_color.jpg", 0},
+    };
     portrait.tint = {1.0f, 1.0f, 1.0f, 1.0f};
     portrait.showBackground = true;
     portrait.backgroundColor = {0.08f, 0.08f, 0.08f, 0.55f};
@@ -581,6 +590,50 @@ void GameplayDemoGame::onStart() {
     lifeLabel3d.showBorder = false;
     lifeLabel3d.textColor = {1.0f, 0.95f, 0.90f, 1.0f};
     hud.widgets.push_back(lifeLabel3d);
+  }
+
+  // Billboard examples: full camera-facing and yaw-only, both using animated frame sequences.
+  {
+    const ecs::EntityId glowBillboard = m_registry.createEntity("billboard_glow");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(glowBillboard);
+    tr.position = {-4.0f, 0.0f, 5.0f};
+    auto& billboard = m_registry.emplace<ecs::BillboardComponent>(glowBillboard);
+    billboard.faceMode = ecs::BillboardComponent::FaceMode::CameraPlane;
+    billboard.sizeMeters = {1.8f, 1.8f};
+    billboard.pivot = {0.5f, 0.0f};
+    billboard.textureEnabled = true;
+    billboard.texture = {true, "assets/textures/ground/ground_color.jpg", 0};
+    billboard.animatedTexture.enabled = true;
+    billboard.animatedTexture.framesPerSecond = 2.25f;
+    billboard.animatedTexture.frames = {
+        {true, "assets/textures/ground/ground_color.jpg", 0},
+        {true, "assets/textures/grass/grass_color.jpg", 0},
+        {true, "assets/textures/stone/stone_color.jpg", 0},
+    };
+    billboard.tint = {1.0f, 1.0f, 1.0f, 0.92f};
+    billboard.maxRenderDistance = 120.0f;
+  }
+  {
+    const ecs::EntityId signBillboard = m_registry.createEntity("billboard_sign");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(signBillboard);
+    tr.position = {5.5f, 0.0f, 6.0f};
+    tr.rotation = {0.0f, 25.0f, 0.0f};
+    auto& billboard = m_registry.emplace<ecs::BillboardComponent>(signBillboard);
+    billboard.faceMode = ecs::BillboardComponent::FaceMode::YawOnly;
+    billboard.sizeMeters = {1.4f, 2.2f};
+    billboard.pivot = {0.5f, 0.0f};
+    billboard.textureEnabled = true;
+    billboard.texture = {true, "assets/textures/grass_rock/grass_rock_color.jpg", 0};
+    billboard.animatedTexture.enabled = true;
+    billboard.animatedTexture.framesPerSecond = 1.0f;
+    billboard.animatedTexture.pingPong = true;
+    billboard.animatedTexture.frames = {
+        {true, "assets/textures/grass_rock/grass_rock_color.jpg", 0},
+        {true, "assets/textures/rock/rock_color.jpg", 0},
+        {true, "assets/textures/dirt/dirt_color.jpg", 0},
+    };
+    billboard.tint = {1.0f, 1.0f, 1.0f, 0.95f};
+    billboard.maxRenderDistance = 144.0f;
   }
 
   // VFX examples: fire, electricity, and sparks.

@@ -7,6 +7,7 @@ Start with the group that matches your goal, then open the page for the exact co
 - [AnimationComponent](components/AnimationComponent.md)
 - [AttachmentComponent](components/AttachmentComponent.md)
 - [AudioComponent](components/AudioComponent.md)
+- [BillboardComponent](components/BillboardComponent.md)
 - [BoneKeyComponent](components/BoneKeyComponent.md)
 - [CameraComponent](components/CameraComponent.md)
 - [CharacterComponent](components/CharacterComponent.md)

@@ -12,6 +12,7 @@
 
 #include "ecs/EntityId.h"
 #include "ecs/EntityRegistry.h"
+#include "ecs/components/BillboardComponent.h"
 #include "ecs/components/HudComponent.h"
 #include "ecs/components/VfxComponent.h"
 #include "math/Vec2.h"
@@ -338,6 +339,7 @@ class GraphicsSystem final {
       bool showBorder = false;
       float borderThicknessPx = 2.0f;
       render::AssetRef texture{};
+      render::AnimatedTexture animatedTexture{};
       bool textureEnabled = false;
       render::Color tint{1.0f, 1.0f, 1.0f, 1.0f};
       render::Color backgroundColor{0.08f, 0.08f, 0.08f, 0.80f};
@@ -345,6 +347,24 @@ class GraphicsSystem final {
       render::Color fillColor{0.85f, 0.15f, 0.15f, 1.0f};
       render::Color fillBackgroundColor{0.18f, 0.18f, 0.18f, 0.85f};
       render::Color textColor{1.0f, 1.0f, 1.0f, 1.0f};
+    };
+
+    struct BillboardDraw final {
+      EntityId entity = kInvalidEntityId;
+      bool enabled = true;
+      bool visible = true;
+      bool textureEnabled = true;
+      bool depthWrite = false;
+      bool doubleSided = true;
+      ecs::BillboardComponent::FaceMode faceMode = ecs::BillboardComponent::FaceMode::CameraPlane;
+      math::Vec3 position{};
+      math::Vec3 rotation{};
+      math::Vec2 sizeMeters{1.25f, 1.25f};
+      math::Vec2 pivot{0.5f, 0.0f};
+      float maxRenderDistance = 96.0f;
+      render::AssetRef texture{};
+      render::AnimatedTexture animatedTexture{};
+      render::Color tint{1.0f, 1.0f, 1.0f, 1.0f};
     };
 
     struct VfxDraw final {
@@ -416,6 +436,7 @@ class GraphicsSystem final {
     std::vector<RockDraw> rocks;
     std::vector<GrassDraw> grasses;
     std::vector<HudDraw> hud;
+    std::vector<BillboardDraw> billboards;
     std::vector<VfxDraw> vfx;
     std::vector<LightDraw> lights;
     RenderSettingsDraw settings{};

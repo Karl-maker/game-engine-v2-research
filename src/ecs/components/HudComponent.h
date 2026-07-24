@@ -9,6 +9,7 @@
 #include "ecs/EntityId.h"
 #include "math/Vec2.h"
 #include "math/Vec3.h"
+#include "render/AnimatedTexture.h"
 #include "render/AssetRef.h"
 #include "render/Color.h"
 
@@ -63,6 +64,7 @@ struct HudComponent final {
     float borderThicknessPx = 2.0f;
 
     render::AssetRef texture{};
+    render::AnimatedTexture animatedTexture{};
     bool textureEnabled = false;
 
     render::Color tint{1.0f, 1.0f, 1.0f, 1.0f};
@@ -78,4 +80,3 @@ struct HudComponent final {
 };
 
 }  // namespace ecs
-

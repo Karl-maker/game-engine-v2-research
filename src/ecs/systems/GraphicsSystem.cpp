@@ -3,6 +3,7 @@
 // Author: Karl-Johan Bailey
 
 #include "ecs/components/CameraComponent.h"
+#include "ecs/components/BillboardComponent.h"
 #include "ecs/components/ColliderComponent.h"
 #include "ecs/components/CombatVolumeComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
@@ -832,6 +833,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
       draw.showBorder = widget.showBorder;
       draw.borderThicknessPx = widget.borderThicknessPx;
       draw.texture = widget.texture;
+      draw.animatedTexture = widget.animatedTexture;
       draw.textureEnabled = widget.textureEnabled;
       draw.tint = widget.tint;
       draw.backgroundColor = widget.backgroundColor;
@@ -842,6 +844,29 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
       m_frame.hud.push_back(std::move(draw));
     }
   });
+
+  // --- World billboards ---
+  registry.view<ecs::BillboardComponent, ecs::TransformComponent>(
+      [&](ecs::EntityId id, const ecs::BillboardComponent& billboard, const ecs::TransformComponent& tr) {
+        if (!billboard.enabled || !billboard.visible) return;
+        FrameSnapshot::BillboardDraw draw;
+        draw.entity = id;
+        draw.enabled = billboard.enabled;
+        draw.visible = billboard.visible;
+        draw.textureEnabled = billboard.textureEnabled;
+        draw.depthWrite = billboard.depthWrite;
+        draw.doubleSided = billboard.doubleSided;
+        draw.faceMode = billboard.faceMode;
+        draw.position = tr.position + billboard.worldOffset;
+        draw.rotation = tr.rotation + billboard.rotationOffsetDeg;
+        draw.sizeMeters = billboard.sizeMeters;
+        draw.pivot = billboard.pivot;
+        draw.maxRenderDistance = billboard.maxRenderDistance;
+        draw.texture = billboard.texture;
+        draw.animatedTexture = billboard.animatedTexture;
+        draw.tint = billboard.tint;
+        m_frame.billboards.push_back(std::move(draw));
+      });
 
   return m_frame;
 }

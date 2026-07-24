@@ -39,6 +39,8 @@
 
 - Set `textureEnabled = true` only when the widget should actually use an image.
 - Use `texture` for icons, portraits, borders, or themed frames.
+- Use `animatedTexture.frames` when the widget should cycle through extracted video frames or a stylized frame sequence.
+- Use `animatedTexture.framesPerSecond` to control playback speed and `pingPong` when the sequence should bounce instead of looping hard.
 - Use `tint` to recolor a shared texture without making a new asset.
 - Use `backgroundColor`, `borderColor`, `fillColor`, and `fillBackgroundColor` to keep the widget readable even without a texture.
 
@@ -71,6 +73,7 @@
 - `showBorder` — Master on/off switch or similar behavior flag.
 - `borderThicknessPx` — Size, reach, or distance tuning.
 - `texture` — Stable reference used by content, loaders, or rendering systems.
+- `animatedTexture` — Video-style frame playback settings.
 - `textureEnabled` — Master on/off switch or similar behavior flag.
 - `tint` — Color, tint, or display styling.
 - `backgroundColor` — Color, tint, or display styling.
@@ -98,9 +101,28 @@ lifeBar.showValueText = true;
 hud.widgets.push_back(lifeBar);
 ```
 
+Animated portrait example:
+
+```cpp
+auto portrait = ecs::HudComponent::Widget{};
+portrait.kind = ecs::HudComponent::Kind::Image;
+portrait.space = ecs::HudComponent::Space::Screen;
+portrait.textureEnabled = true;
+portrait.texture = {true, "assets/textures/stone/stone_color.jpg", 0};
+portrait.animatedTexture.enabled = true;
+portrait.animatedTexture.framesPerSecond = 1.5f;
+portrait.animatedTexture.frames = {
+    {true, "assets/textures/stone/stone_color.jpg", 0},
+    {true, "assets/textures/ground/ground_color.jpg", 0},
+    {true, "assets/textures/dirt/dirt_color.jpg", 0},
+};
+hud.widgets.push_back(portrait);
+```
+
 ## Common pairings
 
 - Use `textureEnabled` plus `texture` for portraits, icon frames, and skinned UI panels.
+- Use `animatedTexture` when a HUD image should behave like a lightweight video or flipbook.
 - Use `text` and `showValueText` for runtime numbers or labels that change often.
 - Set `billboard = true` for world-space widgets that should face the camera.
 

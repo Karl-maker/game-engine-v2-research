@@ -10,6 +10,7 @@
 #include "core/FrameDebugger.h"
 #include "graphics/ShaderService.h"
 #include "graphics/TextureService.h"
+#include "render/AnimatedTexture.h"
 #include "math/Mat4.h"
 #include "math/Vec3.h"
 
@@ -69,6 +70,10 @@ class OpenGlRenderer final {
   static void glfwKeyCallback(GLFWwindow* w, int key, int scancode, int action, int mods);
   static void glfwCursorPosCallback(GLFWwindow* w, double x, double y);
   int uniformLocation(std::uint32_t programId, const char* name);
+  std::uint32_t requestTextureAsset(const render::AssetRef& texture,
+                                    const render::AnimatedTexture* animatedTexture,
+                                    bool srgb,
+                                    double timeSeconds);
   void pollGpuTimerQueries();
   void beginGpuTimerQuery();
   void endGpuTimerQuery();

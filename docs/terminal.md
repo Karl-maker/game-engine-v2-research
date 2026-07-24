@@ -69,7 +69,7 @@ Performance note:
 ```bash
 rg -n 'registerFactory\("' src/ecs/factories/FactoryKeyService.cpp
 rg -n 'factory"|coord"|loadProximityMeters|unloadProximityMeters' assets/world src/ecs/services
-rg -n 'HudComponent|HudSystem|textureEnabled|showValueText' src
+rg -n 'HudComponent|BillboardComponent|HudSystem|textureEnabled|showValueText|animatedTexture' src
 ```
 
 Use these searches when you need to see how a component, factory key, or chunk entry is wired into the runtime.
