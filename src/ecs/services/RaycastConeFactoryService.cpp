@@ -62,7 +62,7 @@ std::vector<EntityId> RaycastConeFactoryService::createCone(EntityRegistry& regi
     a.positionOffset = cfg.originLocalOffset;
     a.inheritPosition = true;
     a.inheritRotation = true;
-    a.inheritScale = false;
+    a.inheritScale = true;
     a.space = AttachmentComponent::Space::Local;
     a.socketKey = cfg.socketKey;
     attach.attachments.push_back(a);
