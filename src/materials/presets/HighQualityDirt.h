@@ -43,11 +43,11 @@ inline ecs::ShaderComponent HighQualityDirt() {
   // Lift AO so shadows aren't crushed.
   s.parameters.push_back({"aoStrength", 0.45f});
   // Base displacement influence (shading/bump only).
-  s.parameters.push_back({"displacementStrength", 0.42f});
+  s.parameters.push_back({"displacementStrength", 0.82f});
 
   // Keep sinks subtle with textures.
   s.parameters.push_back({"dirtSinksEnabled", true});
-  s.parameters.push_back({"dirtSinkStrength", 0.06f});
+  s.parameters.push_back({"dirtSinkStrength", 0.3f});
   s.parameters.push_back({"dirtSinkScale", 1.4f});
   s.parameters.push_back({"dirtSinkDensity", 0.25f});
 

@@ -12,14 +12,14 @@ inline ecs::ShaderComponent HighQualityDirtRockLayer() {
   ecs::ShaderComponent s = HighQualityDirt();
 
   // Pull back displacement a bit (tessellation + normal-derived micro-height adds extra lift).
-  s.parameters.push_back({"displacementStrength", 0.10f});
+  s.parameters.push_back({"displacementStrength", 0.35f});
 
   // Pull back tessellation quality for this material (still smooth near camera).
-  s.parameters.push_back({"tessNear", 6.0f});
+  s.parameters.push_back({"tessNear", 20.0f});
   s.parameters.push_back({"tessFar", 40.0f});
   s.parameters.push_back({"tessMin", 1.0f});
   s.parameters.push_back({"tessMax", 6.0f});
-  s.parameters.push_back({"tessQuality", 0});  // Low
+  s.parameters.push_back({"tessQuality", 1});  // Low
 
   // Rock layer textures.
   s.textures.push_back({"rock_albedo", render::AssetRef{true, "assets/textures/stone/stone_color.jpg", 0}, true});
@@ -31,7 +31,7 @@ inline ecs::ShaderComponent HighQualityDirtRockLayer() {
 
   s.parameters.push_back({"rockLayerEnabled", true});
   s.parameters.push_back({"rockUvTiling", math::Vec2{18.0f, 18.0f}});
-  s.parameters.push_back({"rockNormalScale", 2.0f});
+  s.parameters.push_back({"rockNormalScale", 3.0f});
   s.parameters.push_back({"rockDisplacementStrength", 0.30f});
   s.parameters.push_back({"rockBlendStrength", 1.0f});
   s.parameters.push_back({"rockNoiseScale", 0.05f});

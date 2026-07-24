@@ -209,7 +209,7 @@ void GameplayDemoGame::onStart() {
   }
   {
     auto& stats = m_registry.emplace<ecs::StatsComponent>(m_player);
-    stats.walkingSpeed = 3.8f;
+    stats.walkingSpeed = 1.8f;
     stats.runningSpeed = 7.0f;
   }
   {
@@ -250,10 +250,20 @@ void GameplayDemoGame::onStart() {
   }
   {
     auto& thirdPerson = m_registry.emplace<ecs::ThirdPersonCameraComponent>(m_camera);
+
     thirdPerson.target = m_player;
-    thirdPerson.targetOffset = {0.0f, 1.25f, 0.0f};
-    thirdPerson.distance = 4.2f;
-    thirdPerson.height = 0.8f;
+
+    // Look toward upper chest / shoulder area.
+    thirdPerson.targetOffset = {0.0f, 1.8f, 0.0f};
+    thirdPerson.distance = 1.7f;
+
+    // Small vertical lift.
+    thirdPerson.height = 0.50f;
+
+    thirdPerson.pitchDeg = 5.0f;
+    thirdPerson.minPitchDeg = -30.0f;
+    thirdPerson.maxPitchDeg = 45.0f;
+
     thirdPerson.yawDeg = playerTr.rotation.y;
   }
 
@@ -350,7 +360,7 @@ void GameplayDemoGame::onStart() {
     collider.terrain.collisionLayer = physics::kLayerWorld;
     collider.terrain.thicknessMeters = 5.0f;
 
-    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::HighQualityDirtRockGrassLayer());
+    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::HighQualityDirtRockLayer());
     // Render using the current OpenGL demo shader (textures are ignored for now).
     shader.shader.key = "graphics/shaders/terrain";
     shader.depthWrite = true;
@@ -367,11 +377,11 @@ void GameplayDemoGame::onStart() {
 
     auto& gp = m_registry.emplace<ecs::GrassPatchComponent>(grass);
     gp.sourceTerrainEntity = m_terrain;
-    gp.area = {42.0f, 0.0f, 42.0f};
+    gp.area = {5.0f, 0.0f, 5.0f};
     gp.seed = 9001u;
-    gp.densityMultiplier = 1.0f;
+    gp.densityMultiplier = 1.2f;
     gp.densityNoise.seed = 1777u;
-    gp.densityNoise.frequency = 0.022f;
+    gp.densityNoise.frequency = 0.12f;
     gp.densityNoise.octaves = 2;
     gp.densityNoise.persistence = 0.50f;
     gp.densityNoise.lacunarity = 2.0f;
@@ -389,7 +399,7 @@ void GameplayDemoGame::onStart() {
     gp.islandNoiseContrast = 1.15f;
     gp.islandNoiseStrength = 0.92f;
     gp.interactionEnabled = false;
-    gp.interactionRadiusMeters = 1.25f;
+    gp.interactionRadiusMeters = 1.0f;
     gp.interactionStrength = 1.0f;
 
     // Billboard grass planes: three intersecting planes nearby, cheaper LOD farther out.
@@ -400,12 +410,12 @@ void GameplayDemoGame::onStart() {
                                              .density = 4.8f,
                                              .minScale = 0.70f,
                                              .maxScale = 1.18f,
-                                             .bladeSpacing = 0.70f,
+                                             .bladeSpacing = 1.70f,
                                              .bendStrength = 0.16f,
                                              .curveStrength = 0.16f,
                                              .twistStrength = 0.0f,
-                                             .noiseScale = 0.052f,
-                                             .noiseStrength = 0.56f,
+                                             .noiseScale = 0.52f,
+                                             .noiseStrength = 1.56f,
                                              .windStrength = 0.0f,
                                              .maxDistance = 42.0f},
     };
@@ -414,7 +424,7 @@ void GameplayDemoGame::onStart() {
     sh.shader.key = "graphics/shaders/grass_planes";
     sh.doubleSided = true;
     sh.depthWrite = true;
-    sh.receiveShadows = true;
+    sh.receiveShadows = false;
     sh.castShadows = false;
   }
 
@@ -437,7 +447,7 @@ void GameplayDemoGame::onStart() {
     m_registry.emplace<ecs::TransformComponent>(skyEntity);
 
     auto& skyc = m_registry.emplace<ecs::SkyComponent>(skyEntity);
-    skyc.skyType = ecs::SkyComponent::SkyType::Day;
+    skyc.skyType = ecs::SkyComponent::SkyType::Night;
     skyc.useSkyTypePreset = true;
     skyc.linkedDirectionalLightEntity = m_light;
     skyc.cloudType = ecs::SkyComponent::CloudType::Scattered;
@@ -474,13 +484,13 @@ void GameplayDemoGame::onStart() {
     auto& f = m_registry.emplace<ecs::FogVolumeComponent>(fogEntity);
     f.sizeMeters = {w * 1.25f, 80.0f, d * 1.25f};
     // Placeholder values; SkyPresetSystem will drive these when linked from SkyComponent.
-    f.color = {0.55f, 0.62f, 0.72f, 1.0f};
-    f.density = 1.0f;
-    f.startDistance = 6.0f;
+    // f.color = {0.55f, 0.62f, 0.72f, 1.0f};
+    f.density = 5000000.0f;
+    f.startDistance = 0.01f;
     f.endDistance = 160.0f;
     f.heightFalloff = 0.045f;
     f.baseHeightOffset = -4.0f;
-    f.enabled = false;
+    f.enabled = true;
   }
 
   if (skyEntity != ecs::kInvalidEntityId && fogEntity != ecs::kInvalidEntityId) {

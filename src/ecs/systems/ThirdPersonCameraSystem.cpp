@@ -3,6 +3,7 @@
 // Author: Karl-Johan Bailey
 
 #include "ecs/components/ControllerComponent.h"
+#include "ecs/components/MotionComponent.h"
 #include "ecs/components/ThirdPersonCameraComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "math/Vec3.h"
@@ -16,49 +17,263 @@ constexpr float kPi = 3.14159265358979323846f;
 constexpr float kDegToRad = kPi / 180.0f;
 constexpr float kRadToDeg = 180.0f / kPi;
 
-math::Vec3 forwardFromPitchYawDeg(float pitchDeg, float yawDeg) {
-  const float pitch = pitchDeg * kDegToRad;
-  const float yaw = yawDeg * kDegToRad;
-  return math::normalize(math::Vec3{std::cos(pitch) * std::sin(yaw), -std::sin(pitch), std::cos(pitch) * std::cos(yaw)});
+// Character-relative shoulder side.
+//  1.0f = camera on character's right.
+// -1.0f = camera on character's left.
+constexpr float kShoulderSide = -1.0f;
+
+float lerp(
+    float a,
+    float b,
+    float t) {
+
+  return a + (b - a) * t;
 }
 
-float lerp(float a, float b, float t) { return a + (b - a) * t; }
+math::Vec3 lerpVec3(
+    const math::Vec3& a,
+    const math::Vec3& b,
+    float t) {
 
-math::Vec3 lerpVec3(const math::Vec3& a, const math::Vec3& b, float t) {
-  return {lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t)};
+  return {
+      lerp(a.x, b.x, t),
+      lerp(a.y, b.y, t),
+      lerp(a.z, b.z, t)};
 }
 
 }  // namespace
 
 namespace ecs::systems {
 
-void ThirdPersonCameraSystem::tick(EntityRegistry& registry, double deltaSeconds) const {
-  const float dt = static_cast<float>(std::clamp(deltaSeconds, 0.0, 0.25));
+void ThirdPersonCameraSystem::tick(
+    EntityRegistry& registry,
+    double deltaSeconds) const {
 
-  registry.view<ecs::ThirdPersonCameraComponent, ecs::TransformComponent>(
-      [&](ecs::EntityId, ecs::ThirdPersonCameraComponent& cam, ecs::TransformComponent& camTr) {
-        if (!cam.enabled || cam.target == ecs::kInvalidEntityId) return;
-        auto* targetTr = registry.tryGet<ecs::TransformComponent>(cam.target);
-        if (!targetTr) return;
+  const float dt =
+      static_cast<float>(
+          std::clamp(
+              deltaSeconds,
+              0.0,
+              0.25));
 
-        if (auto* controller = registry.tryGet<ecs::ControllerComponent>(cam.target)) {
-          if (controller->enabled && controller->lookRequest.hasRequest) {
-            cam.yawDeg += controller->lookRequest.lookDelta.y;
-            cam.pitchDeg = std::clamp(cam.pitchDeg + controller->lookRequest.lookDelta.x, cam.minPitchDeg, cam.maxPitchDeg);
-            targetTr->rotation.y = cam.yawDeg;
+  registry.view<
+      ecs::ThirdPersonCameraComponent,
+      ecs::TransformComponent>(
+      [&](ecs::EntityId,
+          ecs::ThirdPersonCameraComponent& cam,
+          ecs::TransformComponent& camTr) {
+
+        if (!cam.enabled ||
+            cam.target ==
+                ecs::kInvalidEntityId) {
+          return;
+        }
+
+        auto* targetTr =
+            registry.tryGet<
+                ecs::TransformComponent>(
+                cam.target);
+
+        if (!targetTr) {
+          return;
+        }
+
+        auto* motion =
+            registry.tryGet<
+                ecs::MotionComponent>(
+                cam.target);
+
+        // ---------------------------------------------------------
+        // PLAYER LOOK
+        //
+        // Keep the existing control behavior.
+        //
+        // X = camera pitch
+        // Y = character/camera yaw
+        // ---------------------------------------------------------
+
+        if (auto* controller =
+                registry.tryGet<
+                    ecs::ControllerComponent>(
+                    cam.target)) {
+
+          if (controller->enabled &&
+              controller->lookRequest.hasRequest) {
+
+            cam.yawDeg +=
+                controller->
+                    lookRequest.lookDelta.y;
+
+            cam.pitchDeg =
+                std::clamp(
+                    cam.pitchDeg +
+                        controller->
+                            lookRequest.lookDelta.x,
+
+                    cam.minPitchDeg,
+                    cam.maxPitchDeg);
+
+            targetTr->rotation.y =
+                cam.yawDeg;
           }
         }
 
-        const math::Vec3 target = targetTr->position + cam.targetOffset;
-        const math::Vec3 fwd = forwardFromPitchYawDeg(cam.pitchDeg, cam.yawDeg);
-        const math::Vec3 desired = target - fwd * cam.distance + math::Vec3{0.0f, cam.height, 0.0f};
-        const float t = 1.0f - std::exp(-cam.followSharpness * dt);
-        camTr.position = lerpVec3(camTr.position, desired, t);
+        // ---------------------------------------------------------
+        // CHARACTER FORWARD
+        //
+        // The character's facing direction controls the horizontal
+        // orbit position of the camera.
+        // ---------------------------------------------------------
 
-        const math::Vec3 toTarget = math::normalize(target - camTr.position);
-        camTr.rotation.x = std::asin(std::clamp(-toTarget.y, -1.0f, 1.0f)) * kRadToDeg;
-        camTr.rotation.y = std::atan2(toTarget.x, toTarget.z) * kRadToDeg;
-        camTr.rotation.z = 0.0f;
+        const math::Vec3 characterForward{
+            std::sin(
+                targetTr->rotation.y *
+                kDegToRad),
+
+            0.0f,
+
+            std::cos(
+                targetTr->rotation.y *
+                kDegToRad)
+        };
+
+        // ---------------------------------------------------------
+        // CHARACTER RIGHT
+        //
+        // Used ONLY for the left/right shoulder offset.
+        // ---------------------------------------------------------
+
+        const math::Vec3 characterRight{
+            std::cos(
+                targetTr->rotation.y *
+                kDegToRad),
+
+            0.0f,
+
+            -std::sin(
+                targetTr->rotation.y *
+                kDegToRad)
+        };
+
+        // ---------------------------------------------------------
+        // VELOCITY
+        // ---------------------------------------------------------
+
+        float currentSpeed = 0.0f;
+
+        if (motion) {
+          currentSpeed =
+              motion->currentSpeed;
+        }
+
+        // ---------------------------------------------------------
+        // CAMERA DISTANCE
+        //
+        // Faster movement pulls the camera farther back.
+        // ---------------------------------------------------------
+
+        float effectiveDistance =
+            cam.distance;
+
+        if (currentSpeed > 0.0f) {
+
+          effectiveDistance =
+              (currentSpeed * 0.2f) +
+              1.7f;
+        }
+
+        // ---------------------------------------------------------
+        // SHOULDER OFFSET
+        //
+        // Stationary:
+        //   Camera stays strongly over the shoulder.
+        //
+        // Moving fast:
+        //   Camera moves toward center behind character.
+        // ---------------------------------------------------------
+
+        const float maxShoulderOffset =
+            0.8f;
+
+        const float minShoulderOffset =
+            0.0f;
+
+        const float speedFactor =
+            std::clamp(
+                currentSpeed / 5.0f,
+                0.0f,
+                1.0f);
+
+        const float shoulderOffsetAmount =
+            lerp(
+                maxShoulderOffset,
+                minShoulderOffset,
+                speedFactor);
+
+        const math::Vec3 shoulderOffset =
+            characterRight *
+            (shoulderOffsetAmount *
+             kShoulderSide);
+
+        // ---------------------------------------------------------
+        // CAMERA POSITION
+        //
+        // The camera is positioned behind the character's facing
+        // direction and shifted horizontally toward the selected
+        // shoulder.
+        //
+        // Pitch is NOT used here. This prevents looking up/down
+        // from moving the camera vertically around the character.
+        // ---------------------------------------------------------
+
+        const math::Vec3 desired =
+            targetTr->position +
+
+            math::Vec3{
+                0.0f,
+                cam.targetOffset.y +
+                    cam.height,
+                0.0f} -
+
+            characterForward *
+                effectiveDistance +
+
+            shoulderOffset;
+
+        // ---------------------------------------------------------
+        // CAMERA POSITION FOLLOW
+        // ---------------------------------------------------------
+
+        const float positionT =
+            1.0f -
+            std::exp(
+                -cam.followSharpness *
+                dt);
+
+        camTr.position =
+            lerpVec3(
+                camTr.position,
+                desired,
+                positionT);
+
+        // ---------------------------------------------------------
+        // CAMERA ROTATION
+        //
+        // Horizontal direction follows the character.
+        //
+        // Vertical direction is controlled directly by cam.pitchDeg
+        // so looking up/down works independently.
+        // ---------------------------------------------------------
+
+        camTr.rotation.x =
+            cam.pitchDeg;
+
+        camTr.rotation.y =
+            targetTr->rotation.y;
+
+        camTr.rotation.z =
+            0.0f;
+
       });
 }
 

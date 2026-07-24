@@ -11,7 +11,7 @@ struct ThirdPersonCameraComponent final {
   bool enabled = true;
   EntityId target = kInvalidEntityId;
   math::Vec3 targetOffset{0.0f, 1.35f, 0.0f};
-  float distance = 4.8f;
+  float distance = 2.8f;
   float height = 1.1f;
   float pitchDeg = 12.0f;
   float minPitchDeg = -12.0f;

@@ -19,7 +19,7 @@ struct FogVolumeComponent final {
   math::Vec3 sizeMeters{100.0f, 50.0f, 100.0f};
 
   // Visuals.
-  render::Color color{0.70f, 0.78f, 0.92f, 1.0f};
+  render::Color color{0.20f, 0.28f, 0.22f, 1.0f};
 
   // Distance-based fog (exponential-ish).
   float density = 0.012f;        // higher = thicker

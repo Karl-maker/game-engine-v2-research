@@ -41,7 +41,7 @@ struct AttachmentComponent {
     EntityId targetEntity = kInvalidEntityId;
 
     // How the attachment should be interpreted by the attachment system.
-    Mode mode = Mode::Follow;
+    Mode mode = Mode::Parent;
     bool enabled = true;
 
     // Offsets to apply when computing the attached transform.

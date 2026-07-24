@@ -4,6 +4,7 @@
 #include "ecs/components/TransformComponent.h"
 #include "ecs/components/MotionComponent.h"
 #include "ecs/components/RigidbodyComponent.h"
+#include "ecs/components/StatsComponent.h"
 #include "ecs/components/ColliderComponent.h"
 
 namespace ecs::services {
@@ -40,6 +41,11 @@ EntityId CharacterFactory::create(
     collider.size = {0.38f, 1.85f, 0.38f};
     collider.offset = {0.0f, 0.925f, 0.0f};
     collider.collisionLayer = physics::kLayerCharacter;
+  }
+  {
+    auto& stats = registry.emplace<ecs::StatsComponent>(characterEntity);
+    stats.walkingSpeed = 3.8f;
+    stats.runningSpeed = 7.0f;
   }
   // ------------------------------------------------------------
   // Transform

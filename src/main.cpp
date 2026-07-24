@@ -59,6 +59,7 @@ int main(int argc, char** argv) {
   debug.showFrameIndex = false;
   debug.showLastInput = true;
   debug.printEveryNFrames = 1;
+  debug.enabled = true;
 
   core::GameLoopService loop(timeSource, inputService, *game, loopConfig, debug);
   loop.run();
