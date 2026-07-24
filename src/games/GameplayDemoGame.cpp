@@ -377,7 +377,7 @@ void GameplayDemoGame::onStart() {
 
     auto& gp = m_registry.emplace<ecs::GrassPatchComponent>(grass);
     gp.sourceTerrainEntity = m_terrain;
-    gp.area = {5.0f, 0.0f, 5.0f};
+    gp.area = {10.0f, 0.0f, 5.0f};
     gp.seed = 9001u;
     gp.densityMultiplier = 1.2f;
     gp.densityNoise.seed = 1777u;
@@ -447,7 +447,7 @@ void GameplayDemoGame::onStart() {
     m_registry.emplace<ecs::TransformComponent>(skyEntity);
 
     auto& skyc = m_registry.emplace<ecs::SkyComponent>(skyEntity);
-    skyc.skyType = ecs::SkyComponent::SkyType::Night;
+    skyc.skyType = ecs::SkyComponent::SkyType::Day;
     skyc.useSkyTypePreset = true;
     skyc.linkedDirectionalLightEntity = m_light;
     skyc.cloudType = ecs::SkyComponent::CloudType::Scattered;

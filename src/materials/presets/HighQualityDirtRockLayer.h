@@ -15,11 +15,11 @@ inline ecs::ShaderComponent HighQualityDirtRockLayer() {
   s.parameters.push_back({"displacementStrength", 0.35f});
 
   // Pull back tessellation quality for this material (still smooth near camera).
-  s.parameters.push_back({"tessNear", 20.0f});
+  s.parameters.push_back({"tessNear", 5.0f});
   s.parameters.push_back({"tessFar", 40.0f});
   s.parameters.push_back({"tessMin", 1.0f});
   s.parameters.push_back({"tessMax", 6.0f});
-  s.parameters.push_back({"tessQuality", 1});  // Low
+  s.parameters.push_back({"tessQuality", 0});  // Low
 
   // Rock layer textures.
   s.textures.push_back({"rock_albedo", render::AssetRef{true, "assets/textures/stone/stone_color.jpg", 0}, true});

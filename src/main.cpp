@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
   auto game = makeGameFromArgs(argc, argv);
 
   core::GameLoopConfig loopConfig;
-  loopConfig.targetFps = 60.0;
+  loopConfig.targetFps = 144.0;
   loopConfig.capFrameRate = true;
 
   const std::string mode = (argc >= 2) ? std::string(argv[1]) : "attachment";
