@@ -62,6 +62,7 @@ Performance note:
 - Use `--debug-overlay` when you want the cleanest performance numbers.
 - Use `--debug-world` only when you are inspecting spatial queries or collision shapes.
 - `--debug` is useful for full inspection, but it can be slower because the extra line rendering and debug geometry add work.
+- Read `gpu_ms` as approximate frame GPU time. If it stays much lower than `render_ms`, the render thread is still spending meaningful time on CPU-side setup.
 
 ## Inspect content wiring
 

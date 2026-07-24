@@ -66,6 +66,8 @@ If fullscreen is stuck at 60 FPS on your display, make sure you are not forcing 
 
 For frame profiling, prefer `--debug-overlay` first. It shows the frame debugger without enabling the heavier world-space debug lines, so the numbers are much more trustworthy.
 
+The overlay and title bar now also show `gpu_ms`, which helps separate CPU-side render setup cost from actual GPU frame time.
+
 ## Project Map
 
 - `src/main.cpp` — CLI flags, mode selection, loop config

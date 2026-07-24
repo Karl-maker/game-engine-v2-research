@@ -68,6 +68,10 @@ class OpenGlRenderer final {
   static OpenGlRenderer* selfFrom(GLFWwindow* w);
   static void glfwKeyCallback(GLFWwindow* w, int key, int scancode, int action, int mods);
   static void glfwCursorPosCallback(GLFWwindow* w, double x, double y);
+  int uniformLocation(std::uint32_t programId, const char* name);
+  void pollGpuTimerQueries();
+  void beginGpuTimerQuery();
+  void endGpuTimerQuery();
 
   struct TerrainMesh final {
     std::uint32_t vao = 0;
@@ -266,10 +270,18 @@ class OpenGlRenderer final {
   std::unordered_map<std::uint64_t, GrassMesh> m_grassMeshes;      // key: (entity id, layerIndex)
   std::unordered_map<std::string, GpuMeshAsset> m_gpuMeshes;       // key: source path
   std::unordered_map<std::string, assets::MeshAssetService::State> m_meshLogState;
+  std::unordered_map<std::uint32_t, std::unordered_map<std::string, int>> m_uniformLocationCache;
 
   TextureService m_textures;
   assets::MeshAssetService m_meshAssets;
   core::FrameDebugger m_renderDebugger;
+  bool m_gpuTimerSupported = false;
+  bool m_gpuTimerActive = false;
+  std::uint32_t m_gpuTimerQueries[2]{0u, 0u};
+  bool m_gpuTimerPending[2]{false, false};
+  int m_gpuTimerWriteIndex = 0;
+  double m_lastGpuFrameMs = -1.0;
+  double m_smoothedGpuFrameMs = -1.0;
 
   // Runtime LOD state (hysteresis) to avoid flickering when hovering at thresholds.
   std::unordered_map<std::uint32_t, TerrainLodState> m_terrainLodState;  // key: terrain entity id

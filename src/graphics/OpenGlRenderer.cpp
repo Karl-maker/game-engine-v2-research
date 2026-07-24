@@ -583,6 +583,51 @@ void OpenGlRenderer::glfwCursorPosCallback(GLFWwindow* w, double x, double y) {
   self->m_accumMouseDy += dy;
 }
 
+int OpenGlRenderer::uniformLocation(std::uint32_t programId, const char* name) {
+  if (programId == 0 || name == nullptr || *name == '\0') return -1;
+  auto& perProgram = m_uniformLocationCache[programId];
+  const auto it = perProgram.find(name);
+  if (it != perProgram.end()) return it->second;
+  const GLint location = glGetUniformLocation(programId, name);
+  perProgram.emplace(name, location);
+  return location;
+}
+
+void OpenGlRenderer::pollGpuTimerQueries() {
+  if (!m_gpuTimerSupported) return;
+  for (int i = 0; i < 2; ++i) {
+    if (!m_gpuTimerPending[i] || m_gpuTimerQueries[i] == 0u) continue;
+    GLuint available = 0u;
+    glGetQueryObjectuiv(m_gpuTimerQueries[i], GL_QUERY_RESULT_AVAILABLE, &available);
+    if (available != GL_TRUE) continue;
+    GLuint64 elapsedNs = 0u;
+    glGetQueryObjectui64v(m_gpuTimerQueries[i], GL_QUERY_RESULT, &elapsedNs);
+    m_gpuTimerPending[i] = false;
+    m_lastGpuFrameMs = static_cast<double>(elapsedNs) / 1000000.0;
+    if (m_smoothedGpuFrameMs < 0.0) {
+      m_smoothedGpuFrameMs = m_lastGpuFrameMs;
+    } else {
+      m_smoothedGpuFrameMs = (m_smoothedGpuFrameMs * 0.85) + (m_lastGpuFrameMs * 0.15);
+    }
+  }
+}
+
+void OpenGlRenderer::beginGpuTimerQuery() {
+  if (!m_gpuTimerSupported || m_gpuTimerActive) return;
+  const std::uint32_t queryId = m_gpuTimerQueries[m_gpuTimerWriteIndex];
+  if (queryId == 0u) return;
+  glBeginQuery(GL_TIME_ELAPSED, queryId);
+  m_gpuTimerActive = true;
+}
+
+void OpenGlRenderer::endGpuTimerQuery() {
+  if (!m_gpuTimerSupported || !m_gpuTimerActive) return;
+  glEndQuery(GL_TIME_ELAPSED);
+  m_gpuTimerPending[m_gpuTimerWriteIndex] = true;
+  m_gpuTimerWriteIndex = (m_gpuTimerWriteIndex + 1) % 2;
+  m_gpuTimerActive = false;
+}
+
 OpenGlRenderer::~OpenGlRenderer() { stop(); }
 
 bool OpenGlRenderer::start(int width, int height, const char* title) {
@@ -662,6 +707,19 @@ bool OpenGlRenderer::start(const WindowConfig& cfg, const char* title) {
   if (const auto* s = glGetString(GL_VENDOR)) m_gpuVendor = reinterpret_cast<const char*>(s);
   if (const auto* s = glGetString(GL_RENDERER)) m_gpuRenderer = reinterpret_cast<const char*>(s);
   if (const auto* s = glGetString(GL_VERSION)) m_glVersion = reinterpret_cast<const char*>(s);
+
+  glGenQueries(2, m_gpuTimerQueries);
+  m_gpuTimerSupported = (m_gpuTimerQueries[0] != 0u && m_gpuTimerQueries[1] != 0u);
+  if (!m_gpuTimerSupported) {
+    m_gpuTimerQueries[0] = 0u;
+    m_gpuTimerQueries[1] = 0u;
+  }
+  m_gpuTimerPending[0] = false;
+  m_gpuTimerPending[1] = false;
+  m_gpuTimerWriteIndex = 0;
+  m_gpuTimerActive = false;
+  m_lastGpuFrameMs = -1.0;
+  m_smoothedGpuFrameMs = -1.0;
 
   // Debug overlay program (simple colored quads in NDC).
   {
@@ -942,6 +1000,7 @@ bool OpenGlRenderer::start(const WindowConfig& cfg, const char* title) {
 void OpenGlRenderer::stop() {
   m_shaders.clear();
   m_terrainLodState.clear();
+  m_uniformLocationCache.clear();
 
   for (auto& [_, m] : m_terrainMeshes) {
     destroyTerrainMesh(m);
@@ -966,6 +1025,11 @@ void OpenGlRenderer::stop() {
 
   if (m_window) {
     glfwMakeContextCurrent(m_window);
+    if (m_gpuTimerActive) {
+      glEndQuery(GL_TIME_ELAPSED);
+      m_gpuTimerActive = false;
+    }
+    if (m_gpuTimerQueries[0] || m_gpuTimerQueries[1]) glDeleteQueries(2, m_gpuTimerQueries);
     if (m_skyVao) glDeleteVertexArrays(1, &m_skyVao);
     if (m_shadowFbo) glDeleteFramebuffers(1, &m_shadowFbo);
     if (m_shadowDepthTex) glDeleteTextures(1, &m_shadowDepthTex);
@@ -987,6 +1051,14 @@ void OpenGlRenderer::stop() {
     m_postW = 0;
     m_postH = 0;
     m_hasPrevViewProj = false;
+    m_gpuTimerQueries[0] = 0u;
+    m_gpuTimerQueries[1] = 0u;
+    m_gpuTimerPending[0] = false;
+    m_gpuTimerPending[1] = false;
+    m_gpuTimerWriteIndex = 0;
+    m_gpuTimerSupported = false;
+    m_lastGpuFrameMs = -1.0;
+    m_smoothedGpuFrameMs = -1.0;
     m_textures.destroyAllGlTextures();
     glfwMakeContextCurrent(nullptr);
   }
@@ -2057,6 +2129,9 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
   const double renderStart = glfwGetTime();
   m_renderDebugger.beginFrame();
+  pollGpuTimerQueries();
+  beginGpuTimerQuery();
+#define glGetUniformLocation(PROGRAM, NAME) uniformLocation((PROGRAM), (NAME))
   auto recordPass = [&](const char* label, double startSeconds) {
     m_renderDebugger.record(label, (glfwGetTime() - startSeconds) * 1000.0);
   };
@@ -3977,6 +4052,13 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     overlay += "  dt_ms=" + std::to_string(static_cast<int>(deltaMs + 0.5f));
     overlay += "  cpu_ms=" + std::to_string(static_cast<int>(cpuWorkMs + 0.5f));
     overlay += "  render_ms=" + std::to_string(static_cast<int>(renderMsSoFar + 0.5f));
+    if (m_smoothedGpuFrameMs >= 0.0) {
+      overlay += "  gpu_ms=" + std::to_string(static_cast<int>(m_smoothedGpuFrameMs + 0.5));
+    } else if (m_gpuTimerSupported) {
+      overlay += "  gpu_ms=warming";
+    } else {
+      overlay += "  gpu_ms=n/a";
+    }
     if (!extraDebugText.empty()) {
       overlay += "\n";
       overlay += extraDebugText;
@@ -4016,10 +4098,12 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   }
   recordPass("overlay", passStart);
 
+  endGpuTimerQuery();
   passStart = glfwGetTime();
   glfwSwapBuffers(m_window);
   recordPass("swap_buffers", passStart);
   const auto& renderReport = m_renderDebugger.endFrame();
+#undef glGetUniformLocation
 
   const double renderEnd = glfwGetTime();
   const float renderMs = static_cast<float>((renderEnd - renderStart) * 1000.0);
@@ -4034,6 +4118,9 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       title += " dt_ms=" + std::to_string(static_cast<int>(deltaMs + 0.5f));
       title += " cpu_ms=" + std::to_string(static_cast<int>(cpuWorkMs + 0.5f));
       title += " render_ms=" + std::to_string(static_cast<int>(renderMs + 0.5f));
+      if (m_smoothedGpuFrameMs >= 0.0) {
+        title += " gpu_ms=" + std::to_string(static_cast<int>(m_smoothedGpuFrameMs + 0.5));
+      }
       if (!renderReport.hottestLabel.empty()) {
         title += " hot=" + renderReport.hottestLabel + ":" + std::to_string(static_cast<int>(renderReport.hottestMs + 0.5));
       }

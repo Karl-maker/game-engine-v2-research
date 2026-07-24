@@ -45,7 +45,7 @@ If you are asking “what is slow in the real game?”, start with `--debug-over
 
 The overlay shows:
 
-- `fps`, `dt_ms`, `cpu_ms`, and `render_ms`
+- `fps`, `dt_ms`, `cpu_ms`, `render_ms`, and `gpu_ms`
 - the hottest CPU systems from the gameplay tick
 - the previous frame’s hottest render passes
 - scene counts such as terrains, meshes, grasses, VFX, HUD widgets, rays, and debug lines
@@ -55,6 +55,8 @@ Interpretation tips:
 
 - High `cpu_ms` with lower `render_ms` usually means simulation, asset processing, collision, or snapshot building is the main bottleneck.
 - High `render_ms` with lower `cpu_ms` usually means the renderer, GPU work, post effects, or debug drawing is the main bottleneck.
+- High `gpu_ms` means the GPU is actually spending time on the submitted frame, which usually points to terrain, grass, shadows, or post effects.
+- High `render_ms` with much lower `gpu_ms` usually means CPU-side render setup is still a major part of the cost.
 - If numbers spike only when `world_debug=on`, the debug view itself is part of the slowdown.
 
 ## Current likely hotspots in this project
@@ -78,23 +80,26 @@ What is already good:
 - terrain and VFX have LOD and distance-based culling controls
 - broadphase collision uses a spatial hash service instead of a pure `n^2` check
 - async mesh and texture loading are in place
+- renderer uniform locations are cached instead of being looked up from OpenGL by name every frame
+- GPU timer queries now expose approximate frame GPU cost in the overlay and title bar
 
 What is still not highly optimized:
 
-- many render paths query uniforms by name every frame instead of caching locations
 - the renderer still does a lot of CPU-side setup per pass
 - VFX are rebuilt every frame on the CPU
 - debug and profiling features were previously coupled together, which made measurement noisy
-- there is no deep GPU timing or vendor-specific GPU profiler integration yet
+- GPU timing is frame-level only, not a per-pass GPU breakdown
+- there is still no vendor-specific GPU profiler integration yet
 
 ## Recommended profiling workflow
 
 1. Start with `./build/duppy gameplay --debug-overlay`.
 2. Watch which CPU system becomes the hottest over several seconds.
-3. Watch which render pass is hottest in the previous-frame render summary.
-4. Toggle features mentally by scene content: grass, VFX, shadows, HUD, and post effects.
-5. Only then use `--debug-world` if you need to inspect queries, collisions, or sockets.
-6. If the game is still slow with overlay only, the slowdown is much more likely to be real scene cost than just the machine drawing debug helpers.
+3. Compare `render_ms` and `gpu_ms` to decide whether the bottleneck is mostly CPU-side render setup or actual GPU frame time.
+4. Watch which render pass is hottest in the previous-frame render summary.
+5. Toggle features mentally by scene content: grass, VFX, shadows, HUD, and post effects.
+6. Only then use `--debug-world` if you need to inspect queries, collisions, or sockets.
+7. If the game is still slow with overlay only, the slowdown is much more likely to be real scene cost than just the machine drawing debug helpers.
 
 ## Machine or code
 
@@ -106,5 +111,6 @@ Without external GPU tools, you should assume it can be both.
 The new frame debugger helps answer the practical version of that question:
 
 - if `cpu_ms` is dominant, the code path on the CPU needs attention
-- if `render_ms` is dominant, the renderer or GPU workload needs attention
+- if `render_ms` is dominant and `gpu_ms` is also high, the GPU workload needs attention
+- if `render_ms` is dominant but `gpu_ms` stays much lower, CPU-side render submission/setup needs attention
 - if both are low but FPS is still capped, check fullscreen mode, refresh rate, vsync, and monitor settings
