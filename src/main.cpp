@@ -52,6 +52,7 @@ int main(int argc, char** argv) {
   std::cout << "  --vsync | --no-vsync\n";
   std::cout << "  --uncapped | --cap-fps\n";
   std::cout << "  --fps N\n";
+  std::cout << "  --debug | --no-debug\n";
   std::cout << "  --width N  --height N\n";
   std::cout << "  --chunks PATH\n";
   std::cout << "  --chunk-size N\n";
@@ -64,6 +65,7 @@ int main(int argc, char** argv) {
   core::ConsoleInputService inputService;
 
   AppConfig cfg;
+  bool debugEnabled = false;
   cfg.loop.targetFps = 144.0;
   cfg.loop.capFrameRate = false;  // default: do not artificially cap
   cfg.gameplay.fullscreen = false;
@@ -99,6 +101,14 @@ int main(int argc, char** argv) {
     }
     if (arg == "--cap-fps") {
       cfg.loop.capFrameRate = true;
+      continue;
+    }
+    if (arg == "--debug") {
+      debugEnabled = true;
+      continue;
+    }
+    if (arg == "--no-debug") {
+      debugEnabled = false;
       continue;
     }
     if (arg == "--fps" && i + 1 < argc) {
@@ -168,14 +178,17 @@ int main(int argc, char** argv) {
 
   core::DebugConfig debug;
   // The enemy demo renders its own full-screen table, so disable the loop HUD there.
-  debug.enabled = !(mode == "enemy" || mode == "enemy-follow" || mode == "3");
+  debug.enabled = false;
   debug.showFps = true;
   debug.showDeltaSeconds = true;
   debug.showFrameIndex = false;
   debug.showLastInput = true;
   debug.printEveryNFrames = 1;
   debug.minSecondsBetweenPrints = 0.10;
-  debug.enabled = true;
+  debug.enabled = debugEnabled && !(mode == "enemy" || mode == "enemy-follow" || mode == "3");
+  if (mode == "enemy" || mode == "enemy-follow" || mode == "3") {
+    debug.enabled = false;
+  }
 
   core::GameLoopService loop(timeSource, inputService, *game, cfg.loop, debug);
   loop.run();

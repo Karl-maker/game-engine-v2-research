@@ -1856,13 +1856,19 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       viewDot = (camFwdXZ.x * dirXZ.x + camFwdXZ.z * dirXZ.z);
     }
 
+    if (distHoriz > t.lodMaxRenderDistance) {
+      st.wantTess = false;
+      st.lodStep = std::max(st.lodStep, 16);
+      continue;
+    }
+
     // --- Tessellation decision (hysteresis) ---
     const bool tessAllowed = (t.tessQuality > 0);
-    const float lockDist = std::max(10.0f, t.tessNear * 2.0f);  // never disable right in front of the camera
-    const float enableDist = t.tessFar * 0.78f;
-    const float disableDist = t.tessFar * 1.18f;
-    const float enableDot = 0.15f;
-    const float disableDot = 0.02f;
+    const float lockDist = std::max(10.0f, t.tessLockDistance);  // never disable right in front of the camera
+    const float enableDist = t.tessEnableDistance;
+    const float disableDist = std::max(enableDist + 1.0f, t.tessDisableDistance);
+    const float enableDot = t.viewDotBias + 0.10f;
+    const float disableDot = std::max(0.0f, t.viewDotBias - 0.03f);
 
     if (!tessAllowed) {
       st.wantTess = false;
@@ -1875,12 +1881,16 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     }
 
     // --- Geometry LOD (hysteresis) ---
-    const float t12_in = 30.0f;
-    const float t12_out = 24.0f;
-    const float t24_in = 66.0f;
-    const float t24_out = 56.0f;
-    const float t48_in = 105.0f;
-    const float t48_out = 92.0f;
+    const float t12_in = t.lodStep1Distance;
+    const float t12_out = std::max(1.0f, t12_in - 6.0f);
+    const float t24_in = t.lodStep2Distance;
+    const float t24_out = std::max(t12_out + 1.0f, t24_in - 8.0f);
+    const float t48_in = t.lodStep4Distance;
+    const float t48_out = std::max(t24_out + 1.0f, t48_in - 12.0f);
+    const float t96_in = t.lodStep8Distance;
+    const float t96_out = std::max(t48_out + 1.0f, t96_in - 18.0f);
+    const float t192_in = t.lodStep16Distance;
+    const float t192_out = std::max(t96_out + 1.0f, t192_in - 24.0f);
 
     int lodStep = st.lodStep;
     if (lodStep <= 1) {
@@ -1891,14 +1901,17 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     } else if (lodStep == 4) {
       if (distHoriz < t24_out && viewDot > 0.05f) lodStep = 2;
       else if (distHoriz > t48_in || viewDot < -0.20f) lodStep = 8;
-    } else {
+    } else if (lodStep == 8) {
       if (distHoriz < t48_out && viewDot > 0.05f) lodStep = 4;
-      else lodStep = 8;
+      else if (distHoriz > t192_in || viewDot < -0.25f) lodStep = 16;
+    } else {
+      if (distHoriz < t192_out && viewDot > 0.05f) lodStep = 8;
+      else lodStep = 16;
     }
 
     // Lock near-camera detail so it doesn't pop right in front of you.
-    if (distHoriz < 14.0f) lodStep = 1;
-    else if (distHoriz < 28.0f) lodStep = std::min(lodStep, 2);
+    if (distHoriz < t.lodForceNearDistance) lodStep = 1;
+    else if (distHoriz < t.lodStep2Distance * 0.5f) lodStep = std::min(lodStep, 2);
 
     // If tess is off, bias toward coarser geo LOD (still stable via hysteresis above).
     if (!st.wantTess) lodStep = std::max(lodStep, 2);
@@ -1975,6 +1988,15 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       // Terrain casters.
       for (const auto& t : frame.terrains) {
         if (!t.castShadows) continue;
+        const float sizeX = static_cast<float>(std::max(2, t.gridWidth)) * t.cellSizeMeters;
+        const float sizeZ = static_cast<float>(std::max(2, t.gridHeight)) * t.cellSizeMeters;
+        const float halfX = 0.5f * sizeX;
+        const float halfZ = 0.5f * sizeZ;
+        const float nearestX = clampf(camPos.x, t.position.x - halfX, t.position.x + halfX);
+        const float nearestZ = clampf(camPos.z, t.position.z - halfZ, t.position.z + halfZ);
+        const float shadowDist = std::sqrt((nearestX - camPos.x) * (nearestX - camPos.x) +
+                                           (nearestZ - camPos.z) * (nearestZ - camPos.z));
+        if (shadowDist > t.lodMaxRenderDistance) continue;
 
         auto it = m_terrainLodState.find(static_cast<std::uint32_t>(t.entity));
         const TerrainLodState st = (it != m_terrainLodState.end()) ? it->second : TerrainLodState{};
@@ -2248,6 +2270,14 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   for (const auto& t : frame.terrains) {
     auto it = m_terrainLodState.find(static_cast<std::uint32_t>(t.entity));
     const TerrainLodState st = (it != m_terrainLodState.end()) ? it->second : TerrainLodState{};
+    const float sizeX = static_cast<float>(std::max(2, t.gridWidth)) * t.cellSizeMeters;
+    const float sizeZ = static_cast<float>(std::max(2, t.gridHeight)) * t.cellSizeMeters;
+    const float halfX = 0.5f * sizeX;
+    const float halfZ = 0.5f * sizeZ;
+    const float nearestX = clampf(camPos.x, t.position.x - halfX, t.position.x + halfX);
+    const float nearestZ = clampf(camPos.z, t.position.z - halfZ, t.position.z + halfZ);
+    const float mainDist = std::sqrt((nearestX - camPos.x) * (nearestX - camPos.x) + (nearestZ - camPos.z) * (nearestZ - camPos.z));
+    if (mainDist > t.lodMaxRenderDistance) continue;
 
     std::string shaderKey = t.shader.key;
     if (!st.wantTess) shaderKey += "_notess";

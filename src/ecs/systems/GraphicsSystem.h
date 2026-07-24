@@ -61,6 +61,17 @@ class GraphicsSystem final {
     float heightScaleMeters = 1.0f;
     terrain::NoiseConfig noise{};
     std::uint32_t noiseSeed = 1337;
+    float lodMaxRenderDistance = 240.0f;
+    float lodStep1Distance = 24.0f;
+    float lodStep2Distance = 48.0f;
+    float lodStep4Distance = 84.0f;
+    float lodStep8Distance = 132.0f;
+    float lodStep16Distance = 180.0f;
+    float lodForceNearDistance = 18.0f;
+    float tessLockDistance = 16.0f;
+    float tessEnableDistance = 72.0f;
+    float tessDisableDistance = 112.0f;
+    float viewDotBias = 0.05f;
     render::AssetRef shader{};
     int renderMode = 0;  // render::RenderMode (as int)
     int cullMode = 0;    // render::CullMode (as int)

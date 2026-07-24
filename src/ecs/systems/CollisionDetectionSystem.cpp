@@ -129,16 +129,16 @@ void CollisionDetectionSystem::tick(EntityRegistry& registry, ecs::services::Eve
       [&](ecs::EntityId terrainId, const ecs::TerrainComponent& terrain, const ecs::TransformComponent& terrainTr) {
         const float halfW = static_cast<float>(terrain.gridWidth) * terrain.cellSizeMeters * 0.5f;
         const float halfD = static_cast<float>(terrain.gridHeight) * terrain.cellSizeMeters * 0.5f;
-        const float minX = terrainTr.position.x - halfW;
-        const float maxX = terrainTr.position.x + halfW;
-        const float minZ = terrainTr.position.z - halfD;
-        const float maxZ = terrainTr.position.z + halfD;
+        const Aabb terrainBounds{{terrainTr.position.x - halfW, terrainTr.position.y - terrain.heightScaleMeters, terrainTr.position.z - halfD},
+                                 {terrainTr.position.x + halfW, terrainTr.position.y + terrain.heightScaleMeters, terrainTr.position.z + halfD}};
+        const auto terrainCandidates = m_grid.queryAabb(terrainBounds);
 
-        for (const auto& [id, body] : bodies) {
+        for (const ecs::EntityId id : terrainCandidates) {
+          const auto bodyIt = bodies.find(id);
+          if (bodyIt == bodies.end()) continue;
+          const auto& body = bodyIt->second;
           const auto* motion = registry.tryGet<ecs::MotionComponent>(id);
           if (!motion) continue;
-          if (body.transform.position.x < minX || body.transform.position.x > maxX) continue;
-          if (body.transform.position.z < minZ || body.transform.position.z > maxZ) continue;
           const float ground = sampleTerrainHeight(terrainId, terrain, terrainTr, body.transform.position);
           const float bottom = body.aabb.min.y;
           if (bottom >= ground) continue;

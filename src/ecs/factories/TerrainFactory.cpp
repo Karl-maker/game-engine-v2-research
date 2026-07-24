@@ -25,6 +25,17 @@ EntityId TerrainFactory::create(EntityRegistry& registry, const TerrainConfig& c
   terrain.heightScaleMeters = config.heightScaleMeters;
   terrain.noise = config.noise;
   terrain.noiseSeed = config.noise.seed;
+  terrain.lodMaxRenderDistance = config.lodMaxRenderDistance;
+  terrain.lodStep1Distance = config.lodStep1Distance;
+  terrain.lodStep2Distance = config.lodStep2Distance;
+  terrain.lodStep4Distance = config.lodStep4Distance;
+  terrain.lodStep8Distance = config.lodStep8Distance;
+  terrain.lodStep16Distance = config.lodStep16Distance;
+  terrain.lodForceNearDistance = config.lodForceNearDistance;
+  terrain.tessLockDistance = config.tessLockDistance;
+  terrain.tessEnableDistance = config.tessEnableDistance;
+  terrain.tessDisableDistance = config.tessDisableDistance;
+  terrain.viewDotBias = config.viewDotBias;
 
   if (config.colliderEnabled) {
     auto& collider = registry.emplace<ecs::ColliderComponent>(id);

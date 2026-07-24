@@ -393,6 +393,17 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.heightScaleMeters = terrain.heightScaleMeters;
         draw.noise = terrain.noise;
         draw.noiseSeed = terrain.noiseSeed;
+        draw.lodMaxRenderDistance = terrain.lodMaxRenderDistance;
+        draw.lodStep1Distance = terrain.lodStep1Distance;
+        draw.lodStep2Distance = terrain.lodStep2Distance;
+        draw.lodStep4Distance = terrain.lodStep4Distance;
+        draw.lodStep8Distance = terrain.lodStep8Distance;
+        draw.lodStep16Distance = terrain.lodStep16Distance;
+        draw.lodForceNearDistance = terrain.lodForceNearDistance;
+        draw.tessLockDistance = terrain.tessLockDistance;
+        draw.tessEnableDistance = terrain.tessEnableDistance;
+        draw.tessDisableDistance = terrain.tessDisableDistance;
+        draw.viewDotBias = terrain.viewDotBias;
         draw.shader = shader.shader;
         draw.renderMode = static_cast<int>(shader.renderMode);
         draw.cullMode = static_cast<int>(shader.cullMode);

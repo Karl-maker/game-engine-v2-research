@@ -388,6 +388,17 @@ void GameplayDemoGame::onStart() {
     terrain.noise.octaves = 2;
     terrain.noise.persistence = 0.45f;
     terrain.noise.lacunarity = 2.0f;
+    terrain.lodMaxRenderDistance = 240.0f;
+    terrain.lodStep1Distance = 24.0f;
+    terrain.lodStep2Distance = 48.0f;
+    terrain.lodStep4Distance = 84.0f;
+    terrain.lodStep8Distance = 132.0f;
+    terrain.lodStep16Distance = 180.0f;
+    terrain.lodForceNearDistance = 18.0f;
+    terrain.tessLockDistance = 16.0f;
+    terrain.tessEnableDistance = 72.0f;
+    terrain.tessDisableDistance = 112.0f;
+    terrain.viewDotBias = 0.05f;
     auto& collider = m_registry.emplace<ecs::ColliderComponent>(m_terrain);
     collider.shape = ecs::ColliderComponent::Shape::Terrain;
     collider.collisionLayer = physics::kLayerWorld;

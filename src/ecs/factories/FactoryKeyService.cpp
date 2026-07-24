@@ -121,6 +121,17 @@ class TerrainJsonFactory final : public IEntityFactory {
       cfg.depthWrite = data::getBoolOr(*obj, "depthWrite", cfg.depthWrite);
       cfg.colliderEnabled = data::getBoolOr(*obj, "colliderEnabled", cfg.colliderEnabled);
       cfg.colliderThicknessMeters = data::getFloatOr(*obj, "colliderThicknessMeters", cfg.colliderThicknessMeters);
+      cfg.lodMaxRenderDistance = data::getFloatOr(*obj, "lodMaxRenderDistance", cfg.lodMaxRenderDistance);
+      cfg.lodStep1Distance = data::getFloatOr(*obj, "lodStep1Distance", cfg.lodStep1Distance);
+      cfg.lodStep2Distance = data::getFloatOr(*obj, "lodStep2Distance", cfg.lodStep2Distance);
+      cfg.lodStep4Distance = data::getFloatOr(*obj, "lodStep4Distance", cfg.lodStep4Distance);
+      cfg.lodStep8Distance = data::getFloatOr(*obj, "lodStep8Distance", cfg.lodStep8Distance);
+      cfg.lodStep16Distance = data::getFloatOr(*obj, "lodStep16Distance", cfg.lodStep16Distance);
+      cfg.lodForceNearDistance = data::getFloatOr(*obj, "lodForceNearDistance", cfg.lodForceNearDistance);
+      cfg.tessLockDistance = data::getFloatOr(*obj, "tessLockDistance", cfg.tessLockDistance);
+      cfg.tessEnableDistance = data::getFloatOr(*obj, "tessEnableDistance", cfg.tessEnableDistance);
+      cfg.tessDisableDistance = data::getFloatOr(*obj, "tessDisableDistance", cfg.tessDisableDistance);
+      cfg.viewDotBias = data::getFloatOr(*obj, "viewDotBias", cfg.viewDotBias);
 
       if (const auto* noiseV = data::getObjectKey(*obj, "noise")) {
         if (const auto* no = noiseV->tryObject()) {
