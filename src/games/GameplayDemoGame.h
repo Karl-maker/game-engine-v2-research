@@ -27,6 +27,7 @@
 #include "ecs/systems/JumpSystem.h"
 #include "ecs/systems/MotionSystem.h"
 #include "ecs/systems/MovementSystem.h"
+#include "ecs/systems/PoseSystem.h"
 #include "ecs/systems/RayDetectionSystem.h"
 #include "ecs/systems/SensorSystem.h"
 #include "ecs/systems/SkeletonAssetSyncSystem.h"
@@ -64,6 +65,7 @@ class GameplayDemoGame final : public core::IGame {
   ecs::systems::HierarchySystem m_hierarchySystem;
   ecs::systems::MotionSystem m_motionSystem;
   ecs::systems::MovementSystem m_movementSystem;
+  ecs::systems::PoseSystem m_poseSystem;
   ecs::systems::SocketSystem m_socketSystem;
   ecs::systems::RayDetectionSystem m_rayDetectionSystem;
   ecs::systems::SensorSystem m_sensorSystem;

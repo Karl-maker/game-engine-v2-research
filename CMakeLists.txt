@@ -23,6 +23,7 @@ add_executable(duppy
   src/ecs/systems/HitDetectionSystem.cpp
   src/ecs/systems/MotionSystem.cpp
   src/ecs/systems/MovementSystem.cpp
+  src/ecs/systems/PoseSystem.cpp
   src/ecs/systems/RayDetectionSystem.cpp
   src/ecs/systems/SensorSystem.cpp
   src/ecs/systems/SkeletonAssetSyncSystem.cpp

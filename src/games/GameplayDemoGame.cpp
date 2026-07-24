@@ -25,6 +25,7 @@
 #include "ecs/components/SkyComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/GrassPatchComponent.h"
+#include "ecs/components/PoseComponent.h"
 #include "ecs/components/SkeletonComponent.h"
 #include "ecs/components/SocketComponent.h"
 #include "ecs/components/ThirdPersonCameraComponent.h"
@@ -234,6 +235,13 @@ void GameplayDemoGame::onStart() {
     skeleton.skeletonId = "business-man#skin0";
     skeleton.skeletonData = "assets/models/business-man/scene.gltf";
     skeleton.updateMode = ecs::SkeletonComponent::UpdateMode::WhenVisible;
+  }
+  {
+    // Example: a pose override can drive a subset of bones (e.g., a hand pose).
+    // PoseSystem blends this on top of animation/IK based on the pose weight.
+    auto& pose = m_registry.emplace<ecs::PoseComponent>(m_player);
+    pose.poses.push_back(
+        ecs::PoseComponent::Pose{.name = "right_hand_pose", .enabled = true, .weight = 0.0f, .bones = {}});
   }
   {
     auto& animation = m_registry.emplace<ecs::AnimationComponent>(m_player);
@@ -645,6 +653,7 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   (void)updatePlayerVisionDrivenIk(m_registry, m_events, m_player, m_demoNpc);
   updatePlayerHeadFacingIk(m_registry, m_player, m_camera);
   m_ikSystem.tick(m_registry, m_events, ctx.deltaSeconds);
+  m_poseSystem.tick(m_registry);
    m_socketSystem.tick(m_registry, ctx.deltaSeconds);
   m_hitDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
 
