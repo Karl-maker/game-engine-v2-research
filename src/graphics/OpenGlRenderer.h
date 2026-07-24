@@ -7,6 +7,7 @@
 
 #include "ecs/systems/GraphicsSystem.h"
 #include "assets/MeshAssetService.h"
+#include "core/FrameDebugger.h"
 #include "graphics/ShaderService.h"
 #include "graphics/TextureService.h"
 #include "math/Mat4.h"
@@ -58,7 +59,10 @@ class OpenGlRenderer final {
               bool debugHudEnabled,
               float fpsEstimate,
               float deltaMs,
-              float cpuWorkMs);
+              float cpuWorkMs,
+              const std::string& extraDebugText = {});
+
+  const core::FrameTimingReport& lastRenderDebugReport() const { return m_renderDebugger.report(); }
 
  private:
   static OpenGlRenderer* selfFrom(GLFWwindow* w);
@@ -265,6 +269,7 @@ class OpenGlRenderer final {
 
   TextureService m_textures;
   assets::MeshAssetService m_meshAssets;
+  core::FrameDebugger m_renderDebugger;
 
   // Runtime LOD state (hysteresis) to avoid flickering when hovering at thresholds.
   std::unordered_map<std::uint32_t, TerrainLodState> m_terrainLodState;  // key: terrain entity id

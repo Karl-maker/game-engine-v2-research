@@ -44,7 +44,9 @@
 #include "materials/presets/RealisticSkyClouds.h"
 
 #include <algorithm>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 
 namespace games {
 
@@ -164,6 +166,56 @@ bool hasActionRequest(const ecs::ControllerComponent* controller, const std::str
     if (req.pressed && req.action == action) return true;
   }
   return false;
+}
+
+std::string formatFrameReport(const char* title,
+                              const core::FrameTimingReport& report,
+                              std::size_t topCount,
+                              bool showMax) {
+  std::ostringstream out;
+  out << title << ": total " << std::fixed << std::setprecision(2) << report.totalMs << "ms";
+  out << " avg " << report.avgTotalMs << "ms";
+  if (!report.hottestLabel.empty()) {
+    out << " hot " << report.hottestLabel << " " << report.hottestMs << "ms";
+  }
+
+  if (report.samples.empty()) {
+    out << "\n  no samples";
+    return out.str();
+  }
+
+  std::vector<const core::FrameTimingSample*> ordered;
+  ordered.reserve(report.samples.size());
+  for (const auto& sample : report.samples) {
+    ordered.push_back(&sample);
+  }
+
+  std::sort(ordered.begin(), ordered.end(), [](const core::FrameTimingSample* a, const core::FrameTimingSample* b) {
+    if (a->lastMs == b->lastMs) return a->label < b->label;
+    return a->lastMs > b->lastMs;
+  });
+
+  const std::size_t limit = std::min(topCount, ordered.size());
+  for (std::size_t i = 0; i < limit; ++i) {
+    const auto& sample = *ordered[i];
+    out << "\n  " << sample.label << " " << sample.lastMs << "/" << sample.avgMs;
+    if (showMax) out << "/" << sample.maxMs;
+  }
+
+  return out.str();
+}
+
+std::string formatSceneCounts(const ecs::systems::GraphicsSystem::FrameSnapshot& frame) {
+  std::ostringstream out;
+  out << "scene: terrains=" << frame.terrains.size();
+  out << " meshes=" << frame.meshes.size();
+  out << " grasses=" << frame.grasses.size();
+  out << " rocks=" << frame.rocks.size();
+  out << " vfx=" << frame.vfx.size();
+  out << " hud=" << frame.hud.size();
+  out << " rays=" << frame.rays.size();
+  out << " lines=" << frame.debugLines.size();
+  return out.str();
 }
 
 }  // namespace
@@ -738,6 +790,12 @@ void GameplayDemoGame::onStart() {
 }
 
 void GameplayDemoGame::onTick(const core::TickContext& ctx) {
+  m_frameDebugger.beginFrame();
+  const auto profile = [&](const char* label, auto&& fn) {
+    auto scope = m_frameDebugger.scoped(label);
+    fn();
+  };
+
   for (const auto& line : ctx.inputLines) {
     if (line == "q" || line == "quit" || line == "exit") {
       if (ctx.requestQuit) ctx.requestQuit();
@@ -746,33 +804,35 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   }
 
   // --- Input -> Controller requests ---
-  m_events.clear();
+  profile("events_clear", [&] { m_events.clear(); });
   core::ControlService::RealtimeInput rt{};
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
-  if (m_renderer.isOpen()) {
-    // Poll first so GLFW callbacks update key/mouse state before we drain it.
-    m_renderer.pollEvents();
-    const auto in = m_renderer.drainRealtimeInput();
-    rt.hasInput = true;
-    rt.moveX = in.moveX;
-    rt.moveZ = in.moveZ;
-    rt.sprint = in.sprint;
-    rt.crouch = in.crouch;
-    rt.jump = in.jump;
-    rt.lookActive = in.lookActive;
-    constexpr float kMouseToDeg = 0.08f;
-    rt.lookDeltaYawDeg = in.mouseDx * kMouseToDeg;
-    rt.lookDeltaPitchDeg = in.mouseDy * kMouseToDeg;
-  }
+  profile("poll_input", [&] {
+    if (m_renderer.isOpen()) {
+      // Poll first so GLFW callbacks update key/mouse state before we drain it.
+      m_renderer.pollEvents();
+      const auto in = m_renderer.drainRealtimeInput();
+      rt.hasInput = true;
+      rt.moveX = in.moveX;
+      rt.moveZ = in.moveZ;
+      rt.sprint = in.sprint;
+      rt.crouch = in.crouch;
+      rt.jump = in.jump;
+      rt.lookActive = in.lookActive;
+      constexpr float kMouseToDeg = 0.08f;
+      rt.lookDeltaYawDeg = in.mouseDx * kMouseToDeg;
+      rt.lookDeltaPitchDeg = in.mouseDy * kMouseToDeg;
+    }
+  });
 #endif
-  m_controls.update(ctx, rt.hasInput ? &rt : nullptr);
-  m_controllerSystem.tick(m_registry, m_controls);
+  profile("controls", [&] { m_controls.update(ctx, rt.hasInput ? &rt : nullptr); });
+  profile("controller", [&] { m_controllerSystem.tick(m_registry, m_controls); });
 
   if (auto* renderSettings = m_registry.tryGet<ecs::RenderSettingsComponent>(m_renderSettings)) {
-    renderSettings->showRays = ctx.debugHudEnabled;
-    renderSettings->showCollisionBoxes = ctx.debugHudEnabled;
-    renderSettings->showCombatBoxes = ctx.debugHudEnabled;
-    renderSettings->showSkeletonBones = ctx.debugHudEnabled;
+    renderSettings->showRays = ctx.debugWorldEnabled;
+    renderSettings->showCollisionBoxes = ctx.debugWorldEnabled;
+    renderSettings->showCombatBoxes = ctx.debugWorldEnabled;
+    renderSettings->showSkeletonBones = ctx.debugWorldEnabled;
   }
 
   if (const auto* controller = m_registry.tryGet<ecs::ControllerComponent>(m_player)) {
@@ -791,58 +851,83 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   }
 
   // --- Controller requests -> motion intent ---
-  m_motionSystem.tick(m_registry);
+  profile("motion", [&] { m_motionSystem.tick(m_registry); });
 
   // --- Gravity only updates velocities ---
-  m_gravitySystem.tick(m_registry, ctx.deltaSeconds);
+  profile("gravity", [&] { m_gravitySystem.tick(m_registry, ctx.deltaSeconds); });
 
   // --- Jump impulse request ---
-  m_jumpSystem.tick(m_registry);
+  profile("jump", [&] { m_jumpSystem.tick(m_registry); });
 
   // --- Motion intent -> transform movement ---
-  m_movementSystem.tick(m_registry, m_events, ctx.deltaSeconds);
+  profile("movement", [&] { m_movementSystem.tick(m_registry, m_events, ctx.deltaSeconds); });
 
   if (m_chunkSource) {
-    m_chunkStreaming.tick(m_registry, m_player, *m_chunkSource, m_factoryRegistry);
+    profile("chunk_stream", [&] { m_chunkStreaming.tick(m_registry, m_player, *m_chunkSource, m_factoryRegistry); });
   }
 
   // --- Collision detection emits contacts; resolution consumes them and separates bodies ---
-  m_collisionDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
-  m_collisionResolutionSystem.tick(m_registry, m_events);
+  profile("collision_detect", [&] { m_collisionDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds); });
+  profile("collision_resolve", [&] { m_collisionResolutionSystem.tick(m_registry, m_events); });
 
   // --- Skeleton assets -> animation -> IK -> sockets -> attachments -> rays -> sensors ---
-  m_skeletonAssetSyncSystem.tick(m_registry, m_meshAssets);
-  m_idleAnimationSystem.tick(m_registry, ctx.deltaSeconds);
-  m_animationSystem.tick(m_registry, ctx.deltaSeconds);
-  m_audioSystem.tick(m_registry, ctx.deltaSeconds);
+  profile("skeleton_sync", [&] { m_skeletonAssetSyncSystem.tick(m_registry, m_meshAssets); });
+  profile("idle_anim", [&] { m_idleAnimationSystem.tick(m_registry, ctx.deltaSeconds); });
+  profile("animation", [&] { m_animationSystem.tick(m_registry, ctx.deltaSeconds); });
+  profile("audio", [&] { m_audioSystem.tick(m_registry, ctx.deltaSeconds); });
   // m_ikSystem.tick(m_registry, m_events);
-  m_hierarchySystem.tick(m_registry);
-  m_attachmentSystem.update(m_registry, ctx.deltaSeconds);
-  m_rayDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
-  m_sensorSystem.tick(m_registry, m_events);
-  (void)updatePlayerVisionDrivenIk(m_registry, m_events, m_player, m_demoNpc);
-  updatePlayerHeadFacingIk(m_registry, m_player, m_camera);
-  m_ikSystem.tick(m_registry, m_events, ctx.deltaSeconds, &m_threads);
-  m_poseSystem.tick(m_registry);
-   m_socketSystem.tick(m_registry, ctx.deltaSeconds);
-  m_hitDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
+  profile("hierarchy", [&] { m_hierarchySystem.tick(m_registry); });
+  profile("attachment", [&] { m_attachmentSystem.update(m_registry, ctx.deltaSeconds); });
+  profile("ray_detect", [&] { m_rayDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds); });
+  profile("sensor", [&] { m_sensorSystem.tick(m_registry, m_events); });
+  profile("ik_targets", [&] {
+    (void)updatePlayerVisionDrivenIk(m_registry, m_events, m_player, m_demoNpc);
+    updatePlayerHeadFacingIk(m_registry, m_player, m_camera);
+  });
+  profile("ik_solve", [&] { m_ikSystem.tick(m_registry, m_events, ctx.deltaSeconds, &m_threads); });
+  profile("pose", [&] { m_poseSystem.tick(m_registry); });
+  profile("socket", [&] { m_socketSystem.tick(m_registry, ctx.deltaSeconds); });
+  profile("hit_detect", [&] { m_hitDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds); });
 
   // --- Third-person camera follow ---
-  m_thirdPersonCameraSystem.tick(m_registry, ctx.deltaSeconds);
+  profile("camera_follow", [&] { m_thirdPersonCameraSystem.tick(m_registry, ctx.deltaSeconds); });
 
   // --- Environment presets (SkyType -> sky/light/fog) ---
-  m_skyPresets.tick(m_registry);
-  m_hudSystem.tick(m_registry);
+  profile("sky_presets", [&] { m_skyPresets.tick(m_registry); });
+  profile("hud_system", [&] { m_hudSystem.tick(m_registry); });
 
-  const auto& frame = m_graphics.tick(m_registry);
+  const ecs::systems::GraphicsSystem::FrameSnapshot* framePtr = nullptr;
+  profile("graphics_snapshot", [&] { framePtr = &m_graphics.tick(m_registry); });
+  const auto& frame = *framePtr;
+  const auto& cpuReport = m_frameDebugger.endFrame();
+
+  m_debugOverlayText.clear();
+  if (ctx.debugOverlayEnabled) {
+    m_debugOverlayText += formatFrameReport("cpu", cpuReport, 8, false);
+    m_debugOverlayText += "\n";
+    m_debugOverlayText += formatSceneCounts(frame);
+#if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
+    const auto& renderReport = m_renderer.lastRenderDebugReport();
+    if (!renderReport.samples.empty()) {
+      m_debugOverlayText += "\n";
+      m_debugOverlayText += formatFrameReport("render(prev)", renderReport, 6, false);
+    }
+#endif
+    if (ctx.debugWorldEnabled) {
+      m_debugOverlayText += "\nworld_debug=on";
+    } else {
+      m_debugOverlayText += "\nworld_debug=off";
+    }
+  }
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   if (m_renderer.isOpen()) {
     m_renderer.render(frame,
-                      ctx.debugHudEnabled,
+                      ctx.debugOverlayEnabled,
                       static_cast<float>(ctx.fpsEstimate),
                       static_cast<float>(ctx.deltaSeconds * 1000.0),
-                      static_cast<float>(ctx.cpuWorkSeconds * 1000.0));
+                      static_cast<float>(ctx.cpuWorkSeconds * 1000.0),
+                      m_debugOverlayText);
   } else {
     if (ctx.requestQuit) ctx.requestQuit();
     return;

@@ -8,6 +8,7 @@ This folder holds the detailed reference docs for the game.
 - [Factory docs](factories.md) — how chunk JSON becomes live entities
 - [Service docs](services.md) — shared engine helpers and their lifecycle
 - [Terminal commands](terminal.md) — build, run, and inspect commands
+- [Debugging and profiling](debugging.md) — frame debugger, profiling workflow, and performance interpretation
 
 ## Extra guides
 

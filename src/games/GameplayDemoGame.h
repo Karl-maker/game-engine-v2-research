@@ -8,6 +8,7 @@
 
 #include "core/IGame.h"
 #include "core/ControlService.h"
+#include "core/FrameDebugger.h"
 #include "core/ThreadService.h"
 
 #include "ecs/EntityId.h"
@@ -75,6 +76,7 @@ class GameplayDemoGame final : public core::IGame {
   GameplayDemoConfig m_config{};
  ecs::EntityRegistry m_registry;
   core::ControlService m_controls;
+  core::FrameDebugger m_frameDebugger;
   core::ThreadService m_threads;
   assets::MeshAssetService m_meshAssets;
   ecs::services::EventService m_events;
@@ -122,6 +124,7 @@ class GameplayDemoGame final : public core::IGame {
 
   double m_printTimer = 0.0;
   double m_attackTimerSeconds = 0.0;
+  std::string m_debugOverlayText;
 };
 
 }  // namespace games

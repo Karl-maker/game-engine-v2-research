@@ -19,7 +19,8 @@ struct TickContext {
   std::vector<std::string> inputLines;
 
   // Debug/telemetry (populated by the loop when debug is enabled).
-  bool debugHudEnabled = false;
+  bool debugOverlayEnabled = false;
+  bool debugWorldEnabled = false;
   double fpsEstimate = 0.0;
   double cpuWorkSeconds = 0.0;  // previous frame CPU work time (excluding sleep)
 

@@ -4,6 +4,8 @@ namespace core {
 
 struct DebugConfig {
   bool enabled = true;
+  bool overlayEnabled = false;
+  bool worldDebugEnabled = false;
   bool showFps = true;
   bool showDeltaSeconds = true;
   bool showFrameIndex = false;

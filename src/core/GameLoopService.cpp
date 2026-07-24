@@ -106,7 +106,8 @@ void GameLoopService::run() {
     ctx.elapsedSeconds = frameStart - startSeconds;
     ctx.frameIndex = frameIndex;
     ctx.inputLines = std::move(lines);
-    ctx.debugHudEnabled = m_debug.enabled;
+    ctx.debugOverlayEnabled = m_debug.overlayEnabled;
+    ctx.debugWorldEnabled = m_debug.worldDebugEnabled;
     ctx.fpsEstimate = fpsEstimate;
     ctx.cpuWorkSeconds = lastWorkSeconds;
     ctx.requestQuit = [this] { requestQuit(); };

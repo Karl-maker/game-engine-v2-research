@@ -2051,11 +2051,17 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
                             bool debugHudEnabled,
                             float fpsEstimate,
                             float deltaMs,
-                            float cpuWorkMs) {
+                            float cpuWorkMs,
+                            const std::string& extraDebugText) {
   if (!m_window) return;
 
   const double renderStart = glfwGetTime();
+  m_renderDebugger.beginFrame();
+  auto recordPass = [&](const char* label, double startSeconds) {
+    m_renderDebugger.record(label, (glfwGetTime() - startSeconds) * 1000.0);
+  };
 
+  double passStart = glfwGetTime();
   m_textures.flushUploads(4);
 
   const float rs = std::clamp(frame.camera.renderScale, 0.25f, 1.0f);
@@ -2101,8 +2107,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   };
 
   const auto clampf = [](float v, float lo, float hi) -> float { return (v < lo) ? lo : (v > hi) ? hi : v; };
+  recordPass("setup", passStart);
 
   // --- Terrain LOD state update (shared by shadow + main passes) ---
+  passStart = glfwGetTime();
   for (const auto& t : frame.terrains) {
     auto& st = m_terrainLodState[static_cast<std::uint32_t>(t.entity)];
     if (st.lodStep <= 0) st.lodStep = 1;
@@ -2188,8 +2196,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (!st.wantTess) lodStep = std::max(lodStep, 2);
     st.lodStep = lodStep;
   }
+  recordPass("terrain_lod", passStart);
 
   // --- Shadow map pass (optional; off by default via RenderSettingsComponent) ---
+  passStart = glfwGetTime();
   bool shadowOn = false;
   math::Mat4 lightViewProj{};
   math::Vec3 shadowLightDir{0.0f, -1.0f, 0.0f};
@@ -2383,8 +2393,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       shadowOn = true;
     }
   }
+  recordPass("shadow_pass", passStart);
 
   // Sky pass (fullscreen procedural).
+  passStart = glfwGetTime();
   if (!frame.skies.empty() && m_skyVao) {
     const auto& sky = frame.skies[0];
     const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog =
@@ -2506,6 +2518,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       glBindVertexArray(0);
     }
   }
+  recordPass("sky_pass", passStart);
 
   // Lights: pack (clamp to 16).
   constexpr int kMaxLights = 16;
@@ -2538,6 +2551,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   glDisable(GL_BLEND);
   glCullFace(GL_BACK);
 
+  passStart = glfwGetTime();
   for (const auto& t : frame.terrains) {
     auto it = m_terrainLodState.find(static_cast<std::uint32_t>(t.entity));
     const TerrainLodState st = (it != m_terrainLodState.end()) ? it->second : TerrainLodState{};
@@ -2849,11 +2863,13 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glDrawElements(mode, static_cast<GLsizei>(mesh->indexCount), GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
   }
+  recordPass("terrain_pass", passStart);
 
   // Choose a ground terrain to anchor procedural scatters (first terrain for now).
   const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain = frame.terrains.empty() ? nullptr : &frame.terrains[0];
 
   // Grass pass (GPU-instanced clumps; no ECS entity per blade).
+  passStart = glfwGetTime();
   if (!frame.grasses.empty()) {
     struct GrassInstance {
       float px, py, pz;
@@ -3113,8 +3129,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       glActiveTexture(GL_TEXTURE0);
     }
   }
+  recordPass("grass_pass", passStart);
 
   // Mesh pass (async-loaded glTF/extension-based assets).
+  passStart = glfwGetTime();
   for (const auto& m : frame.meshes) {
     if (!m.visible) continue;
     const ShaderService::Program* program = m_shaders.getOrCreate(m.shader.key.empty() ? "graphics/shaders/model" : m.shader.key);
@@ -3218,8 +3236,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glBindVertexArray(0);
     glActiveTexture(GL_TEXTURE0);
   }
+  recordPass("mesh_pass", passStart);
 
-	  // Rocks pass (true 3D instances).
+  // Rocks pass (true 3D instances).
+  passStart = glfwGetTime();
   for (const auto& r : frame.rocks) {
     const ShaderService::Program* program = m_shaders.getOrCreate(r.shader.key);
     if (!program || !program->programId) continue;
@@ -3303,8 +3323,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
     glBindVertexArray(0);
   }
+  recordPass("rock_pass", passStart);
 
   // VFX pass.
+  passStart = glfwGetTime();
   if (!frame.vfx.empty() && m_vfxProgram && m_vfxVao && m_vfxVbo) {
     std::vector<VfxVert> verts;
     verts.reserve(frame.vfx.size() * 96);
@@ -3494,8 +3516,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       glEnable(GL_CULL_FACE);
     }
   }
+  recordPass("vfx_pass", passStart);
 
   // HUD pass.
+  passStart = glfwGetTime();
   if (!frame.hud.empty() && m_hudProgram && m_hudVao && m_hudVbo) {
     struct ClipPos final {
       float x = 0.0f;
@@ -3750,8 +3774,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
   }
+  recordPass("hud_pass", passStart);
 
   // World-space debug lines.
+  passStart = glfwGetTime();
   if ((!frame.rays.empty() || !frame.debugLines.empty()) && m_debugLineProgram && m_debugLineVao && m_debugLineVbo) {
     std::vector<DebugLineVert> verts;
     verts.reserve((frame.rays.size() + frame.debugLines.size()) * 2);
@@ -3795,10 +3821,12 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
   }
+  recordPass("debug_lines", passStart);
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glViewport(0, 0, m_fbWidth, m_fbHeight);
 
+  passStart = glfwGetTime();
   const bool dofOn = frame.camera.depthOfFieldEnabled && frame.camera.dofBlurStrength > 0.0001f;
   const bool blurOn = frame.camera.motionBlurEnabled && frame.camera.motionBlurStrength > 0.0001f && m_hasPrevViewProj;
   if (!dofOn && !blurOn) {
@@ -3922,6 +3950,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
   }
+  recordPass("post_fx", passStart);
 
   m_prevViewProj = viewProj;
   m_hasPrevViewProj = true;
@@ -3933,6 +3962,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
   const float renderMsSoFar = static_cast<float>((glfwGetTime() - renderStart) * 1000.0);
 
+  passStart = glfwGetTime();
   if (debugHudEnabled && m_overlayProgram && m_overlayVao && m_overlayVbo) {
     std::string overlay;
     if (!m_gpuRenderer.empty()) {
@@ -3947,6 +3977,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     overlay += "  dt_ms=" + std::to_string(static_cast<int>(deltaMs + 0.5f));
     overlay += "  cpu_ms=" + std::to_string(static_cast<int>(cpuWorkMs + 0.5f));
     overlay += "  render_ms=" + std::to_string(static_cast<int>(renderMsSoFar + 0.5f));
+    if (!extraDebugText.empty()) {
+      overlay += "\n";
+      overlay += extraDebugText;
+    }
 
     std::vector<OverlayVert> verts;
     verts.reserve(4096);
@@ -3980,8 +4014,12 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glDisable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
   }
+  recordPass("overlay", passStart);
 
+  passStart = glfwGetTime();
   glfwSwapBuffers(m_window);
+  recordPass("swap_buffers", passStart);
+  const auto& renderReport = m_renderDebugger.endFrame();
 
   const double renderEnd = glfwGetTime();
   const float renderMs = static_cast<float>((renderEnd - renderStart) * 1000.0);
@@ -3996,6 +4034,9 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       title += " dt_ms=" + std::to_string(static_cast<int>(deltaMs + 0.5f));
       title += " cpu_ms=" + std::to_string(static_cast<int>(cpuWorkMs + 0.5f));
       title += " render_ms=" + std::to_string(static_cast<int>(renderMs + 0.5f));
+      if (!renderReport.hottestLabel.empty()) {
+        title += " hot=" + renderReport.hottestLabel + ":" + std::to_string(static_cast<int>(renderReport.hottestMs + 0.5));
+      }
       glfwSetWindowTitle(m_window, title.c_str());
     }
   } else {

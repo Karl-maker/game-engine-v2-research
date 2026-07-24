@@ -42,16 +42,26 @@ Use this when your display supports a higher refresh rate and you want to verify
 ## Debug and uncapped modes
 
 ```bash
+./build/duppy gameplay --debug-overlay
+./build/duppy gameplay --debug-world
 ./build/duppy gameplay --debug
 ./build/duppy gameplay --fps 144 --uncapped
 ```
 
 Flag guidance:
 
-- `--debug` enables extra runtime visibility
+- `--debug-overlay` enables the on-screen frame debugger and overlay timings
+- `--debug-world` enables world-space debug drawing such as rays, collision boxes, combat boxes, and skeleton lines
+- `--debug` enables both overlay and world debug together
 - `--fps` sets the desired target frame rate
 - `--uncapped` removes the frame cap when you want to measure raw engine performance
 - `--refresh-rate` should match your monitor if fullscreen is locking to a lower value than expected
+
+Performance note:
+
+- Use `--debug-overlay` when you want the cleanest performance numbers.
+- Use `--debug-world` only when you are inspecting spatial queries or collision shapes.
+- `--debug` is useful for full inspection, but it can be slower because the extra line rendering and debug geometry add work.
 
 ## Inspect content wiring
 

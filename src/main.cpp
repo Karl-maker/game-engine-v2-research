@@ -53,6 +53,8 @@ int main(int argc, char** argv) {
   std::cout << "  --vsync | --no-vsync\n";
   std::cout << "  --uncapped | --cap-fps\n";
   std::cout << "  --fps N\n";
+  std::cout << "  --debug-overlay | --debug-frame\n";
+  std::cout << "  --debug-world\n";
   std::cout << "  --debug | --no-debug\n";
   std::cout << "  --width N  --height N\n";
   std::cout << "  --chunks PATH\n";
@@ -66,7 +68,9 @@ int main(int argc, char** argv) {
   core::ConsoleInputService inputService;
 
   AppConfig cfg;
-  bool debugEnabled = false;
+  bool debugConsoleEnabled = false;
+  bool debugOverlayEnabled = false;
+  bool debugWorldEnabled = false;
   cfg.loop.targetFps = 144.0;
   cfg.loop.capFrameRate = false;  // default: do not artificially cap
   cfg.gameplay.fullscreen = false;
@@ -112,11 +116,24 @@ int main(int argc, char** argv) {
       continue;
     }
     if (arg == "--debug") {
-      debugEnabled = true;
+      debugConsoleEnabled = true;
+      debugOverlayEnabled = true;
+      debugWorldEnabled = true;
+      continue;
+    }
+    if (arg == "--debug-overlay" || arg == "--debug-frame") {
+      debugConsoleEnabled = true;
+      debugOverlayEnabled = true;
+      continue;
+    }
+    if (arg == "--debug-world") {
+      debugWorldEnabled = true;
       continue;
     }
     if (arg == "--no-debug") {
-      debugEnabled = false;
+      debugConsoleEnabled = false;
+      debugOverlayEnabled = false;
+      debugWorldEnabled = false;
       continue;
     }
     if (arg == "--fps" && i + 1 < argc) {
@@ -193,9 +210,13 @@ int main(int argc, char** argv) {
   debug.showLastInput = true;
   debug.printEveryNFrames = 1;
   debug.minSecondsBetweenPrints = 0.10;
-  debug.enabled = debugEnabled && !(mode == "enemy" || mode == "enemy-follow" || mode == "3");
+  debug.enabled = debugConsoleEnabled && !(mode == "enemy" || mode == "enemy-follow" || mode == "3");
+  debug.overlayEnabled = debugOverlayEnabled && !(mode == "enemy" || mode == "enemy-follow" || mode == "3");
+  debug.worldDebugEnabled = debugWorldEnabled && !(mode == "enemy" || mode == "enemy-follow" || mode == "3");
   if (mode == "enemy" || mode == "enemy-follow" || mode == "3") {
     debug.enabled = false;
+    debug.overlayEnabled = false;
+    debug.worldDebugEnabled = false;
   }
 
   core::GameLoopService loop(timeSource, inputService, *game, cfg.loop, debug);

@@ -27,6 +27,8 @@ Common runtime flags:
 ./build/duppy gameplay --fullscreen --refresh-rate 144 --no-vsync
 ./build/duppy gameplay --chunks assets/world/chunks_demo.json --chunk-load-proximity 18 --chunk-unload-proximity 30
 ./build/duppy gameplay --fps 144 --uncapped
+./build/duppy gameplay --debug-overlay
+./build/duppy gameplay --debug-world
 ./build/duppy gameplay --debug
 ```
 
@@ -61,6 +63,8 @@ Useful launch commands:
 - `./build/duppy gameplay`
 
 If fullscreen is stuck at 60 FPS on your display, make sure you are not forcing vsync and use `--refresh-rate 144` or your panel’s native refresh rate.
+
+For frame profiling, prefer `--debug-overlay` first. It shows the frame debugger without enabling the heavier world-space debug lines, so the numbers are much more trustworthy.
 
 ## Project Map
 
