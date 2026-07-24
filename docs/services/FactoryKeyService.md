@@ -15,20 +15,26 @@
 - `EntityFactoryRegistry` looks up the factory key.
 - `FactoryKeyService` registers the built-in mapping into the registry.
 
+## Adding a new factory key
+
+1. Create the factory class and its config struct.
+2. Decide the JSON contract you want chunk authors to write.
+3. Register the factory in `FactoryKeyService.cpp`.
+4. Add an example chunk entry to the world content.
+5. Document the key in the matching factory and chunk docs.
+
+## What makes a good key
+
+- Short and lower-case.
+- Stable over time.
+- Obvious to someone reading chunk JSON for the first time.
+
 ## Example
 
 ```cpp
 ecs::services::EntityFactoryRegistry factories;
 ecs::services::registerFactoriesFromEcsFactoriesDir(factories);
 ```
-
-## Adding a new key
-
-1. Add a factory class in `src/ecs/factories/`.
-2. Give it a config struct that matches the JSON you want to accept.
-3. Register it in `FactoryKeyService.cpp`.
-4. Add the new source file to `CMakeLists.txt`.
-5. Reference the new key from chunk JSON with `"factory": "your_key"`.
 
 ## Notes
 

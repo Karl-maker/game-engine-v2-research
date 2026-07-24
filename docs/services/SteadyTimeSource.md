@@ -1,12 +1,20 @@
 # SteadyTimeSource
 
-## Purpose
+## What it is
 
-- SteadyTimeSource provides reusable engine behavior.
+- Monotonic time source (steady clock):
+- - Suitable for delta time / frame timing (won't jump with system clock changes).
+- - Returns seconds since construction.
 
-## Use when
+## When to use it
 
-- Monotonic wall-clock time source used by the loop and frame pacing code.
+- Use this when you need stable timing that should not jump if the system clock changes.
+
+## Lifecycle
+
+- Identify which part of the engine owns the work, then start or construct the service in that layer.
+- Feed the service the data it needs each frame, tick, or load step.
+- Let the service manage the reusable policy instead of repeating that policy in every gameplay system.
 
 ## Example
 
@@ -15,6 +23,10 @@ core::SteadyTimeSource timeSource;
 auto seconds = timeSource.nowSeconds();
 ```
 
+## How it connects
+
+- Integrate `SteadyTimeSource` where that responsibility belongs in the engine boundary.
+
 ## Notes
 
-- Use a monotonic source for frame timing so wall clock changes do not distort gameplay deltas.
+- A monotonic source keeps delta time stable for the game loop.

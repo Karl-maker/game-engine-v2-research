@@ -1,16 +1,21 @@
 # WeaponFactory
 
-## Purpose
+## What it is
 
-- WeaponFactory creates entities from data-driven config.
+- WeaponFactory turns chunk JSON into live ECS entities.
 
-## Use when
+## When to use it
 
-- Reserved for weapon-specific spawn behavior and inventory attachments.
+- Use this when weapons need their own config contract instead of being treated as generic props.
+
+## How it fits
+
+- Chunk loading reads the JSON entry, picks a factory key, and passes the `config` object to the matching `IEntityFactory`.
+- The factory owns entity creation details so chunk content can stay declarative.
 
 ## Config fields
 
-- This factory currently exposes a minimal config surface in the header.
+- The config is currently minimal in the header, so the JSON contract is mostly defined in the factory implementation.
 
 ## Example JSON
 
@@ -23,6 +28,13 @@
 }
 ```
 
+## Adding a new field
+
+- Add the setting to `WeaponConfig` first.
+- Parse the JSON in the factory implementation.
+- Add an example chunk entry so future content authors can copy the pattern.
+- Update `FactoryKeyService` if the new factory needs a new key.
+
 ## Notes
 
-- This key exists so weapon content can eventually carry its own spawn rules instead of piggybacking on characters.
+- This key exists so weapons can grow their own data-driven behavior later.

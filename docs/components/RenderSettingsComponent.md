@@ -1,35 +1,48 @@
 # RenderSettingsComponent
 
-## Purpose
+## What it is
 
 - RenderSettingsComponent (demo)
 - Global-ish render switches for the demo renderer.
 
-## Use when
+## When to use it
 
-- Use this for per-scene or demo-wide rendering switches like shadows, tessellation, and debug overlays.
+- Use this for scene-level debug controls or render-quality switches.
 
-## Key fields
+## How it fits
 
-- `enabled` — Enable or disable this part of the component.
-- `shadowsEnabled` — Master switch for shadow rendering.
-- `shadowQuality` — Renderer-defined quality tier for shadow maps or shadow detail.
-- `shadowStrength` — How dark the shadowing should look.
-- `shadowUseTessellation` — Whether tessellation should be used in the shadow caster pass when supported.
-- `showRays` — Draw debug ray queries.
-- `showCollisionBoxes` — Draw physics collision bounds.
-- `showCombatBoxes` — Draw hit/hurt/combat volumes.
-- `showSkeletonBones` — Draw bone debug overlays for skinned entities.
+- Treat `RenderSettingsComponent` as data only: create it in a factory or gameplay setup, then let systems read it later.
+- Keep behavior out of the component so the same data can be saved, streamed, or rebuilt from JSON.
+
+## Typical setup
+
+- Treat this as the top-level visual settings bucket for the demo scene.
+
+## Field guide
+
+- `enabled` — Master on/off switch or similar behavior flag.
+- `shadowsEnabled` — Field of type `bool` consumed by systems that read this component.
+- `shadowQuality` — Enum or bitmask value that changes system behavior.
+- `shadowStrength` — Numeric tuning used by gameplay or rendering systems.
+- `shadowUseTessellation` — Field of type `bool` consumed by systems that read this component.
+- `showRays` — Field of type `bool` consumed by systems that read this component.
+- `showCollisionBoxes` — Field of type `bool` consumed by systems that read this component.
+- `showCombatBoxes` — Field of type `bool` consumed by systems that read this component.
+- `showSkeletonBones` — Field of type `bool` consumed by systems that read this component.
 
 ## Example
 
 ```cpp
-auto& renderSettings = registry.emplace<ecs::RenderSettingsComponent>(entity);
-renderSettings.shadowsEnabled = true;
-renderSettings.showCollisionBoxes = true;
+auto& component = registry.emplace<ecs::RenderSettingsComponent>(entity);
+component = ecs::RenderSettingsComponent{};
 ```
+
+## Common pairings
+
+- Pair `RenderSettingsComponent` with the system that owns the simulation or rendering work for this data.
+- If the component needs to be created from content, add a factory or chunk entry for it.
 
 ## Notes
 
-- Treat this as a scene-level configuration bucket rather than a per-actor gameplay component.
-- If you expose more render toggles later, keep them here so the rest of the scene can read one consistent settings source.
+- Keep `RenderSettingsComponent` focused on data so systems stay deterministic and easy to extend.
+- Update the docs and the matching system together whenever you add a new field.

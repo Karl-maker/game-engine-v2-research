@@ -1,25 +1,34 @@
 # FogVolumeComponent
 
-## Purpose
+## What it is
 
 - FogVolumeComponent (descriptive)
 - Defines a simple axis-aligned fog/mist volume for the renderer to apply.
 - The graphics system collects these and the renderer applies fog in shaders.
 
-## Use when
+## When to use it
 
-- Use `FogVolumeComponent` when you need ECS data for fogvolumecomponent behavior.
+- Use this for local weather, haze, smoke, or environmental visibility zones.
 
-## Key fields
+## How it fits
 
-- `enabled` — Enable or disable this part of the component.
+- Treat `FogVolumeComponent` as data only: create it in a factory or gameplay setup, then let systems read it later.
+- Keep behavior out of the component so the same data can be saved, streamed, or rebuilt from JSON.
+
+## Typical setup
+
+- Place the volume around the region that should receive fog and tune density against scene scale.
+
+## Field guide
+
+- `enabled` — Master on/off switch or similar behavior flag.
 - `sizeMeters` — Size, reach, or distance tuning.
-- `color` — Color or tint control.
-- `density` — Field of type `float` used by systems that consume this component.
+- `color` — Color, tint, or display styling.
+- `density` — Numeric tuning used by gameplay or rendering systems.
 - `startDistance` — Size, reach, or distance tuning.
 - `endDistance` — Size, reach, or distance tuning.
-- `heightFalloff` — Field of type `float` used by systems that consume this component.
-- `baseHeightOffset` — Spatial placement or relative offset.
+- `heightFalloff` — Size, reach, or distance tuning.
+- `baseHeightOffset` — Spatial placement or directional tuning.
 
 ## Example
 
@@ -28,7 +37,12 @@ auto& component = registry.emplace<ecs::FogVolumeComponent>(entity);
 component = ecs::FogVolumeComponent{};
 ```
 
+## Common pairings
+
+- Pair `FogVolumeComponent` with the system that owns the simulation or rendering work for this data.
+- If the component needs to be created from content, add a factory or chunk entry for it.
+
 ## Notes
 
-- Keep `FogVolumeComponent` focused on data so systems can stay deterministic and easy to extend.
-- Add a system or factory that reads this component instead of putting behavior into the component itself.
+- Keep `FogVolumeComponent` focused on data so systems stay deterministic and easy to extend.
+- Update the docs and the matching system together whenever you add a new field.

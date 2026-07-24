@@ -2,6 +2,8 @@
 
 These pages explain every ECS component in `src/ecs/components/`.
 
+Start with the group that matches your goal, then open the page for the exact component you are using.
+
 - [AnimationComponent](components/AnimationComponent.md)
 - [AttachmentComponent](components/AttachmentComponent.md)
 - [AudioComponent](components/AudioComponent.md)

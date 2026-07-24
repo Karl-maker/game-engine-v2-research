@@ -1,6 +1,6 @@
 # ShaderComponent
 
-## Purpose
+## What it is
 
 - ShaderComponent (descriptive only)
 - Describes how a mesh should be rendered. A renderer interprets these values.
@@ -9,24 +9,35 @@
 - - Parameter blocks (colors, roughness/metallic, tiling, etc)
 - - Render state controls (depth, blend, cull, shadows)
 
-## Use when
+## When to use it
 
-- Use `ShaderComponent` when an entity needs a shader key, material parameters, texture bindings, or render-state overrides.
+- Use this when a renderable needs a specific shader or a custom material setup.
 
-## Key fields
+## How it fits
 
-- `enabled` — Enable or disable this part of the component.
-- `shader` — Field of type `render::AssetRef` used by systems that consume this component.
-- `renderMode` — Field of type `render::RenderMode` used by systems that consume this component.
-- `cullMode` — Field of type `render::CullMode` used by systems that consume this component.
-- `depthTest` — Field of type `render::DepthTest` used by systems that consume this component.
-- `depthWrite` — Field of type `bool` used by systems that consume this component.
-- `blendMode` — Field of type `render::BlendMode` used by systems that consume this component.
-- `doubleSided` — Field of type `bool` used by systems that consume this component.
-- `receiveShadows` — Field of type `bool` used by systems that consume this component.
-- `castShadows` — Field of type `bool` used by systems that consume this component.
-- `textures` — Texture or material binding.
-- `parameters` — Field of type `std::vector<render::MaterialParameter>` used by systems that consume this component.
+- Treat `ShaderComponent` as data only: create it in a factory or gameplay setup, then let systems read it later.
+- Keep behavior out of the component so the same data can be saved, streamed, or rebuilt from JSON.
+
+## Typical setup
+
+- Set the shader key first so the renderer can build the right program.
+- Bind textures and material parameters after the shader path is known.
+- Use render-state overrides only when the default mesh pipeline is not enough.
+
+## Field guide
+
+- `enabled` — Master on/off switch or similar behavior flag.
+- `shader` — Stable reference used by content, loaders, or rendering systems.
+- `renderMode` — Enum or bitmask value that changes system behavior.
+- `cullMode` — Enum or bitmask value that changes system behavior.
+- `depthTest` — Field of type `render::DepthTest` consumed by systems that read this component.
+- `depthWrite` — Master on/off switch or similar behavior flag.
+- `blendMode` — Enum or bitmask value that changes system behavior.
+- `doubleSided` — Stable reference used by content, loaders, or rendering systems.
+- `receiveShadows` — Master on/off switch or similar behavior flag.
+- `castShadows` — Master on/off switch or similar behavior flag.
+- `textures` — Stable reference used by content, loaders, or rendering systems.
+- `parameters` — Field of type `std::vector<render::MaterialParameter>` consumed by systems that read this component.
 
 ## Example
 
@@ -35,7 +46,11 @@ auto& component = registry.emplace<ecs::ShaderComponent>(entity);
 component = ecs::ShaderComponent{};
 ```
 
+## Common pairings
+
+- Keep texture keys stable because content and materials often refer to them by path.
+
 ## Notes
 
-- Use `textures` for albedo/normal/roughness/emissive-style inputs and keep parameter names stable across materials.
-- This component is the main place to describe how a mesh should look without hard-coding that look into systems.
+- Keep `ShaderComponent` focused on data so systems stay deterministic and easy to extend.
+- Update the docs and the matching system together whenever you add a new field.

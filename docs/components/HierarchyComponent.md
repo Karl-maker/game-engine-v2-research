@@ -1,6 +1,6 @@
 # HierarchyComponent
 
-## Purpose
+## What it is
 
 - HierarchyComponent (descriptive ownership/parenting)
 - Allows entities to own each other in a parent/child tree.
@@ -14,20 +14,29 @@
 - - This component stores relationship + local offset only.
 - - A dedicated system should compute/copy world transforms each frame.
 
-## Use when
+## When to use it
 
-- Use `HierarchyComponent` when you need ECS data for hierarchycomponent behavior.
+- Use this when the entity should be logically grouped under a parent.
 
-## Key fields
+## How it fits
 
-- `enabled` — Enable or disable this part of the component.
-- `parentEntity` — Field of type `EntityId` used by systems that consume this component.
-- `children` — Field of type `std::vector<EntityId>` used by systems that consume this component.
-- `localPosition` — Spatial placement or relative offset.
-- `localRotation` — Orientation or angle tuning.
+- Treat `HierarchyComponent` as data only: create it in a factory or gameplay setup, then let systems read it later.
+- Keep behavior out of the component so the same data can be saved, streamed, or rebuilt from JSON.
+
+## Typical setup
+
+- Set the parent first, then let transform propagation resolve world-space placement.
+
+## Field guide
+
+- `enabled` — Master on/off switch or similar behavior flag.
+- `parentEntity` — Reference to another entity or a linked runtime object.
+- `children` — Reference to another entity or a linked runtime object.
+- `localPosition` — Spatial placement or directional tuning.
+- `localRotation` — Orientation or angular tuning.
 - `localScale` — Size, reach, or distance tuning.
-- `inheritPosition` — Spatial placement or relative offset.
-- `inheritRotation` — Orientation or angle tuning.
+- `inheritPosition` — Spatial placement or directional tuning.
+- `inheritRotation` — Orientation or angular tuning.
 - `inheritScale` — Size, reach, or distance tuning.
 
 ## Example
@@ -37,7 +46,12 @@ auto& component = registry.emplace<ecs::HierarchyComponent>(entity);
 component = ecs::HierarchyComponent{};
 ```
 
+## Common pairings
+
+- Pair `HierarchyComponent` with the system that owns the simulation or rendering work for this data.
+- If the component needs to be created from content, add a factory or chunk entry for it.
+
 ## Notes
 
-- Keep `HierarchyComponent` focused on data so systems can stay deterministic and easy to extend.
-- Add a system or factory that reads this component instead of putting behavior into the component itself.
+- Keep `HierarchyComponent` focused on data so systems stay deterministic and easy to extend.
+- Update the docs and the matching system together whenever you add a new field.

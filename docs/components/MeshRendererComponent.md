@@ -1,38 +1,51 @@
 # MeshRendererComponent
 
-## Purpose
+## What it is
 
 - MeshRendererComponent (descriptive only)
 - Lightweight rendering hints for meshes (wireframe/opaque/etc).
 - A renderer interprets these values.
 
-## Use when
+## When to use it
 
-- Use this for render-only flags that should stay separate from the asset reference itself.
+- Use this when you want to separate draw behavior from the mesh asset reference itself.
+
+## How it fits
+
+- Treat `MeshRendererComponent` as data only: create it in a factory or gameplay setup, then let systems read it later.
+- Keep behavior out of the component so the same data can be saved, streamed, or rebuilt from JSON.
+
+## Typical setup
+
+- Keep it lightweight and let the renderer combine it with `MeshComponent` and `ShaderComponent`.
 
 ## Enums
 
 - `RenderMode`: `Opaque`, `Transparent`, `Wireframe`
 
-## Key fields
+## Field guide
 
-- `enabled` — Enable or disable this part of the component.
-- `renderMode` — Field of type `RenderMode` used by systems that consume this component.
-- `hasMesh` — Field of type `bool` used by systems that consume this component.
-- `meshId` — A stable content or debug identifier.
-- `hasMaterial` — Texture or material binding.
-- `materialId` — Texture or material binding.
-- `visibleLayers` — Layer or filtering control.
+- `enabled` — Master on/off switch or similar behavior flag.
+- `renderMode` — Enum or bitmask value that changes system behavior.
+- `hasMesh` — Stable reference used by content, loaders, or rendering systems.
+- `meshId` — Stable reference used by content, loaders, or rendering systems.
+- `hasMaterial` — Stable reference used by content, loaders, or rendering systems.
+- `materialId` — Stable reference used by content, loaders, or rendering systems.
+- `visibleLayers` — Enum or bitmask value that changes system behavior.
 
 ## Example
 
 ```cpp
-auto& renderer = registry.emplace<ecs::MeshRendererComponent>(entity);
-renderer.enabled = true;
-renderer.visible = true;
-renderer.castShadows = true;
+auto& component = registry.emplace<ecs::MeshRendererComponent>(entity);
+component = ecs::MeshRendererComponent{};
 ```
+
+## Common pairings
+
+- Pair `MeshRendererComponent` with the system that owns the simulation or rendering work for this data.
+- If the component needs to be created from content, add a factory or chunk entry for it.
 
 ## Notes
 
-- Keep this component focused on render behavior instead of duplicating mesh asset data.
+- Keep `MeshRendererComponent` focused on data so systems stay deterministic and easy to extend.
+- Update the docs and the matching system together whenever you add a new field.

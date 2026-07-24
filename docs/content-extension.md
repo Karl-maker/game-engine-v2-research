@@ -4,7 +4,7 @@ Author: Karl-Johan Bailey
 
 This guide explains how to extend the project without wiring everything by hand.
 
-For deeper reference, open the per-component, per-factory, per-service, and terminal docs in `docs/README.md`.
+For detailed reference, open the per-component, per-factory, per-service, and terminal docs in `docs/README.md`.
 
 ## 1) Entity components
 
@@ -38,8 +38,8 @@ Current flow:
 To add a new factory:
 
 1. Create a new factory config and implementation in `src/ecs/factories/`.
-2. Parse the JSON shape you want in `FactoryKeyService.cpp`.
-3. Register the key in `registerFactoriesFromEcsFactoriesDir(...)`.
+2. Parse the JSON shape you want in the factory implementation.
+3. Register the key in `FactoryKeyService.cpp`.
 4. Add the file to `CMakeLists.txt`.
 5. Add a test chunk entry in `assets/world/chunks_demo.json`.
 
@@ -95,7 +95,7 @@ To add a format:
 Example:
 
 ```cpp
-auto& mesh = registry.emplace<ecs::MeshComponent>(entity);
+auto& mesh = registry.emplace<ecs::MeshComponent>(character);
 mesh.meshData.enabled = true;
 mesh.meshData.key = "assets/models/business-man/scene.gltf";
 ```
@@ -199,7 +199,7 @@ Run fullscreen at a high refresh target:
 Inspect registered factory keys:
 
 ```bash
-rg -n 'registerFactory\\("' src/ecs/factories/FactoryKeyService.cpp
+rg -n 'registerFactory\("' src/ecs/factories/FactoryKeyService.cpp
 ```
 
 Inspect chunk data:

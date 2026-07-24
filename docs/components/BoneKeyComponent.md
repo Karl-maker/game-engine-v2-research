@@ -1,18 +1,27 @@
 # BoneKeyComponent
 
-## Purpose
+## What it is
 
-- BoneKeyComponent stores gameplay or rendering data for ECS systems.
+- BoneKeyComponent stores data that systems and factories read to drive skeleton and bones.
 
-## Use when
+## When to use it
 
-- Use `BoneKeyComponent` when you need ECS data for bonekeycomponent behavior.
+- Use this when other systems need a stable way to refer to named bones.
 
-## Key fields
+## How it fits
 
-- `leftHandKey` — Field of type `std::string` used by systems that consume this component.
-- `rightHandKey` — Field of type `std::string` used by systems that consume this component.
-- `headKey` — Field of type `std::string` used by systems that consume this component.
+- Treat `BoneKeyComponent` as data only: create it in a factory or gameplay setup, then let systems read it later.
+- Keep behavior out of the component so the same data can be saved, streamed, or rebuilt from JSON.
+
+## Typical setup
+
+- Populate the keys from the same rig or skeleton naming scheme that your model uses.
+
+## Field guide
+
+- `leftHandKey` — Stable reference used by content, loaders, or rendering systems.
+- `rightHandKey` — Stable reference used by content, loaders, or rendering systems.
+- `headKey` — Stable reference used by content, loaders, or rendering systems.
 
 ## Example
 
@@ -21,7 +30,12 @@ auto& component = registry.emplace<ecs::BoneKeyComponent>(entity);
 component = ecs::BoneKeyComponent{};
 ```
 
+## Common pairings
+
+- Pair `BoneKeyComponent` with the system that owns the simulation or rendering work for this data.
+- If the component needs to be created from content, add a factory or chunk entry for it.
+
 ## Notes
 
-- Keep `BoneKeyComponent` focused on data so systems can stay deterministic and easy to extend.
-- Add a system or factory that reads this component instead of putting behavior into the component itself.
+- Keep `BoneKeyComponent` focused on data so systems stay deterministic and easy to extend.
+- Update the docs and the matching system together whenever you add a new field.

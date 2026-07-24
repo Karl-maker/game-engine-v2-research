@@ -1,17 +1,27 @@
 # CharacterComponent
 
-## Purpose
+## What it is
 
-- CharacterComponent marks a humanoid or character-style actor and stores lightweight turn tuning.
+- CharacterComponent stores data that systems and factories read to drive character and control.
 
-## Use when
+## When to use it
 
-- Use `CharacterComponent` when an entity should be treated as a character by movement, animation, combat, or input systems.
+- Use this when an entity should behave like a player, NPC, enemy, or humanoid actor.
 
-## Key fields
+## How it fits
 
-- `enabled` — Enable or disable this part of the component.
-- `turnSpeedDegPerSecond` — Movement or force tuning.
+- Treat `CharacterComponent` as data only: create it in a factory or gameplay setup, then let systems read it later.
+- Keep behavior out of the component so the same data can be saved, streamed, or rebuilt from JSON.
+
+## Typical setup
+
+- Pair it with controller, stats, animation, and motion components for a full playable actor.
+- Use the turn speed to control how quickly the actor can rotate toward input or targets.
+
+## Field guide
+
+- `enabled` — Master on/off switch or similar behavior flag.
+- `turnSpeedDegPerSecond` — Numeric tuning used by gameplay or rendering systems.
 
 ## Example
 
@@ -20,7 +30,11 @@ auto& component = registry.emplace<ecs::CharacterComponent>(entity);
 component = ecs::CharacterComponent{};
 ```
 
+## Common pairings
+
+- This component is intentionally lightweight; systems and factories do the real work.
+
 ## Notes
 
-- Pair this with `ControllerComponent`, `MotionComponent`, `StatsComponent`, and `AnimationComponent` for a full playable actor.
-- Keep `CharacterComponent` focused on data so systems can stay deterministic and easy to extend.
+- Keep `CharacterComponent` focused on data so systems stay deterministic and easy to extend.
+- Update the docs and the matching system together whenever you add a new field.

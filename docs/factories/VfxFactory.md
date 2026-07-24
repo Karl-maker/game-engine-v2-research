@@ -1,20 +1,26 @@
 # VfxFactory
 
-## Purpose
+## What it is
 
-- VfxFactory creates entities from data-driven config.
+- VfxFactory
+- Creates a visual-effect emitter entity from data.
 
-## Use when
+## When to use it
 
-- Creates visual-effect emitters such as fire, electricity, sparks, smoke, and steam.
+- Use this when effects should be spawned through chunk data and respect runtime LOD/quality rules.
+
+## How it fits
+
+- Chunk loading reads the JSON entry, picks a factory key, and passes the `config` object to the matching `IEntityFactory`.
+- The factory owns entity creation details so chunk content can stay declarative.
 
 ## Config fields
 
-- `name` — A stable content or debug identifier.
-- `position` — Spatial placement or relative offset.
-- `rotationDeg` — Orientation or angle tuning.
+- `name` — Stable reference used by content, loaders, or rendering systems.
+- `position` — Spatial placement or directional tuning.
+- `rotationDeg` — Orientation or angular tuning.
 - `scale` — Size, reach, or distance tuning.
-- `component` — Field of type `ecs::VfxComponent` used by systems that consume this component.
+- `component` — Field of type `ecs::VfxComponent` consumed by systems that read this component.
 
 ## Example JSON
 
@@ -32,6 +38,13 @@
 }
 ```
 
+## Adding a new field
+
+- Add the setting to `VfxConfig` first.
+- Parse the JSON in the factory implementation.
+- Add an example chunk entry so future content authors can copy the pattern.
+- Update `FactoryKeyService` if the new factory needs a new key.
+
 ## Notes
 
-- Use the effect quality and LOD settings to keep the scene responsive on low-end hardware.
+- Keep effect quality and distance budgets tuned so VFX does not dominate frame time.

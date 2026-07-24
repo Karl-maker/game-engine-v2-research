@@ -1,30 +1,49 @@
 # TransformComponent
 
-## Purpose
+## What it is
 
 - TransformComponent
 - Any element can have a location/orientation/scale in the world.
 - Attach it to an entity to give it spatial data.
 
-## Use when
+## When to use it
 
-- Use this on almost every world object that needs a position, rotation, or scale.
+- Use this on nearly every world object that needs a place in 3D space.
 
-## Key fields
+## How it fits
 
-- `position` — Spatial placement or relative offset.
-- `rotation` — Orientation or angle tuning.
+- Treat `TransformComponent` as data only: create it in a factory or gameplay setup, then let systems read it later.
+- Keep behavior out of the component so the same data can be saved, streamed, or rebuilt from JSON.
+
+## Typical setup
+
+- Set position first, then adjust rotation and scale so downstream systems can interpret the space cleanly.
+
+## Common recipes
+
+- **World prop:** keep scale at `(1, 1, 1)` and only set position and rotation.
+- **Spawned character:** place the actor at the desired world position, then let movement and camera systems update it.
+- **World anchor:** use this as the parent position for HUD billboards, sockets, or attached effects.
+
+## Field guide
+
+- `position` — Spatial placement or directional tuning.
+- `rotation` — Orientation or angular tuning.
 - `scale` — Size, reach, or distance tuning.
 
 ## Example
 
 ```cpp
-auto& tr = registry.emplace<ecs::TransformComponent>(entity);
-tr.position = {0.0f, 1.0f, 0.0f};
-tr.rotation = {0.0f, 90.0f, 0.0f};
-tr.scale = {1.0f, 1.0f, 1.0f};
+auto& component = registry.emplace<ecs::TransformComponent>(entity);
+component = ecs::TransformComponent{};
 ```
+
+## Common pairings
+
+- Pair `TransformComponent` with the system that owns the simulation or rendering work for this data.
+- If the component needs to be created from content, add a factory or chunk entry for it.
 
 ## Notes
 
-- Keep rotation in degrees so gameplay code matches the rest of the engine.
+- Keep `TransformComponent` focused on data so systems stay deterministic and easy to extend.
+- Update the docs and the matching system together whenever you add a new field.

@@ -1,19 +1,24 @@
 # CharacterFactory
 
-## Purpose
+## What it is
 
-- CharacterFactory creates entities from data-driven config.
+- CharacterFactory turns chunk JSON into live ECS entities.
 
-## Use when
+## When to use it
 
-- Creates a character entity with the expected gameplay and rig components.
+- Use this for player characters, NPCs, and humanoid actors that share the same control and animation pipeline.
+
+## How it fits
+
+- Chunk loading reads the JSON entry, picks a factory key, and passes the `config` object to the matching `IEntityFactory`.
+- The factory owns entity creation details so chunk content can stay declarative.
 
 ## Config fields
 
-- `meshReference` — Field of type `std::string` used by systems that consume this component.
-- `leftHandKey` — Field of type `std::string` used by systems that consume this component.
-- `rightHandKey` — Field of type `std::string` used by systems that consume this component.
-- `headKey` — Field of type `std::string` used by systems that consume this component.
+- `meshReference` — Stable reference used by content, loaders, or rendering systems.
+- `leftHandKey` — Stable reference used by content, loaders, or rendering systems.
+- `rightHandKey` — Stable reference used by content, loaders, or rendering systems.
+- `headKey` — Stable reference used by content, loaders, or rendering systems.
 
 ## Example JSON
 
@@ -33,6 +38,13 @@
 }
 ```
 
+## Adding a new field
+
+- Add the setting to `CharacterConfig` first.
+- Parse the JSON in the factory implementation.
+- Add an example chunk entry so future content authors can copy the pattern.
+- Update `FactoryKeyService` if the new factory needs a new key.
+
 ## Notes
 
-- This is the primary entry point for player, NPC, and humanoid actor spawns.
+- This is the primary entry point for skinned actor spawning in chunk files.

@@ -2,6 +2,8 @@
 
 These pages explain the reusable engine services in the project.
 
+Services own shared behavior such as chunk streaming, asset loading, timing, and rendering helpers.
+
 - [ChunkStreamingService](services/ChunkStreamingService.md)
 - [ChunkTypes](services/ChunkTypes.md)
 - [EntityFactoryRegistry](services/EntityFactoryRegistry.md)
@@ -16,7 +18,7 @@ These pages explain the reusable engine services in the project.
 - [ConsoleInputService](services/ConsoleInputService.md)
 - [ControlService](services/ControlService.md)
 - [GameLoopService](services/GameLoopService.md)
-- [ThreadService](services/ThreadService.md)
 - [SteadyTimeSource](services/SteadyTimeSource.md)
+- [ThreadService](services/ThreadService.md)
 - [ShaderService](services/ShaderService.md)
 - [TextureService](services/TextureService.md)

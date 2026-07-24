@@ -4,7 +4,7 @@ Author: Karl-Johan Bailey
 
 Use these commands while iterating on the game locally.
 
-## Build
+## Build and rebuild
 
 ```bash
 cmake -S . -B build
@@ -17,7 +17,13 @@ What this does:
 - compiles the game binary
 - reuses the same build directory across edits for faster rebuilds
 
-## Run gameplay
+When to use it:
+
+- after changing C++ source files
+- after adding a new component, factory, or service source file
+- after editing docs only if you want to keep the repo state tidy and then rebuild the game
+
+## Run the game
 
 ```bash
 ./build/duppy gameplay
@@ -25,15 +31,15 @@ What this does:
 
 Use this when you want the normal gameplay scene with the current ECS and renderer pipeline.
 
-## Run with fullscreen and high refresh targets
+## Run fullscreen at a higher refresh target
 
 ```bash
 ./build/duppy gameplay --fullscreen --refresh-rate 144 --no-vsync
 ```
 
-Use this when your display supports higher refresh rates and you want to verify frame pacing without the default vsync ceiling.
+Use this when your display supports a higher refresh rate and you want to verify the engine is not clamping itself to 60 FPS.
 
-## Debug modes and flags
+## Debug and uncapped modes
 
 ```bash
 ./build/duppy gameplay --debug
@@ -56,3 +62,10 @@ rg -n 'HudComponent|HudSystem|textureEnabled|showValueText' src
 ```
 
 Use these searches when you need to see how a component, factory key, or chunk entry is wired into the runtime.
+
+## Common development flow
+
+1. Edit a component, factory, or service.
+2. Update its matching doc page under `docs/`.
+3. Rebuild with `cmake --build build`.
+4. Run `./build/duppy gameplay` and verify the content behaves as expected.

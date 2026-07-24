@@ -1,6 +1,6 @@
 # AttachmentComponent
 
-## Purpose
+## What it is
 
 - AttachmentComponent
 - Describes how one entity is attached to (or driven by) another entity.
@@ -11,9 +11,20 @@
 - - It stores references + settings.
 - - It does NOT apply transforms by itself (that is system logic).
 
-## Use when
+## When to use it
 
-- Use `AttachmentComponent` when you need ECS data for attachmentcomponent behavior.
+- Use this for weapons, props, cameras, or effects that should stay anchored to another entity.
+
+## How it fits
+
+- Treat `AttachmentComponent` as data only: create it in a factory or gameplay setup, then let systems read it later.
+- Keep behavior out of the component so the same data can be saved, streamed, or rebuilt from JSON.
+
+## Typical setup
+
+- Point the attachment at the parent entity you want to follow.
+- Use the offset fields to place the child relative to the parent.
+- Choose whether the child inherits rotation, scale, or both.
 
 ## Enums
 
@@ -26,28 +37,28 @@
 - `Space`: `Local`, `// Offsets interpreted in target local space.
     World`, `// Offsets interpreted in world space.`
 
-## Key fields
+## Field guide
 
-- `targetEntity` — Reference to another entity or input source.
-- `mode` — Field of type `Mode` used by systems that consume this component.
-- `enabled` — Enable or disable this part of the component.
-- `positionOffset` — Spatial placement or relative offset.
-- `rotationOffset` — Spatial placement or relative offset.
-- `scaleOffset` — Spatial placement or relative offset.
-- `inheritPosition` — Spatial placement or relative offset.
-- `inheritRotation` — Orientation or angle tuning.
+- `targetEntity` — Reference to another entity or a linked runtime object.
+- `mode` — Enum or bitmask value that changes system behavior.
+- `enabled` — Master on/off switch or similar behavior flag.
+- `positionOffset` — Spatial placement or directional tuning.
+- `rotationOffset` — Spatial placement or directional tuning.
+- `scaleOffset` — Spatial placement or directional tuning.
+- `inheritPosition` — Spatial placement or directional tuning.
+- `inheritRotation` — Orientation or angular tuning.
 - `inheritScale` — Size, reach, or distance tuning.
-- `space` — Field of type `Space` used by systems that consume this component.
-- `positionSpeed` — Spatial placement or relative offset.
-- `rotationSpeed` — Orientation or angle tuning.
-- `interpolationSpeed` — Movement or force tuning.
-- `socketKey` — Field of type `std::string` used by systems that consume this component.
+- `space` — Field of type `Space` consumed by systems that read this component.
+- `positionSpeed` — Spatial placement or directional tuning.
+- `rotationSpeed` — Orientation or angular tuning.
+- `interpolationSpeed` — Numeric tuning used by gameplay or rendering systems.
+- `socketKey` — Stable reference used by content, loaders, or rendering systems.
 - `orbitRadius` — Size, reach, or distance tuning.
-- `minPitchDeg` — Field of type `float` used by systems that consume this component.
-- `maxPitchDeg` — Field of type `float` used by systems that consume this component.
-- `currentYawDeg` — Field of type `float` used by systems that consume this component.
-- `currentPitchDeg` — Field of type `float` used by systems that consume this component.
-- `attachments` — Field of type `std::vector<Attachment>` used by systems that consume this component.
+- `minPitchDeg` — Orientation or angular tuning.
+- `maxPitchDeg` — Orientation or angular tuning.
+- `currentYawDeg` — Orientation or angular tuning.
+- `currentPitchDeg` — Orientation or angular tuning.
+- `attachments` — Field of type `std::vector<Attachment>` consumed by systems that read this component.
 
 ## Example
 
@@ -56,7 +67,11 @@ auto& component = registry.emplace<ecs::AttachmentComponent>(entity);
 component = ecs::AttachmentComponent{};
 ```
 
+## Common pairings
+
+- Use this with `HierarchyComponent` when you need both logical parenting and transform inheritance.
+
 ## Notes
 
-- Keep `AttachmentComponent` focused on data so systems can stay deterministic and easy to extend.
-- Add a system or factory that reads this component instead of putting behavior into the component itself.
+- Keep `AttachmentComponent` focused on data so systems stay deterministic and easy to extend.
+- Update the docs and the matching system together whenever you add a new field.

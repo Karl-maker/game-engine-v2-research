@@ -1,16 +1,21 @@
 # EnemyFactory
 
-## Purpose
+## What it is
 
-- EnemyFactory creates entities from data-driven config.
+- EnemyFactory turns chunk JSON into live ECS entities.
 
-## Use when
+## When to use it
 
-- Reserved for enemy-specific spawn behavior. The current scaffold keeps it as a separate key so enemy content can diverge later.
+- Use this for enemies once you want spawn rules that differ from generic characters.
+
+## How it fits
+
+- Chunk loading reads the JSON entry, picks a factory key, and passes the `config` object to the matching `IEntityFactory`.
+- The factory owns entity creation details so chunk content can stay declarative.
 
 ## Config fields
 
-- This factory currently exposes a minimal config surface in the header.
+- The config is currently minimal in the header, so the JSON contract is mostly defined in the factory implementation.
 
 ## Example JSON
 
@@ -23,6 +28,13 @@
 }
 ```
 
+## Adding a new field
+
+- Add the setting to `EnemyConfig` first.
+- Parse the JSON in the factory implementation.
+- Add an example chunk entry so future content authors can copy the pattern.
+- Update `FactoryKeyService` if the new factory needs a new key.
+
 ## Notes
 
-- If the factory is still a stub in your branch, use `character` or `entity` until you add enemy-specific setup.
+- If the branch still treats this as a placeholder, keep using `character` until the enemy contract is finished.

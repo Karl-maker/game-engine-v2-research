@@ -1,12 +1,26 @@
 # GameLoopService
 
-## Purpose
+## What it is
 
-- GameLoopService provides reusable engine behavior.
+- Game Loop Service
+- - Owns the main "tick" loop and timing.
+- - Pulls input from an injected input service.
+- - Calls an injected game instance each frame (dependency inversion).
+- - Optionally prints a tiny debug HUD (configurable).
+- Where game logic goes:
+- - Implement `core::IGame` and put gameplay/simulation updates in `onTick(...)`.
+- - Read inputs from `TickContext::inputLines` (or swap in a different input service later).
+- - Call `TickContext::requestQuit()` to exit the loop.
 
-## Use when
+## When to use it
 
-- Owns the main tick loop, frame timing, input polling, and debug output.
+- Use this when you want the engine to manage frame pacing and call a game object once per tick.
+
+## Lifecycle
+
+- Identify which part of the engine owns the work, then start or construct the service in that layer.
+- Feed the service the data it needs each frame, tick, or load step.
+- Let the service manage the reusable policy instead of repeating that policy in every gameplay system.
 
 ## Example
 
@@ -16,6 +30,11 @@ cfg.targetFps = 144.0;
 cfg.capFrameRate = true;
 ```
 
+## How it connects
+
+- Calls the game implementation once per frame.
+- Owns pacing, input drain, and quit handling.
+
 ## Notes
 
-- Put simulation and rendering orchestration behind `core::IGame` so the loop itself stays generic.
+- Keep game logic inside `core::IGame` so the loop stays reusable.

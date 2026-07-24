@@ -1,22 +1,28 @@
 # EntityFactory
 
-## Purpose
+## What it is
 
-- EntityFactory creates entities from data-driven config.
+- EntityFactory
+- Simple "spawn an entity" factory used by chunk loading.
 
-## Use when
+## When to use it
 
-- Creates a generic entity with transform and optional rigidbody settings. This is the simplest spawn path for chunk content.
+- Use this for spawn markers, simple props, or anything that only needs position and a bit of physics.
+
+## How it fits
+
+- Chunk loading reads the JSON entry, picks a factory key, and passes the `config` object to the matching `IEntityFactory`.
+- The factory owns entity creation details so chunk content can stay declarative.
 
 ## Config fields
 
-- `name` — A stable content or debug identifier.
-- `position` — Spatial placement or relative offset.
-- `rotationDeg` — Orientation or angle tuning.
+- `name` — Stable reference used by content, loaders, or rendering systems.
+- `position` — Spatial placement or directional tuning.
+- `rotationDeg` — Orientation or angular tuning.
 - `scale` — Size, reach, or distance tuning.
-- `hasRigidbody` — Field of type `bool` used by systems that consume this component.
-- `mass` — Field of type `float` used by systems that consume this component.
-- `useGravity` — Movement or force tuning.
+- `hasRigidbody` — Stable reference used by content, loaders, or rendering systems.
+- `mass` — Numeric tuning used by gameplay or rendering systems.
+- `useGravity` — Master on/off switch or similar behavior flag.
 
 ## Example JSON
 
@@ -36,6 +42,13 @@
 }
 ```
 
+## Adding a new field
+
+- Add the setting to `EntityConfig` first.
+- Parse the JSON in the factory implementation.
+- Add an example chunk entry so future content authors can copy the pattern.
+- Update `FactoryKeyService` if the new factory needs a new key.
+
 ## Notes
 
-- Use this when you just need an entity shell with spatial data or a lightweight physics body.
+- This is the lowest-friction way to get data into the world and then add behavior later.

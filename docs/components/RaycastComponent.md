@@ -1,14 +1,23 @@
 # RaycastComponent
 
-## Purpose
+## What it is
 
 - RaycastComponent (descriptive only)
 - Describes ray/sphere-cast queries and stores hit results for systems to fill in.
 - This component does not do any physics queries by itself.
 
-## Use when
+## When to use it
 
-- Use `RaycastComponent` when you need ECS data for raycastcomponent behavior.
+- Use this for line-of-sight, ground checks, interaction checks, or debug rays.
+
+## How it fits
+
+- Treat `RaycastComponent` as data only: create it in a factory or gameplay setup, then let systems read it later.
+- Keep behavior out of the component so the same data can be saved, streamed, or rebuilt from JSON.
+
+## Typical setup
+
+- Set length, layers, and max hit count first, then decide whether the query should ignore self or triggers.
 
 ## Enums
 
@@ -16,33 +25,33 @@
     WorldPosition // origin uses `worldPosition` directly`
 - `DirectionMode`: `Forward`, `Up`, `Down`, `Right`, `Left`, `CustomVector`, `TowardTarget`
 
-## Key fields
+## Field guide
 
-- `enabled` — Enable or disable this part of the component.
-- `sensorEntity` — Field of type `EntityId` used by systems that consume this component.
-- `raycastCategory` — Field of type `std::string` used by systems that consume this component.
-- `raycastLayer` — Layer or filtering control.
-- `originMode` — Field of type `OriginMode` used by systems that consume this component.
-- `originEntity` — Field of type `EntityId` used by systems that consume this component.
-- `localOffset` — Spatial placement or relative offset.
-- `hasWorldPosition` — Spatial placement or relative offset.
-- `worldPosition` — Spatial placement or relative offset.
-- `directionMode` — Field of type `DirectionMode` used by systems that consume this component.
-- `customDirection` — Field of type `math::Vec3` used by systems that consume this component.
-- `towardTargetEntity` — Reference to another entity or input source.
-- `towardTargetOffset` — Spatial placement or relative offset.
-- `length` — Field of type `float` used by systems that consume this component.
+- `enabled` — Master on/off switch or similar behavior flag.
+- `sensorEntity` — Field of type `EntityId` consumed by systems that read this component.
+- `raycastCategory` — Field of type `std::string` consumed by systems that read this component.
+- `raycastLayer` — Enum or bitmask value that changes system behavior.
+- `originMode` — Enum or bitmask value that changes system behavior.
+- `originEntity` — Field of type `EntityId` consumed by systems that read this component.
+- `localOffset` — Spatial placement or directional tuning.
+- `hasWorldPosition` — Spatial placement or directional tuning.
+- `worldPosition` — Spatial placement or directional tuning.
+- `directionMode` — Spatial placement or directional tuning.
+- `customDirection` — Spatial placement or directional tuning.
+- `towardTargetEntity` — Reference to another entity or a linked runtime object.
+- `towardTargetOffset` — Spatial placement or directional tuning.
+- `length` — Size, reach, or distance tuning.
 - `radius` — Size, reach, or distance tuning.
-- `collisionLayers` — Layer or filtering control.
-- `ignoreLayers` — Layer or filtering control.
-- `ignoreTriggerColliders` — Field of type `bool` used by systems that consume this component.
-- `ignoreSelf` — Field of type `bool` used by systems that consume this component.
-- `maxHits` — Field of type `int` used by systems that consume this component.
-- `continuous` — Field of type `bool` used by systems that consume this component.
-- `debugDraw` — Field of type `bool` used by systems that consume this component.
-- `debugColor` — Color or tint control.
-- `debugDurationSeconds` — Field of type `float` used by systems that consume this component.
-- `hitResults` — Field of type `std::vector<physics::RaycastHit>` used by systems that consume this component.
+- `collisionLayers` — Enum or bitmask value that changes system behavior.
+- `ignoreLayers` — Enum or bitmask value that changes system behavior.
+- `ignoreTriggerColliders` — Stable reference used by content, loaders, or rendering systems.
+- `ignoreSelf` — Field of type `bool` consumed by systems that read this component.
+- `maxHits` — Field of type `int` consumed by systems that read this component.
+- `continuous` — Field of type `bool` consumed by systems that read this component.
+- `debugDraw` — Field of type `bool` consumed by systems that read this component.
+- `debugColor` — Color, tint, or display styling.
+- `debugDurationSeconds` — Field of type `float` consumed by systems that read this component.
+- `hitResults` — Field of type `std::vector<physics::RaycastHit>` consumed by systems that read this component.
 
 ## Example
 
@@ -51,7 +60,12 @@ auto& component = registry.emplace<ecs::RaycastComponent>(entity);
 component = ecs::RaycastComponent{};
 ```
 
+## Common pairings
+
+- Pair `RaycastComponent` with the system that owns the simulation or rendering work for this data.
+- If the component needs to be created from content, add a factory or chunk entry for it.
+
 ## Notes
 
-- Keep `RaycastComponent` focused on data so systems can stay deterministic and easy to extend.
-- Add a system or factory that reads this component instead of putting behavior into the component itself.
+- Keep `RaycastComponent` focused on data so systems stay deterministic and easy to extend.
+- Update the docs and the matching system together whenever you add a new field.

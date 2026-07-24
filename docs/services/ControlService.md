@@ -1,12 +1,20 @@
 # ControlService
 
-## Purpose
+## What it is
 
-- ControlService provides reusable engine behavior.
+- ControlService (demo-focused)
+- Converts input (currently line commands from TickContext) into a simple control state
+- that ControllerSystem can apply to ControllerComponents.
 
-## Use when
+## When to use it
 
-- Converts command-style or realtime input into a control state that gameplay systems can consume.
+- Use this to bridge raw commands or realtime input into the rest of the ECS game loop.
+
+## Lifecycle
+
+- Identify which part of the engine owns the work, then start or construct the service in that layer.
+- Feed the service the data it needs each frame, tick, or load step.
+- Let the service manage the reusable policy instead of repeating that policy in every gameplay system.
 
 ## Example
 
@@ -16,6 +24,10 @@ controls.update(ctx);
 auto state = controls.state();
 ```
 
+## How it connects
+
+- Integrate `ControlService` where that responsibility belongs in the engine boundary.
+
 ## Notes
 
-- This is a good boundary between text commands, controller input, and ECS control components.
+- This keeps input parsing out of movement and combat systems.

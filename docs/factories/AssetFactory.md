@@ -1,16 +1,21 @@
 # AssetFactory
 
-## Purpose
+## What it is
 
-- AssetFactory creates entities from data-driven config.
+- AssetFactory turns chunk JSON into live ECS entities.
 
-## Use when
+## When to use it
 
-- Reserved for non-character scene assets or reusable authored content that should still be created through the factory pipeline.
+- Use this for props, markers, or scene content that should be chunk-spawned but does not need custom gameplay logic yet.
+
+## How it fits
+
+- Chunk loading reads the JSON entry, picks a factory key, and passes the `config` object to the matching `IEntityFactory`.
+- The factory owns entity creation details so chunk content can stay declarative.
 
 ## Config fields
 
-- This factory currently exposes a minimal config surface in the header.
+- The config is currently minimal in the header, so the JSON contract is mostly defined in the factory implementation.
 
 ## Example JSON
 
@@ -23,6 +28,13 @@
 }
 ```
 
+## Adding a new field
+
+- Add the setting to `AssetConfig` first.
+- Parse the JSON in the factory implementation.
+- Add an example chunk entry so future content authors can copy the pattern.
+- Update `FactoryKeyService` if the new factory needs a new key.
+
 ## Notes
 
-- This is useful for props, markers, and authored objects that should participate in chunk loading but not gameplay rules.
+- This is a good place for authoring content that may later grow into a richer factory-specific type.
