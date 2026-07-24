@@ -40,6 +40,7 @@ add_executable(duppy
   src/ecs/factories/EntityFactory.cpp
   src/ecs/factories/FactoryKeyService.cpp
   src/ecs/factories/TerrainFactory.cpp
+  src/ecs/factories/VfxFactory.cpp
   src/ecs/factories/WeaponFactory.cpp
   src/ecs/services/IKService.cpp
   src/ecs/services/ChunkStreamingService.cpp

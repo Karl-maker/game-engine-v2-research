@@ -26,7 +26,7 @@
 namespace core {
 
 struct GameLoopConfig {
-  double targetFps = 60.0;
+  double targetFps = 144.0;
   bool capFrameRate = true;
 };
 

@@ -22,6 +22,7 @@
 #include "ecs/components/RigidbodyComponent.h"
 #include "ecs/components/SensorComponent.h"
 #include "ecs/components/ShaderComponent.h"
+#include "ecs/components/VfxComponent.h"
 #include "ecs/components/StatsComponent.h"
 #include "ecs/components/SkyComponent.h"
 #include "ecs/components/TerrainComponent.h"
@@ -474,6 +475,62 @@ void GameplayDemoGame::onStart() {
     sh.receiveShadows = false;
     sh.castShadows = false;
     sh.textures.push_back({"grass_tex0", render::AssetRef{true, "assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0}, true});
+  }
+
+  // VFX examples: fire, electricity, and sparks.
+  {
+    const ecs::EntityId fire = m_registry.createEntity("campfire_vfx");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(fire);
+    tr.position = {2.0f, 0.0f, 2.0f};
+    tr.scale = {1.0f, 1.0f, 1.0f};
+    auto& vfx = m_registry.emplace<ecs::VfxComponent>(fire);
+    vfx.type = ecs::VfxComponent::Type::Fire;
+    vfx.quality = ecs::VfxComponent::Quality::Ultra;
+    vfx.maxRenderDistance = 96.0f;
+    vfx.spawnRate = 30.0f;
+    vfx.lifetimeSeconds = 1.15f;
+    vfx.sizeMeters = 0.42f;
+    vfx.heightMeters = 1.6f;
+    vfx.spreadRadiusMeters = 0.55f;
+    vfx.flickerStrength = 0.40f;
+    vfx.flickerSpeed = 9.0f;
+    vfx.primaryColor = {1.0f, 0.45f, 0.08f, 1.0f};
+    vfx.secondaryColor = {1.0f, 0.92f, 0.45f, 1.0f};
+  }
+  {
+    const ecs::EntityId arc = m_registry.createEntity("electric_arc_vfx");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(arc);
+    tr.position = {-3.0f, 1.5f, 4.5f};
+    tr.rotation = {0.0f, 35.0f, 0.0f};
+    auto& vfx = m_registry.emplace<ecs::VfxComponent>(arc);
+    vfx.type = ecs::VfxComponent::Type::Electricity;
+    vfx.quality = ecs::VfxComponent::Quality::High;
+    vfx.maxRenderDistance = 120.0f;
+    vfx.chargeLengthMeters = 4.5f;
+    vfx.arcJitter = 0.6f;
+    vfx.branchCount = 5;
+    vfx.segmentCount = 9;
+    vfx.pulseSpeed = 16.0f;
+    vfx.sizeMeters = 0.20f;
+    vfx.primaryColor = {0.35f, 0.85f, 1.0f, 1.0f};
+    vfx.secondaryColor = {0.9f, 1.0f, 1.0f, 1.0f};
+  }
+  {
+    const ecs::EntityId sparks = m_registry.createEntity("sparks_vfx");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(sparks);
+    tr.position = {0.0f, 1.2f, 3.5f};
+    auto& vfx = m_registry.emplace<ecs::VfxComponent>(sparks);
+    vfx.type = ecs::VfxComponent::Type::Sparks;
+    vfx.quality = ecs::VfxComponent::Quality::High;
+    vfx.maxRenderDistance = 88.0f;
+    vfx.sparkCount = 24;
+    vfx.spawnRate = 18.0f;
+    vfx.sizeMeters = 0.16f;
+    vfx.speedMetersPerSecond = 7.5f;
+    vfx.sparkTrailLengthMeters = 0.75f;
+    vfx.sparkFadeSeconds = 0.20f;
+    vfx.primaryColor = {1.0f, 0.65f, 0.15f, 1.0f};
+    vfx.secondaryColor = {1.0f, 0.95f, 0.70f, 1.0f};
   }
 
   m_light = m_registry.createEntity("sun");

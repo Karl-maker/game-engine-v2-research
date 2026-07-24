@@ -232,6 +232,78 @@ struct DebugLineVert final {
   float a;
 };
 
+struct VfxVert final {
+  float x;
+  float y;
+  float z;
+  float r;
+  float g;
+  float b;
+  float a;
+  float size;
+  float kind;
+  float seed;
+};
+
+static float fract01(float value) {
+  return value - std::floor(value);
+}
+
+static std::uint32_t hashU32(std::uint32_t value) {
+  value ^= value >> 16;
+  value *= 0x7feb352du;
+  value ^= value >> 15;
+  value *= 0x846ca68bu;
+  value ^= value >> 16;
+  return value;
+}
+
+static float hash01(std::uint32_t value) { return static_cast<float>(hashU32(value)) / 4294967295.0f; }
+
+static math::Vec3 rotateVecDeg(const math::Vec3& v, const math::Vec3& rotationDeg) {
+  constexpr float kPi = 3.14159265358979323846f;
+  constexpr float kDegToRad = kPi / 180.0f;
+  const float rx = rotationDeg.x * kDegToRad;
+  const float ry = rotationDeg.y * kDegToRad;
+  const float rz = rotationDeg.z * kDegToRad;
+
+  const float cx = std::cos(rx);
+  const float sx = std::sin(rx);
+  const float cy = std::cos(ry);
+  const float sy = std::sin(ry);
+  const float cz = std::cos(rz);
+  const float sz = std::sin(rz);
+
+  math::Vec3 out = v;
+  out = {out.x, out.y * cx - out.z * sx, out.y * sx + out.z * cx};
+  out = {out.x * cy + out.z * sy, out.y, -out.x * sy + out.z * cy};
+  out = {out.x * cz - out.y * sz, out.x * sz + out.y * cz, out.z};
+  return out;
+}
+
+static math::Vec3 vfxBasisRight(const math::Vec3& rotationDeg) { return math::normalize(rotateVecDeg({1.0f, 0.0f, 0.0f}, rotationDeg)); }
+static math::Vec3 vfxBasisUp(const math::Vec3& rotationDeg) { return math::normalize(rotateVecDeg({0.0f, 1.0f, 0.0f}, rotationDeg)); }
+static math::Vec3 vfxBasisForward(const math::Vec3& rotationDeg) { return math::normalize(rotateVecDeg({0.0f, 0.0f, 1.0f}, rotationDeg)); }
+
+static float vfxQualityScale(ecs::VfxComponent::Quality quality) {
+  switch (quality) {
+    case ecs::VfxComponent::Quality::Low: return 0.45f;
+    case ecs::VfxComponent::Quality::Medium: return 0.75f;
+    case ecs::VfxComponent::Quality::High: return 1.0f;
+    case ecs::VfxComponent::Quality::Ultra: return 1.4f;
+  }
+  return 1.0f;
+}
+
+static int vfxLODLevel(const ecs::systems::GraphicsSystem::FrameSnapshot::VfxDraw& vfx, float dist) {
+  if (dist < vfx.lodForceNearDistance) return 3;
+  if (dist < vfx.lodNearDistance) return 3;
+  if (dist < vfx.lodMidDistance) return 2;
+  if (dist < vfx.lodFarDistance) return 1;
+  if (dist < vfx.lodUltraDistance) return 0;
+  return 0;
+}
+
 // 5x7 font. 96 glyphs for ASCII 32..127. Each glyph = 7 rows, 5 bits per row.
 // Public-domain style table (compact).
 static const unsigned char kFont5x7[96][7] = {
@@ -676,6 +748,107 @@ bool OpenGlRenderer::start(const WindowConfig& cfg, const char* title) {
     m_debugLineCapacityVerts = 0;
   }
 
+  // World-space VFX point-sprite program.
+  {
+    const std::string vsSrc =
+        "#version 410 core\n"
+        "layout(location=0) in vec3 a_Pos;\n"
+        "layout(location=1) in vec4 a_Color;\n"
+        "layout(location=2) in float a_Size;\n"
+        "layout(location=3) in float a_Kind;\n"
+        "layout(location=4) in float a_Seed;\n"
+        "uniform mat4 u_ViewProj;\n"
+        "uniform float u_PointScale;\n"
+        "out vec4 v_Color;\n"
+        "out float v_Kind;\n"
+        "out float v_Seed;\n"
+        "void main(){\n"
+        "  vec4 clip = u_ViewProj * vec4(a_Pos, 1.0);\n"
+        "  gl_Position = clip;\n"
+        "  float depth = max(0.15, -clip.w);\n"
+        "  gl_PointSize = clamp((a_Size * u_PointScale) / depth, 1.5, 140.0);\n"
+        "  v_Color = a_Color;\n"
+        "  v_Kind = a_Kind;\n"
+        "  v_Seed = a_Seed;\n"
+        "}\n";
+    const std::string fsSrc =
+        "#version 410 core\n"
+        "in vec4 v_Color;\n"
+        "in float v_Kind;\n"
+        "in float v_Seed;\n"
+        "uniform float u_Time;\n"
+        "out vec4 o_Color;\n"
+        "float hash11(float p){ return fract(sin(p * 91.7) * 43758.5453); }\n"
+        "void main(){\n"
+        "  vec2 uv = gl_PointCoord * 2.0 - 1.0;\n"
+        "  float d = length(uv);\n"
+        "  float alpha = smoothstep(1.0, 0.0, d);\n"
+        "  vec3 col = v_Color.rgb;\n"
+        "  if (v_Kind < 0.5) {\n"
+        "    float flicker = 0.72 + 0.28 * sin(u_Time * 8.0 + v_Seed * 19.0);\n"
+        "    float plume = smoothstep(1.0, -0.25, uv.y);\n"
+        "    col = mix(col, vec3(1.0, 0.85, 0.35), 0.45 + 0.25 * flicker);\n"
+        "    alpha *= plume * flicker;\n"
+        "  } else if (v_Kind < 1.5) {\n"
+        "    float sparkle = 0.65 + 0.35 * sin(u_Time * 24.0 + v_Seed * 31.0);\n"
+        "    float core = smoothstep(0.55, 0.0, d);\n"
+        "    col = mix(col, vec3(0.75, 0.9, 1.45), 0.55);\n"
+        "    alpha *= core * sparkle;\n"
+        "  } else if (v_Kind < 2.5) {\n"
+        "    float glint = 0.75 + 0.25 * sin(u_Time * 16.0 + v_Seed * 11.0);\n"
+        "    col = mix(col, vec3(1.0, 1.0, 0.9), 0.25);\n"
+        "    alpha *= glint;\n"
+        "  } else if (v_Kind < 3.5) {\n"
+        "    col *= vec3(0.75, 0.78, 0.82);\n"
+        "    alpha *= 0.65;\n"
+        "  } else {\n"
+        "    col *= vec3(0.85, 0.92, 1.0);\n"
+        "    alpha *= 0.75;\n"
+        "  }\n"
+        "  if (alpha <= 0.01) discard;\n"
+        "  o_Color = vec4(col, v_Color.a * alpha);\n"
+        "}\n";
+
+    std::string err;
+    const GLuint vs = compileGlShader(GL_VERTEX_SHADER, vsSrc, &err);
+    if (!vs) {
+      std::cerr << "VFX vertex shader compile failed:\n" << err << "\n";
+      return true;
+    }
+    const GLuint fs = compileGlShader(GL_FRAGMENT_SHADER, fsSrc, &err);
+    if (!fs) {
+      std::cerr << "VFX fragment shader compile failed:\n" << err << "\n";
+      glDeleteShader(vs);
+      return true;
+    }
+    const GLuint prog = linkGlProgram(vs, fs, &err);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    if (!prog) {
+      std::cerr << "VFX program link failed:\n" << err << "\n";
+      return true;
+    }
+    m_vfxProgram = prog;
+
+    glGenVertexArrays(1, &m_vfxVao);
+    glGenBuffers(1, &m_vfxVbo);
+    glBindVertexArray(m_vfxVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vfxVbo);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VfxVert), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(VfxVert), reinterpret_cast<void*>(sizeof(float) * 3));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(VfxVert), reinterpret_cast<void*>(sizeof(float) * 7));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(VfxVert), reinterpret_cast<void*>(sizeof(float) * 8));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(VfxVert), reinterpret_cast<void*>(sizeof(float) * 9));
+    glBindVertexArray(0);
+    m_vfxCapacityVerts = 0;
+  }
+
   // Sky VAO (core profile requires a VAO even for gl_VertexID fullscreen triangles).
   glGenVertexArrays(1, &m_skyVao);
 
@@ -742,6 +915,9 @@ void OpenGlRenderer::stop() {
   if (m_debugLineVbo) glDeleteBuffers(1, &m_debugLineVbo);
   if (m_debugLineVao) glDeleteVertexArrays(1, &m_debugLineVao);
   if (m_debugLineProgram) glDeleteProgram(m_debugLineProgram);
+  if (m_vfxVbo) glDeleteBuffers(1, &m_vfxVbo);
+  if (m_vfxVao) glDeleteVertexArrays(1, &m_vfxVao);
+  if (m_vfxProgram) glDeleteProgram(m_vfxProgram);
   m_overlayVbo = 0;
   m_overlayVao = 0;
   m_overlayProgram = 0;
@@ -750,6 +926,10 @@ void OpenGlRenderer::stop() {
   m_debugLineVao = 0;
   m_debugLineProgram = 0;
   m_debugLineCapacityVerts = 0;
+  m_vfxVbo = 0;
+  m_vfxVao = 0;
+  m_vfxProgram = 0;
+  m_vfxCapacityVerts = 0;
   m_skyVao = 0;
 
   if (m_window) {
@@ -2949,7 +3129,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   }
 
 	  // Rocks pass (true 3D instances).
-	  for (const auto& r : frame.rocks) {
+  for (const auto& r : frame.rocks) {
     const ShaderService::Program* program = m_shaders.getOrCreate(r.shader.key);
     if (!program || !program->programId) continue;
 
@@ -3031,6 +3211,197 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     }
 
     glBindVertexArray(0);
+  }
+
+  // VFX pass.
+  if (!frame.vfx.empty() && m_vfxProgram && m_vfxVao && m_vfxVbo) {
+    std::vector<VfxVert> verts;
+    verts.reserve(frame.vfx.size() * 96);
+
+    const float timeSeconds = static_cast<float>(glfwGetTime());
+    const math::Vec3 camFwd = math::normalize(frame.camera.forward);
+    math::Vec3 camRight = math::normalize(math::cross(camFwd, {0.0f, 1.0f, 0.0f}));
+    if (math::lengthSq(camRight) < 1e-6f) camRight = {1.0f, 0.0f, 0.0f};
+
+    auto pushPoint = [&](const math::Vec3& pos, const render::Color& color, float sizeMeters, float kind, float seed) {
+      verts.push_back({pos.x, pos.y, pos.z, color.r, color.g, color.b, color.a, sizeMeters, kind, seed});
+    };
+
+    for (const auto& vfx : frame.vfx) {
+      if (!vfx.enabled) continue;
+
+      const math::Vec3 emitterRight = vfxBasisRight(vfx.rotation);
+      const math::Vec3 emitterUp = vfxBasisUp(vfx.rotation);
+      const math::Vec3 emitterForward = vfxBasisForward(vfx.rotation);
+      const float scaleMeters = std::max(0.05f, std::max({std::abs(vfx.scale.x), std::abs(vfx.scale.y), std::abs(vfx.scale.z)}));
+      const math::Vec3 emitterPos = vfx.position + emitterUp * (0.05f * scaleMeters);
+      const math::Vec3 toCamera = frame.camera.position - emitterPos;
+      const float dist = math::length(toCamera);
+      if (dist > std::max(1.0f, vfx.maxRenderDistance)) continue;
+      if (dist > vfx.lodFarDistance) {
+        const math::Vec3 dirToCamera = math::normalize(toCamera);
+        const float viewDot = math::dot(dirToCamera, camFwd);
+        if (viewDot < vfx.viewDotBias) continue;
+      }
+
+      const int lodLevel = vfxLODLevel(vfx, dist);
+      const ecs::VfxComponent::Quality effectiveQuality = vfx.autoQuality
+                                                               ? (lodLevel >= 3 ? ecs::VfxComponent::Quality::Ultra
+                                                                                : lodLevel == 2 ? ecs::VfxComponent::Quality::High
+                                                                                                : lodLevel == 1 ? ecs::VfxComponent::Quality::Medium
+                                                                                                                : ecs::VfxComponent::Quality::Low)
+                                                               : vfx.quality;
+      const float qualityScale = vfxQualityScale(effectiveQuality);
+      const float lodScale = (dist < vfx.lodNearDistance) ? 1.35f : (dist < vfx.lodMidDistance) ? 1.0f
+                                  : (dist < vfx.lodFarDistance)                                     ? 0.70f
+                                                                                                 : 0.45f;
+      const float budgetScale = std::max(0.2f, qualityScale * lodScale);
+      const float intensityScale = std::max(0.0f, vfx.intensity);
+
+      switch (vfx.type) {
+        case ecs::VfxComponent::Type::Fire: {
+          const int particleCount = std::max(8, static_cast<int>(std::round((18.0f + vfx.spawnRate * 2.0f) * budgetScale * intensityScale)));
+          for (int i = 0; i < particleCount; ++i) {
+            const std::uint32_t base = hashU32(vfx.seed + static_cast<std::uint32_t>(i) * 1664525u);
+            const float phase = fract01(timeSeconds * std::max(0.1f, vfx.spawnRate) + hash01(base));
+            const float flicker = 0.85f + 0.15f * std::sin(timeSeconds * vfx.flickerSpeed + hash01(base + 3u) * 12.0f);
+            const float radius = vfx.spreadRadiusMeters * scaleMeters * (0.25f + 0.75f * hash01(base + 5u));
+            const float height = vfx.heightMeters * scaleMeters;
+            const float up = phase * height;
+            const float wobble = (hash01(base + 7u) - 0.5f) * 2.0f * vfx.heatHazeStrength * scaleMeters;
+            const math::Vec3 pos = emitterPos + emitterUp * up + emitterRight * (std::sin(timeSeconds * 3.0f + phase * 7.0f + hash01(base + 1u) * 6.0f) * radius) +
+                                   emitterForward * (std::cos(timeSeconds * 2.7f + phase * 5.0f + hash01(base + 2u) * 6.0f) * radius) +
+                                   emitterUp * wobble;
+            const float mixT = std::clamp(phase * 1.15f, 0.0f, 1.0f);
+            const render::Color color{
+                vfx.primaryColor.r * (1.0f - mixT) + vfx.secondaryColor.r * mixT,
+                vfx.primaryColor.g * (1.0f - mixT) + vfx.secondaryColor.g * mixT,
+                vfx.primaryColor.b * (1.0f - mixT) + vfx.secondaryColor.b * mixT,
+                vfx.primaryColor.a * flicker};
+            const float sizeMeters = std::max(0.02f, vfx.sizeMeters * scaleMeters * (0.35f + 0.65f * (1.0f - phase)) *
+                                                           (0.70f + 0.30f * hash01(base + 4u)));
+            pushPoint(pos, color, sizeMeters, 0.0f, static_cast<float>(base));
+          }
+          break;
+        }
+        case ecs::VfxComponent::Type::Electricity: {
+          const int branches = std::max(1, static_cast<int>(std::round(vfx.branchCount * budgetScale * intensityScale)));
+          const int segments = std::max(3, static_cast<int>(std::round(vfx.segmentCount * std::max(0.65f, budgetScale))));
+          for (int b = 0; b < branches; ++b) {
+            const std::uint32_t base = hashU32(vfx.seed + static_cast<std::uint32_t>(b) * 374761393u);
+            const float branchPhase = hash01(base + 1u);
+            const math::Vec3 branchEnd =
+                emitterPos + emitterForward * (vfx.chargeLengthMeters * scaleMeters) +
+                emitterRight * ((branchPhase - 0.5f) * 2.0f * vfx.arcJitter * scaleMeters) +
+                emitterUp * ((hash01(base + 2u) - 0.5f) * 2.0f * vfx.arcJitter * 0.7f * scaleMeters);
+            for (int s = 0; s <= segments; ++s) {
+              const float t = static_cast<float>(s) / static_cast<float>(segments);
+              const math::Vec3 basePos = emitterPos * (1.0f - t) + branchEnd * t;
+              const float waveA = std::sin(timeSeconds * vfx.pulseSpeed + t * 11.0f + branchPhase * 8.0f);
+              const float waveB = std::cos(timeSeconds * (vfx.pulseSpeed * 0.71f) + t * 17.0f + hash01(base + 3u) * 9.0f);
+              const float jitter = (hash01(base + static_cast<std::uint32_t>(s) + 9u) - 0.5f) * 2.0f;
+              const math::Vec3 pos = basePos + emitterRight * (waveA * vfx.arcJitter * scaleMeters * 0.55f + jitter * 0.04f * scaleMeters) +
+                                     emitterUp * (waveB * vfx.arcJitter * scaleMeters * 0.35f);
+              const float lineSize = std::max(0.03f, vfx.sizeMeters * scaleMeters * 0.34f * (1.0f - 0.55f * t));
+              const float alpha = (0.70f + 0.30f * std::sin(timeSeconds * 20.0f + t * 4.0f + branchPhase * 10.0f));
+              const render::Color color{
+                  vfx.primaryColor.r * 0.45f + vfx.secondaryColor.r * 0.55f,
+                  vfx.primaryColor.g * 0.55f + vfx.secondaryColor.g * 0.45f,
+                  vfx.primaryColor.b * 0.85f + vfx.secondaryColor.b * 0.15f,
+                  vfx.primaryColor.a * alpha};
+              pushPoint(pos, color, lineSize, 1.0f, static_cast<float>(base ^ static_cast<std::uint32_t>(s)));
+            }
+          }
+          break;
+        }
+        case ecs::VfxComponent::Type::Sparks: {
+          const int sparkCount = std::max(4, static_cast<int>(std::round(vfx.sparkCount * budgetScale * intensityScale)));
+          for (int i = 0; i < sparkCount; ++i) {
+            const std::uint32_t base = hashU32(vfx.seed + static_cast<std::uint32_t>(i) * 2246822519u);
+            const float phase = fract01(timeSeconds * std::max(0.1f, vfx.spawnRate) + hash01(base));
+            const float spread = vfx.sparkSpreadDegrees * 3.14159265358979323846f / 180.0f;
+            const float yaw = (hash01(base + 1u) * 2.0f - 1.0f) * spread;
+            const float pitch = (hash01(base + 2u) * 2.0f - 1.0f) * spread * 0.55f;
+            const math::Vec3 dir = math::normalize(
+                emitterForward * std::cos(pitch) * std::cos(yaw) + emitterRight * std::sin(yaw) + emitterUp * std::sin(pitch) +
+                emitterUp * vfx.upwardBias);
+            const float velocity = vfx.speedMetersPerSecond * scaleMeters * (0.45f + hash01(base + 3u)) * std::max(0.35f, budgetScale);
+            const float arc = phase * vfx.sparkTrailLengthMeters * scaleMeters;
+            const math::Vec3 pos = emitterPos + dir * (velocity * phase * 0.7f) + emitterUp * (arc * 0.45f) -
+                                   emitterUp * (vfx.gravityScale * 0.6f * phase * phase * scaleMeters);
+            const float fade = std::max(0.0f, 1.0f - phase / std::max(0.01f, vfx.sparkFadeSeconds));
+            const render::Color color{
+                vfx.secondaryColor.r,
+                vfx.secondaryColor.g * 0.95f,
+                vfx.primaryColor.b + 0.15f,
+                vfx.primaryColor.a * fade};
+            pushPoint(pos, color, vfx.sizeMeters * scaleMeters * (0.20f + 0.30f * fade), 2.0f, static_cast<float>(base));
+          }
+          break;
+        }
+        case ecs::VfxComponent::Type::Smoke: {
+          const int particleCount = std::max(6, static_cast<int>(std::round((12.0f + vfx.spawnRate) * budgetScale * intensityScale)));
+          for (int i = 0; i < particleCount; ++i) {
+            const std::uint32_t base = hashU32(vfx.seed + static_cast<std::uint32_t>(i) * 747796405u);
+            const float phase = fract01(timeSeconds * std::max(0.08f, vfx.spawnRate * 0.25f) + hash01(base));
+            const float radius = vfx.spreadRadiusMeters * scaleMeters * (0.5f + hash01(base + 1u));
+            const math::Vec3 pos = emitterPos + emitterUp * (phase * vfx.heightMeters * scaleMeters * 0.9f) +
+                                   emitterRight * ((hash01(base + 2u) - 0.5f) * radius) +
+                                   emitterForward * ((hash01(base + 3u) - 0.5f) * radius);
+            const float grey = 0.28f + 0.18f * hash01(base + 4u);
+            const render::Color color{grey, grey * 1.02f, grey * 1.06f, 0.55f * (1.0f - phase)};
+            pushPoint(pos, color, vfx.sizeMeters * scaleMeters * (0.8f + 1.2f * phase), 3.0f, static_cast<float>(base));
+          }
+          break;
+        }
+        case ecs::VfxComponent::Type::Steam: {
+          const int particleCount = std::max(6, static_cast<int>(std::round((10.0f + vfx.spawnRate) * budgetScale * intensityScale)));
+          for (int i = 0; i < particleCount; ++i) {
+            const std::uint32_t base = hashU32(vfx.seed + static_cast<std::uint32_t>(i) * 3266489917u);
+            const float phase = fract01(timeSeconds * std::max(0.08f, vfx.spawnRate * 0.35f) + hash01(base));
+            const float radius = vfx.spreadRadiusMeters * scaleMeters * (0.3f + 0.7f * hash01(base + 1u));
+            const math::Vec3 pos = emitterPos + emitterUp * (phase * vfx.heightMeters * scaleMeters * 1.05f) +
+                                   emitterRight * ((hash01(base + 2u) - 0.5f) * radius) +
+                                   emitterForward * ((hash01(base + 3u) - 0.5f) * radius);
+            const render::Color color{0.82f, 0.88f, 0.95f, 0.38f * (1.0f - phase)};
+            pushPoint(pos, color, vfx.sizeMeters * scaleMeters * (1.0f + 1.25f * phase), 4.0f, static_cast<float>(base));
+          }
+          break;
+        }
+      }
+    }
+
+    if (!verts.empty()) {
+      glUseProgram(m_vfxProgram);
+      const GLint locViewProj = glGetUniformLocation(m_vfxProgram, "u_ViewProj");
+      if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
+      const GLint locTime = glGetUniformLocation(m_vfxProgram, "u_Time");
+      if (locTime >= 0) glUniform1f(locTime, timeSeconds);
+      const float pointScale = static_cast<float>(std::max(1, sceneH)) * 0.55f;
+      const GLint locPointScale = glGetUniformLocation(m_vfxProgram, "u_PointScale");
+      if (locPointScale >= 0) glUniform1f(locPointScale, pointScale);
+
+      glEnable(GL_PROGRAM_POINT_SIZE);
+      glDisable(GL_CULL_FACE);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+      glEnable(GL_DEPTH_TEST);
+      glDepthMask(GL_FALSE);
+
+      glBindVertexArray(m_vfxVao);
+      glBindBuffer(GL_ARRAY_BUFFER, m_vfxVbo);
+      if (verts.size() > m_vfxCapacityVerts) {
+        m_vfxCapacityVerts = std::max<std::size_t>(verts.size(), m_vfxCapacityVerts * 2 + 128);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(m_vfxCapacityVerts * sizeof(VfxVert)), nullptr, GL_DYNAMIC_DRAW);
+      }
+      glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(verts.size() * sizeof(VfxVert)), verts.data());
+      glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(verts.size()));
+      glBindVertexArray(0);
+      glDepthMask(GL_TRUE);
+      glDisable(GL_BLEND);
+      glDisable(GL_PROGRAM_POINT_SIZE);
+      glEnable(GL_CULL_FACE);
+    }
   }
 
   // World-space debug lines.

@@ -11,11 +11,13 @@
 #include "ecs/factories/CharacterFactory.h"
 #include "ecs/factories/EnemyFactory.h"
 #include "ecs/factories/EntityFactory.h"
+#include "ecs/factories/VfxFactory.h"
 #include "ecs/factories/TerrainFactory.h"
 #include "ecs/factories/WeaponFactory.h"
 #include "ecs/services/IEntityFactory.h"
 
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <string>
 
@@ -31,6 +33,50 @@ math::Vec3 readWorldOrLocalPosition(const data::JsonValue::Object& obj, const Fa
     if (data::readVec3(*v, local)) position = ctx.chunkOriginWorld + local;
   }
   return position;
+}
+
+render::Color readColorOr(const data::JsonValue::Object& obj, const char* key, const render::Color& fallback) {
+  render::Color out = fallback;
+  const auto* v = data::getObjectKey(obj, key);
+  if (!v) return out;
+  if (const auto* a = v->tryArray()) {
+    if (a->size() >= 3) {
+      float r = out.r;
+      float g = out.g;
+      float b = out.b;
+      float alpha = out.a;
+      (void)data::readFloat((*a)[0], r);
+      (void)data::readFloat((*a)[1], g);
+      (void)data::readFloat((*a)[2], b);
+      if (a->size() > 3) (void)data::readFloat((*a)[3], alpha);
+      out = {r, g, b, alpha};
+    }
+    return out;
+  }
+  if (const auto* o = v->tryObject()) {
+    if (const auto* c = data::getObjectKey(*o, "r")) (void)data::readFloat(*c, out.r);
+    if (const auto* c = data::getObjectKey(*o, "g")) (void)data::readFloat(*c, out.g);
+    if (const auto* c = data::getObjectKey(*o, "b")) (void)data::readFloat(*c, out.b);
+    if (const auto* c = data::getObjectKey(*o, "a")) (void)data::readFloat(*c, out.a);
+  }
+  return out;
+}
+
+ecs::VfxComponent::Type parseVfxType(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "electricity" || value == "lightning" || value == "electric") return ecs::VfxComponent::Type::Electricity;
+  if (value == "sparks" || value == "spark") return ecs::VfxComponent::Type::Sparks;
+  if (value == "smoke") return ecs::VfxComponent::Type::Smoke;
+  if (value == "steam") return ecs::VfxComponent::Type::Steam;
+  return ecs::VfxComponent::Type::Fire;
+}
+
+ecs::VfxComponent::Quality parseVfxQuality(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "low") return ecs::VfxComponent::Quality::Low;
+  if (value == "medium") return ecs::VfxComponent::Quality::Medium;
+  if (value == "ultra") return ecs::VfxComponent::Quality::Ultra;
+  return ecs::VfxComponent::Quality::High;
 }
 
 class EntityJsonFactory final : public IEntityFactory {
@@ -149,6 +195,79 @@ class TerrainJsonFactory final : public IEntityFactory {
   }
 };
 
+class VfxJsonFactory final : public IEntityFactory {
+ public:
+  EntityId create(EntityRegistry& registry, const data::JsonValue& config, const FactoryContext& ctx) override {
+    VfxConfig vcfg{};
+
+    if (const auto* obj = config.tryObject()) {
+      vcfg.name = data::getStringOr(*obj, "name", "vfx");
+      vcfg.position = readWorldOrLocalPosition(*obj, ctx);
+      if (const auto* v = data::getObjectKey(*obj, "rotationDeg")) (void)data::readVec3(*v, vcfg.rotationDeg);
+      if (const auto* v = data::getObjectKey(*obj, "scale")) (void)data::readVec3(*v, vcfg.scale);
+
+      if (const auto* v = data::getObjectKey(*obj, "type")) {
+        std::string s;
+        if (data::readString(*v, s)) vcfg.component.type = parseVfxType(std::move(s));
+      }
+      if (const auto* v = data::getObjectKey(*obj, "quality")) {
+        std::string s;
+        if (data::readString(*v, s)) vcfg.component.quality = parseVfxQuality(std::move(s));
+      }
+
+      vcfg.component.enabled = data::getBoolOr(*obj, "enabled", vcfg.component.enabled);
+      vcfg.component.autoQuality = data::getBoolOr(*obj, "autoQuality", vcfg.component.autoQuality);
+      vcfg.component.maxRenderDistance = data::getFloatOr(*obj, "maxRenderDistance", vcfg.component.maxRenderDistance);
+      vcfg.component.lodNearDistance = data::getFloatOr(*obj, "lodNearDistance", vcfg.component.lodNearDistance);
+      vcfg.component.lodMidDistance = data::getFloatOr(*obj, "lodMidDistance", vcfg.component.lodMidDistance);
+      vcfg.component.lodFarDistance = data::getFloatOr(*obj, "lodFarDistance", vcfg.component.lodFarDistance);
+      vcfg.component.lodUltraDistance = data::getFloatOr(*obj, "lodUltraDistance", vcfg.component.lodUltraDistance);
+      vcfg.component.lodForceNearDistance = data::getFloatOr(*obj, "lodForceNearDistance", vcfg.component.lodForceNearDistance);
+      vcfg.component.viewDotBias = data::getFloatOr(*obj, "viewDotBias", vcfg.component.viewDotBias);
+
+      vcfg.component.intensity = data::getFloatOr(*obj, "intensity", vcfg.component.intensity);
+      vcfg.component.spawnRate = data::getFloatOr(*obj, "spawnRate", vcfg.component.spawnRate);
+      vcfg.component.burstInterval = data::getFloatOr(*obj, "burstInterval", vcfg.component.burstInterval);
+      vcfg.component.lifetimeSeconds = data::getFloatOr(*obj, "lifetimeSeconds", vcfg.component.lifetimeSeconds);
+      vcfg.component.sizeMeters = data::getFloatOr(*obj, "sizeMeters", vcfg.component.sizeMeters);
+      vcfg.component.sizeVariance = data::getFloatOr(*obj, "sizeVariance", vcfg.component.sizeVariance);
+      vcfg.component.speedMetersPerSecond =
+          data::getFloatOr(*obj, "speedMetersPerSecond", vcfg.component.speedMetersPerSecond);
+      vcfg.component.speedVariance = data::getFloatOr(*obj, "speedVariance", vcfg.component.speedVariance);
+      vcfg.component.gravityScale = data::getFloatOr(*obj, "gravityScale", vcfg.component.gravityScale);
+      vcfg.component.drag = data::getFloatOr(*obj, "drag", vcfg.component.drag);
+      vcfg.component.flickerStrength = data::getFloatOr(*obj, "flickerStrength", vcfg.component.flickerStrength);
+      vcfg.component.flickerSpeed = data::getFloatOr(*obj, "flickerSpeed", vcfg.component.flickerSpeed);
+      vcfg.component.looping = data::getBoolOr(*obj, "looping", vcfg.component.looping);
+      vcfg.component.castLight = data::getBoolOr(*obj, "castLight", vcfg.component.castLight);
+      vcfg.component.seed = static_cast<std::uint32_t>(data::getIntOr(*obj, "seed", static_cast<int>(vcfg.component.seed)));
+
+      vcfg.component.heightMeters = data::getFloatOr(*obj, "heightMeters", vcfg.component.heightMeters);
+      vcfg.component.upwardBias = data::getFloatOr(*obj, "upwardBias", vcfg.component.upwardBias);
+      vcfg.component.spreadRadiusMeters = data::getFloatOr(*obj, "spreadRadiusMeters", vcfg.component.spreadRadiusMeters);
+      vcfg.component.heatHazeStrength = data::getFloatOr(*obj, "heatHazeStrength", vcfg.component.heatHazeStrength);
+
+      vcfg.component.chargeLengthMeters = data::getFloatOr(*obj, "chargeLengthMeters", vcfg.component.chargeLengthMeters);
+      vcfg.component.arcJitter = data::getFloatOr(*obj, "arcJitter", vcfg.component.arcJitter);
+      vcfg.component.branchCount = data::getIntOr(*obj, "branchCount", vcfg.component.branchCount);
+      vcfg.component.segmentCount = data::getIntOr(*obj, "segmentCount", vcfg.component.segmentCount);
+      vcfg.component.pulseSpeed = data::getFloatOr(*obj, "pulseSpeed", vcfg.component.pulseSpeed);
+
+      vcfg.component.sparkCount = data::getIntOr(*obj, "sparkCount", vcfg.component.sparkCount);
+      vcfg.component.sparkSpreadDegrees = data::getFloatOr(*obj, "sparkSpreadDegrees", vcfg.component.sparkSpreadDegrees);
+      vcfg.component.sparkTrailLengthMeters =
+          data::getFloatOr(*obj, "sparkTrailLengthMeters", vcfg.component.sparkTrailLengthMeters);
+      vcfg.component.sparkFadeSeconds = data::getFloatOr(*obj, "sparkFadeSeconds", vcfg.component.sparkFadeSeconds);
+
+      vcfg.component.primaryColor = readColorOr(*obj, "primaryColor", vcfg.component.primaryColor);
+      vcfg.component.secondaryColor = readColorOr(*obj, "secondaryColor", vcfg.component.secondaryColor);
+    }
+
+    VfxFactory factory;
+    return factory.create(registry, vcfg);
+  }
+};
+
 template <typename FactoryT, typename ConfigT>
 class ExistingFactoryWithTransform final : public IEntityFactory {
  public:
@@ -198,6 +317,7 @@ void registerFactoriesFromEcsFactoriesDir(EntityFactoryRegistry& out) {
   out.registerFactory("building", std::make_unique<ExistingFactoryWithTransform<BuildingFactory, BuildingConfig>>());
   out.registerFactory("asset", std::make_unique<ExistingFactoryWithTransform<AssetFactory, AssetConfig>>());
   out.registerFactory("terrain", std::make_unique<TerrainJsonFactory>());
+  out.registerFactory("vfx", std::make_unique<VfxJsonFactory>());
 }
 
 }  // namespace ecs::services

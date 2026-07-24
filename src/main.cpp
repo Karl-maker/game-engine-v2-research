@@ -49,6 +49,7 @@ int main(int argc, char** argv) {
   std::cout << "  ./duppy gameplay\n";
   std::cout << "Flags:\n";
   std::cout << "  --fullscreen | --windowed\n";
+  std::cout << "  --refresh-rate N\n";
   std::cout << "  --vsync | --no-vsync\n";
   std::cout << "  --uncapped | --cap-fps\n";
   std::cout << "  --fps N\n";
@@ -72,7 +73,7 @@ int main(int argc, char** argv) {
   cfg.gameplay.vsync = false;     // default: avoid 60fps lock from vsync
   cfg.gameplay.windowWidth = 1280;
   cfg.gameplay.windowHeight = 720;
-  cfg.gameplay.fullscreenRefreshRateHz = 0;
+  cfg.gameplay.fullscreenRefreshRateHz = 144;
 
   std::string mode = "attachment";
   for (int i = 1; i < argc; ++i) {
@@ -93,6 +94,13 @@ int main(int argc, char** argv) {
     }
     if (arg == "--no-vsync") {
       cfg.gameplay.vsync = false;
+      continue;
+    }
+    if (arg == "--refresh-rate" && i + 1 < argc) {
+      try {
+        cfg.gameplay.fullscreenRefreshRateHz = std::max(0, std::stoi(argv[++i]));
+      } catch (...) {
+      }
       continue;
     }
     if (arg == "--uncapped") {

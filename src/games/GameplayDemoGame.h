@@ -54,7 +54,7 @@ struct GameplayDemoConfig final {
   int windowHeight = 720;
   bool fullscreen = false;
   bool vsync = false;
-  int fullscreenRefreshRateHz = 0;  // 0 = platform default
+  int fullscreenRefreshRateHz = 144;  // 0 = platform default; 144 is a good high-refresh default
 
   std::string chunkConfigPath = "assets/world/chunks_demo.json";
   float chunkSizeMeters = 96.0f;

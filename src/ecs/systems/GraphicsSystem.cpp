@@ -12,6 +12,7 @@
 #include "ecs/components/RenderSettingsComponent.h"
 #include "ecs/components/RockScatterComponent.h"
 #include "ecs/components/RaycastComponent.h"
+#include "ecs/components/VfxComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/SkeletonComponent.h"
 #include "ecs/components/SkyComponent.h"
@@ -323,6 +324,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
   m_frame.skies.clear();
   m_frame.rocks.clear();
   m_frame.grasses.clear();
+  m_frame.vfx.clear();
   m_frame.lights.clear();
   m_frame.settings = {};
 
@@ -740,6 +742,59 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         }
 
         m_frame.grasses.push_back(std::move(draw));
+      });
+
+  // --- VFX emitters ---
+  registry.view<ecs::VfxComponent, ecs::TransformComponent>(
+      [&](ecs::EntityId id, const ecs::VfxComponent& vfx, const ecs::TransformComponent& tr) {
+        if (!vfx.enabled) return;
+        FrameSnapshot::VfxDraw draw;
+        draw.entity = id;
+        draw.position = tr.position;
+        draw.rotation = tr.rotation;
+        draw.scale = tr.scale;
+        draw.type = vfx.type;
+        draw.quality = vfx.quality;
+        draw.enabled = vfx.enabled;
+        draw.autoQuality = vfx.autoQuality;
+        draw.maxRenderDistance = vfx.maxRenderDistance;
+        draw.lodNearDistance = vfx.lodNearDistance;
+        draw.lodMidDistance = vfx.lodMidDistance;
+        draw.lodFarDistance = vfx.lodFarDistance;
+        draw.lodUltraDistance = vfx.lodUltraDistance;
+        draw.lodForceNearDistance = vfx.lodForceNearDistance;
+        draw.viewDotBias = vfx.viewDotBias;
+        draw.intensity = vfx.intensity;
+        draw.spawnRate = vfx.spawnRate;
+        draw.burstInterval = vfx.burstInterval;
+        draw.lifetimeSeconds = vfx.lifetimeSeconds;
+        draw.sizeMeters = vfx.sizeMeters;
+        draw.sizeVariance = vfx.sizeVariance;
+        draw.speedMetersPerSecond = vfx.speedMetersPerSecond;
+        draw.speedVariance = vfx.speedVariance;
+        draw.gravityScale = vfx.gravityScale;
+        draw.drag = vfx.drag;
+        draw.flickerStrength = vfx.flickerStrength;
+        draw.flickerSpeed = vfx.flickerSpeed;
+        draw.looping = vfx.looping;
+        draw.castLight = vfx.castLight;
+        draw.seed = vfx.seed;
+        draw.heightMeters = vfx.heightMeters;
+        draw.upwardBias = vfx.upwardBias;
+        draw.spreadRadiusMeters = vfx.spreadRadiusMeters;
+        draw.heatHazeStrength = vfx.heatHazeStrength;
+        draw.chargeLengthMeters = vfx.chargeLengthMeters;
+        draw.arcJitter = vfx.arcJitter;
+        draw.branchCount = vfx.branchCount;
+        draw.segmentCount = vfx.segmentCount;
+        draw.pulseSpeed = vfx.pulseSpeed;
+        draw.sparkCount = vfx.sparkCount;
+        draw.sparkSpreadDegrees = vfx.sparkSpreadDegrees;
+        draw.sparkTrailLengthMeters = vfx.sparkTrailLengthMeters;
+        draw.sparkFadeSeconds = vfx.sparkFadeSeconds;
+        draw.primaryColor = vfx.primaryColor;
+        draw.secondaryColor = vfx.secondaryColor;
+        m_frame.vfx.push_back(std::move(draw));
       });
 
   return m_frame;
