@@ -9,6 +9,7 @@
 #include "assets/MeshAssetService.h"
 #include "graphics/ShaderService.h"
 #include "graphics/TextureService.h"
+#include "math/Mat4.h"
 #include "math/Vec3.h"
 
 #include <cstdint>
@@ -201,6 +202,22 @@ class OpenGlRenderer final {
   std::uint32_t m_shadowFbo = 0;
   std::uint32_t m_shadowDepthTex = 0;
   int m_shadowRes = 0;
+
+  // Scene render targets (for post-processing).
+  std::uint32_t m_sceneFbo = 0;
+  std::uint32_t m_sceneColorTex = 0;
+  std::uint32_t m_sceneDepthTex = 0;
+  int m_sceneW = 0;
+  int m_sceneH = 0;
+
+  // Single intermediate ping-pong target for post passes.
+  std::uint32_t m_postFbo = 0;
+  std::uint32_t m_postColorTex = 0;
+  int m_postW = 0;
+  int m_postH = 0;
+
+  bool m_hasPrevViewProj = false;
+  math::Mat4 m_prevViewProj{};
 
   // Input state (GLFW callbacks write, game drains once per tick).
   bool m_keyW = false;

@@ -333,9 +333,33 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         m_frame.camera.entity = id;
         m_frame.camera.position = tr.position;
         m_frame.camera.forward = forwardFromPitchYawDeg(tr);
+        m_frame.camera.projectionType = static_cast<int>(cam.projectionType);
         m_frame.camera.fovYRadians = cam.fieldOfViewDeg * kDegToRad;
+        m_frame.camera.orthographicSize = cam.orthographicSize;
         m_frame.camera.nearClip = cam.nearClipPlane;
         m_frame.camera.farClip = cam.farClipPlane;
+        m_frame.camera.aspectRatio = cam.aspectRatio;
+        m_frame.camera.useFramebufferAspectRatio = cam.useFramebufferAspectRatio;
+
+        m_frame.camera.renderScale = cam.renderScale;
+
+        m_frame.camera.depthOfFieldEnabled = cam.depthOfField.enabled;
+        m_frame.camera.dofFocusDistance = cam.depthOfField.focusDistance;
+        m_frame.camera.dofFocusRange = cam.depthOfField.focusRange;
+        m_frame.camera.dofBlurStrength = cam.depthOfField.blurStrength;
+        if (cam.depthOfField.enabled && cam.depthOfField.focusMode == ecs::CameraComponent::DepthOfFieldSettings::FocusMode::TargetEntity &&
+            cam.depthOfField.focusTarget != ecs::kInvalidEntityId) {
+          if (const auto* focusTr = registry.tryGet<ecs::TransformComponent>(cam.depthOfField.focusTarget)) {
+            const math::Vec3 targetPos = focusTr->position + cam.depthOfField.focusTargetOffset;
+            const float dist = math::length(targetPos - tr.position);
+            m_frame.camera.dofFocusDistance = std::max(0.05f, dist);
+          }
+        }
+
+        m_frame.camera.motionBlurEnabled = cam.motionBlur.enabled;
+        m_frame.camera.motionBlurStrength = cam.motionBlur.strength;
+        m_frame.camera.motionBlurMaxBlurPixels = cam.motionBlur.maxBlurPixels;
+        m_frame.camera.motionBlurSamples = cam.motionBlur.samples;
       });
 
   // --- Render settings (pick the first enabled) ---

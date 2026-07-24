@@ -183,7 +183,7 @@ void GameplayDemoGame::onStart() {
   auto& camTr = m_registry.emplace<ecs::TransformComponent>(m_camera);
   camTr.position = {0.0f, 3.0f, -6.0f};
   camTr.rotation = {12.0f, 0.0f, 0.0f};  // pitch/yaw/roll (deg)
-  m_registry.emplace<ecs::CameraComponent>(m_camera);
+  auto& cam = m_registry.emplace<ecs::CameraComponent>(m_camera);
 
   m_player = m_registry.createEntity("business_man");
   auto& playerTr = m_registry.emplace<ecs::TransformComponent>(m_player);
@@ -286,6 +286,18 @@ void GameplayDemoGame::onStart() {
 
     thirdPerson.yawDeg = playerTr.rotation.y;
   }
+
+  cam.depthOfField.enabled = true;
+  cam.depthOfField.focusMode = ecs::CameraComponent::DepthOfFieldSettings::FocusMode::TargetEntity;
+  cam.depthOfField.focusTarget = m_player;
+  cam.depthOfField.focusTargetOffset = {0.0f, 1.6f, 0.0f};
+  cam.depthOfField.focusRange = 2.25f;
+  cam.depthOfField.blurStrength = 0.15f;
+
+  cam.motionBlur.enabled = true;
+  cam.motionBlur.strength = 0.75f;
+  cam.motionBlur.maxBlurPixels = 18.0f;
+  cam.motionBlur.samples = 12;
 
   {
     ecs::services::RaycastConeFactoryService rayFactory;

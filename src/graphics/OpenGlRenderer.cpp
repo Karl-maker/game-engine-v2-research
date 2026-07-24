@@ -7,6 +7,7 @@
 #include "terrain/PerlinNoise2D.h"
 
 #include <algorithm>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <vector>
@@ -133,6 +134,82 @@ static void ensureShadowMap(std::uint32_t& fbo, std::uint32_t& depthTex, int& cu
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
   glDrawBuffer(GL_NONE);
   glReadBuffer(GL_NONE);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+static void ensureSceneTargets(std::uint32_t& fbo,
+                               std::uint32_t& colorTex,
+                               std::uint32_t& depthTex,
+                               int& curW,
+                               int& curH,
+                               int desiredW,
+                               int desiredH) {
+  desiredW = std::max(1, desiredW);
+  desiredH = std::max(1, desiredH);
+  if (fbo != 0 && colorTex != 0 && depthTex != 0 && curW == desiredW && curH == desiredH) return;
+
+  if (fbo) glDeleteFramebuffers(1, &fbo);
+  if (colorTex) glDeleteTextures(1, &colorTex);
+  if (depthTex) glDeleteTextures(1, &depthTex);
+  fbo = 0;
+  colorTex = 0;
+  depthTex = 0;
+  curW = desiredW;
+  curH = desiredH;
+
+  glGenTextures(1, &colorTex);
+  glBindTexture(GL_TEXTURE_2D, colorTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, desiredW, desiredH, 0, GL_RGBA, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  glGenTextures(1, &depthTex);
+  glBindTexture(GL_TEXTURE_2D, depthTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, desiredW, desiredH, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  glGenFramebuffers(1, &fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTex, 0);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
+  const GLenum drawBuf = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &drawBuf);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+static void ensurePostTarget(std::uint32_t& fbo, std::uint32_t& colorTex, int& curW, int& curH, int desiredW, int desiredH) {
+  desiredW = std::max(1, desiredW);
+  desiredH = std::max(1, desiredH);
+  if (fbo != 0 && colorTex != 0 && curW == desiredW && curH == desiredH) return;
+
+  if (fbo) glDeleteFramebuffers(1, &fbo);
+  if (colorTex) glDeleteTextures(1, &colorTex);
+  fbo = 0;
+  colorTex = 0;
+  curW = desiredW;
+  curH = desiredH;
+
+  glGenTextures(1, &colorTex);
+  glBindTexture(GL_TEXTURE_2D, colorTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, desiredW, desiredH, 0, GL_RGBA, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  glGenFramebuffers(1, &fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTex, 0);
+  const GLenum drawBuf = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &drawBuf);
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -610,9 +687,24 @@ void OpenGlRenderer::stop() {
     if (m_skyVao) glDeleteVertexArrays(1, &m_skyVao);
     if (m_shadowFbo) glDeleteFramebuffers(1, &m_shadowFbo);
     if (m_shadowDepthTex) glDeleteTextures(1, &m_shadowDepthTex);
+    if (m_sceneFbo) glDeleteFramebuffers(1, &m_sceneFbo);
+    if (m_sceneColorTex) glDeleteTextures(1, &m_sceneColorTex);
+    if (m_sceneDepthTex) glDeleteTextures(1, &m_sceneDepthTex);
+    if (m_postFbo) glDeleteFramebuffers(1, &m_postFbo);
+    if (m_postColorTex) glDeleteTextures(1, &m_postColorTex);
     m_shadowFbo = 0;
     m_shadowDepthTex = 0;
     m_shadowRes = 0;
+    m_sceneFbo = 0;
+    m_sceneColorTex = 0;
+    m_sceneDepthTex = 0;
+    m_sceneW = 0;
+    m_sceneH = 0;
+    m_postFbo = 0;
+    m_postColorTex = 0;
+    m_postW = 0;
+    m_postH = 0;
+    m_hasPrevViewProj = false;
     m_textures.destroyAllGlTextures();
     glfwMakeContextCurrent(nullptr);
   }
@@ -1666,18 +1758,35 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   const double renderStart = glfwGetTime();
 
   m_textures.flushUploads(4);
-  glViewport(0, 0, m_fbWidth, m_fbHeight);
 
-  // Basic clear.
+  const float rs = std::clamp(frame.camera.renderScale, 0.25f, 1.0f);
+  const int sceneW = std::max(1, static_cast<int>(static_cast<float>(m_fbWidth) * rs));
+  const int sceneH = std::max(1, static_cast<int>(static_cast<float>(m_fbHeight) * rs));
+  ensureSceneTargets(m_sceneFbo, m_sceneColorTex, m_sceneDepthTex, m_sceneW, m_sceneH, sceneW, sceneH);
+
+  const std::uint32_t mainFbo = m_sceneFbo ? m_sceneFbo : 0u;
+  glBindFramebuffer(GL_FRAMEBUFFER, mainFbo);
+  glViewport(0, 0, sceneW, sceneH);
+
   glClearColor(0.55f, 0.72f, 0.92f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  const float aspect = static_cast<float>(m_fbWidth) / static_cast<float>(m_fbHeight);
-  const float fovRad = frame.camera.fovYRadians;
-  const math::Mat4 proj = math::perspective(fovRad, aspect, frame.camera.nearClip, frame.camera.farClip);
+  const float aspect = frame.camera.useFramebufferAspectRatio ? (static_cast<float>(sceneW) / static_cast<float>(sceneH))
+                                                              : std::max(0.001f, frame.camera.aspectRatio);
+  const bool isOrtho = (frame.camera.projectionType != 0);
+  math::Mat4 proj{};
+  if (isOrtho) {
+    const float halfH = std::max(0.01f, frame.camera.orthographicSize);
+    const float halfW = halfH * aspect;
+    proj = ortho(-halfW, halfW, -halfH, halfH, frame.camera.nearClip, frame.camera.farClip);
+  } else {
+    const float fovRad = frame.camera.fovYRadians;
+    proj = math::perspective(fovRad, aspect, frame.camera.nearClip, frame.camera.farClip);
+  }
   const math::Mat4 view =
       math::lookAt(frame.camera.position, frame.camera.position + frame.camera.forward, math::Vec3{0.0f, 1.0f, 0.0f});
   const math::Mat4 viewProj = math::mul(proj, view);
+  const math::Mat4 invViewProj = math::inverse(viewProj);
 
   const math::Vec3 camPos = frame.camera.position;
   const math::Vec3 camFwd = math::normalize(frame.camera.forward);
@@ -1948,8 +2057,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       }
 
       glCullFace(GL_BACK);
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
-      glViewport(0, 0, m_fbWidth, m_fbHeight);
+      glBindFramebuffer(GL_FRAMEBUFFER, mainFbo);
+      glViewport(0, 0, sceneW, sceneH);
       shadowOn = true;
     }
   }
@@ -2910,6 +3019,136 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
   }
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glViewport(0, 0, m_fbWidth, m_fbHeight);
+
+  const bool dofOn = frame.camera.depthOfFieldEnabled && frame.camera.dofBlurStrength > 0.0001f;
+  const bool blurOn = frame.camera.motionBlurEnabled && frame.camera.motionBlurStrength > 0.0001f && m_hasPrevViewProj;
+  if (!dofOn && !blurOn) {
+    if (mainFbo != 0) {
+      glBindFramebuffer(GL_READ_FRAMEBUFFER, mainFbo);
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+      glBlitFramebuffer(0, 0, sceneW, sceneH, 0, 0, m_fbWidth, m_fbHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+  } else {
+    ensurePostTarget(m_postFbo, m_postColorTex, m_postW, m_postH, sceneW, sceneH);
+
+    const auto drawFullscreen = [&](std::uint32_t programId,
+                                    std::uint32_t dstFbo,
+                                    std::uint32_t srcColor,
+                                    std::uint32_t srcDepth,
+                                    const std::function<void()>& setUniforms) {
+      glBindFramebuffer(GL_FRAMEBUFFER, dstFbo);
+      glViewport(0, 0, (dstFbo == 0) ? m_fbWidth : sceneW, (dstFbo == 0) ? m_fbHeight : sceneH);
+      glDisable(GL_DEPTH_TEST);
+      glDepthMask(GL_FALSE);
+      glDisable(GL_CULL_FACE);
+      glDisable(GL_BLEND);
+      glUseProgram(programId);
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, srcColor);
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, srcDepth);
+
+      setUniforms();
+
+      glBindVertexArray(m_skyVao);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
+      glBindVertexArray(0);
+
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, 0);
+
+      glDepthMask(GL_TRUE);
+      glEnable(GL_DEPTH_TEST);
+      glEnable(GL_CULL_FACE);
+    };
+
+    std::uint32_t curColorTex = m_sceneColorTex;
+
+    if (dofOn) {
+      const ShaderService::Program* dofProg = m_shaders.getOrCreate("graphics/shaders/post_dof");
+      if (dofProg && dofProg->programId) {
+        drawFullscreen(
+            dofProg->programId,
+            m_postFbo,
+            curColorTex,
+            m_sceneDepthTex,
+            [&]() {
+              const GLint locColor = glGetUniformLocation(dofProg->programId, "u_ColorTex");
+              const GLint locDepth = glGetUniformLocation(dofProg->programId, "u_DepthTex");
+              if (locColor >= 0) glUniform1i(locColor, 0);
+              if (locDepth >= 0) glUniform1i(locDepth, 1);
+              const GLint locTexel = glGetUniformLocation(dofProg->programId, "u_TexelSize");
+              if (locTexel >= 0) glUniform2f(locTexel, 1.0f / static_cast<float>(sceneW), 1.0f / static_cast<float>(sceneH));
+              const GLint locNear = glGetUniformLocation(dofProg->programId, "u_Near");
+              const GLint locFar = glGetUniformLocation(dofProg->programId, "u_Far");
+              if (locNear >= 0) glUniform1f(locNear, frame.camera.nearClip);
+              if (locFar >= 0) glUniform1f(locFar, frame.camera.farClip);
+              const GLint locFD = glGetUniformLocation(dofProg->programId, "u_FocusDistance");
+              const GLint locFR = glGetUniformLocation(dofProg->programId, "u_FocusRange");
+              const GLint locBS = glGetUniformLocation(dofProg->programId, "u_BlurStrength");
+              if (locFD >= 0) glUniform1f(locFD, frame.camera.dofFocusDistance);
+              if (locFR >= 0) glUniform1f(locFR, frame.camera.dofFocusRange);
+              if (locBS >= 0) glUniform1f(locBS, frame.camera.dofBlurStrength);
+            });
+        curColorTex = m_postColorTex;
+      }
+    }
+
+    if (frame.camera.motionBlurEnabled) {
+      const ShaderService::Program* mbProg = m_shaders.getOrCreate("graphics/shaders/post_motion_blur");
+      if (mbProg && mbProg->programId) {
+        const float strength = m_hasPrevViewProj ? frame.camera.motionBlurStrength : 0.0f;
+        drawFullscreen(
+            mbProg->programId,
+            0,
+            curColorTex,
+            m_sceneDepthTex,
+            [&]() {
+              const GLint locColor = glGetUniformLocation(mbProg->programId, "u_ColorTex");
+              const GLint locDepth = glGetUniformLocation(mbProg->programId, "u_DepthTex");
+              if (locColor >= 0) glUniform1i(locColor, 0);
+              if (locDepth >= 0) glUniform1i(locDepth, 1);
+              const GLint locTexel = glGetUniformLocation(mbProg->programId, "u_TexelSize");
+              if (locTexel >= 0) glUniform2f(locTexel, 1.0f / static_cast<float>(sceneW), 1.0f / static_cast<float>(sceneH));
+              const GLint locInv = glGetUniformLocation(mbProg->programId, "u_InvViewProj");
+              const GLint locPrev = glGetUniformLocation(mbProg->programId, "u_PrevViewProj");
+              if (locInv >= 0) glUniformMatrix4fv(locInv, 1, GL_FALSE, invViewProj.m);
+              if (locPrev >= 0) glUniformMatrix4fv(locPrev, 1, GL_FALSE, m_prevViewProj.m);
+              const GLint locS = glGetUniformLocation(mbProg->programId, "u_Strength");
+              const GLint locMaxPx = glGetUniformLocation(mbProg->programId, "u_MaxBlurPixels");
+              const GLint locSamples = glGetUniformLocation(mbProg->programId, "u_Samples");
+              if (locS >= 0) glUniform1f(locS, strength);
+              if (locMaxPx >= 0) glUniform1f(locMaxPx, frame.camera.motionBlurMaxBlurPixels);
+              if (locSamples >= 0) glUniform1i(locSamples, frame.camera.motionBlurSamples);
+            });
+      } else if (curColorTex != 0 && curColorTex != m_sceneColorTex) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, m_postFbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBlitFramebuffer(0, 0, sceneW, sceneH, 0, 0, m_fbWidth, m_fbHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      } else if (mainFbo != 0) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, mainFbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBlitFramebuffer(0, 0, sceneW, sceneH, 0, 0, m_fbWidth, m_fbHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      }
+    } else if (curColorTex == m_postColorTex) {
+      glBindFramebuffer(GL_READ_FRAMEBUFFER, m_postFbo);
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+      glBlitFramebuffer(0, 0, sceneW, sceneH, 0, 0, m_fbWidth, m_fbHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+  }
+
+  m_prevViewProj = viewProj;
+  m_hasPrevViewProj = true;
 
   // Allow escape to close.
   if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {

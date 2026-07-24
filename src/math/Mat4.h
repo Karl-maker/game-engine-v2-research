@@ -219,4 +219,50 @@ inline Mat4 inverseAffine(const Mat4& m) {
   return out;
 }
 
+inline Mat4 inverse(const Mat4& m) {
+  const float a00 = m.m[0], a01 = m.m[4], a02 = m.m[8], a03 = m.m[12];
+  const float a10 = m.m[1], a11 = m.m[5], a12 = m.m[9], a13 = m.m[13];
+  const float a20 = m.m[2], a21 = m.m[6], a22 = m.m[10], a23 = m.m[14];
+  const float a30 = m.m[3], a31 = m.m[7], a32 = m.m[11], a33 = m.m[15];
+
+  const float b00 = a00 * a11 - a01 * a10;
+  const float b01 = a00 * a12 - a02 * a10;
+  const float b02 = a00 * a13 - a03 * a10;
+  const float b03 = a01 * a12 - a02 * a11;
+  const float b04 = a01 * a13 - a03 * a11;
+  const float b05 = a02 * a13 - a03 * a12;
+  const float b06 = a20 * a31 - a21 * a30;
+  const float b07 = a20 * a32 - a22 * a30;
+  const float b08 = a20 * a33 - a23 * a30;
+  const float b09 = a21 * a32 - a22 * a31;
+  const float b10 = a21 * a33 - a23 * a31;
+  const float b11 = a22 * a33 - a23 * a32;
+
+  const float det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+  if (std::fabs(det) <= 1e-8f) return identity();
+  const float invDet = 1.0f / det;
+
+  Mat4 out{};
+  out.m[0] = (a11 * b11 - a12 * b10 + a13 * b09) * invDet;
+  out.m[4] = (-a01 * b11 + a02 * b10 - a03 * b09) * invDet;
+  out.m[8] = (a31 * b05 - a32 * b04 + a33 * b03) * invDet;
+  out.m[12] = (-a21 * b05 + a22 * b04 - a23 * b03) * invDet;
+
+  out.m[1] = (-a10 * b11 + a12 * b08 - a13 * b07) * invDet;
+  out.m[5] = (a00 * b11 - a02 * b08 + a03 * b07) * invDet;
+  out.m[9] = (-a30 * b05 + a32 * b02 - a33 * b01) * invDet;
+  out.m[13] = (a20 * b05 - a22 * b02 + a23 * b01) * invDet;
+
+  out.m[2] = (a10 * b10 - a11 * b08 + a13 * b06) * invDet;
+  out.m[6] = (-a00 * b10 + a01 * b08 - a03 * b06) * invDet;
+  out.m[10] = (a30 * b04 - a31 * b02 + a33 * b00) * invDet;
+  out.m[14] = (-a20 * b04 + a21 * b02 - a23 * b00) * invDet;
+
+  out.m[3] = (-a10 * b09 + a11 * b07 - a12 * b06) * invDet;
+  out.m[7] = (a00 * b09 - a01 * b07 + a02 * b06) * invDet;
+  out.m[11] = (-a30 * b03 + a31 * b01 - a32 * b00) * invDet;
+  out.m[15] = (a20 * b03 - a21 * b01 + a22 * b00) * invDet;
+  return out;
+}
+
 }  // namespace math

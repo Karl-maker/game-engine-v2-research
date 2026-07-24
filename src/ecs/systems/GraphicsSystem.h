@@ -31,9 +31,25 @@ class GraphicsSystem final {
     EntityId entity = kInvalidEntityId;
     math::Vec3 position{};
     math::Vec3 forward{0.0f, 0.0f, 1.0f};
+    int projectionType = 0;  // ecs::CameraComponent::ProjectionType
     float fovYRadians = 1.0471976f;  // 60 deg
+    float orthographicSize = 8.0f;
     float nearClip = 0.1f;
     float farClip = 1000.0f;
+    float aspectRatio = 16.0f / 9.0f;
+    bool useFramebufferAspectRatio = true;
+
+    float renderScale = 1.0f;
+
+    bool depthOfFieldEnabled = false;
+    float dofFocusDistance = 6.0f;
+    float dofFocusRange = 2.5f;
+    float dofBlurStrength = 0.65f;
+
+    bool motionBlurEnabled = false;
+    float motionBlurStrength = 0.75f;
+    float motionBlurMaxBlurPixels = 18.0f;
+    int motionBlurSamples = 12;
   };
 
   struct TerrainDraw final {
