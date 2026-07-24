@@ -36,10 +36,16 @@
 #include "ecs/systems/SkyPresetSystem.h"
 #include "ecs/systems/SocketSystem.h"
 #include "ecs/systems/ThirdPersonCameraSystem.h"
+#include "ecs/services/ChunkStreamingService.h"
+#include "ecs/services/EntityFactoryRegistry.h"
+#include "ecs/services/IChunkSource.h"
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
 #include "graphics/OpenGlRenderer.h"
 #endif
+
+#include <string>
+#include <memory>
 
 namespace games {
 
@@ -49,6 +55,12 @@ struct GameplayDemoConfig final {
   bool fullscreen = false;
   bool vsync = false;
   int fullscreenRefreshRateHz = 0;  // 0 = platform default
+
+  std::string chunkConfigPath = "assets/world/chunks_demo.json";
+  float chunkSizeMeters = 96.0f;
+  int chunkSearchRadius = 2;
+  float chunkLoadProximityMeters = 14.0f;
+  float chunkUnloadProximityMeters = 22.0f;
 };
 
 class GameplayDemoGame final : public core::IGame {
@@ -87,6 +99,9 @@ class GameplayDemoGame final : public core::IGame {
   ecs::systems::SkyPresetSystem m_skyPresets;
   ecs::systems::ThirdPersonCameraSystem m_thirdPersonCameraSystem;
   ecs::systems::GraphicsSystem m_graphics;
+  ecs::services::EntityFactoryRegistry m_factoryRegistry;
+  ecs::services::ChunkStreamingService m_chunkStreaming;
+  std::unique_ptr<ecs::services::IChunkSource> m_chunkSource;
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   graphics::OpenGlRenderer m_renderer;

@@ -8,6 +8,8 @@
 
 #include "terrain/NoiseConfig.h"
 
+#include <cstdint>
+
 namespace ecs {
 
 struct TerrainComponent {
@@ -17,8 +19,10 @@ struct TerrainComponent {
   float cellSizeMeters = 1.0f;
   float heightScaleMeters = 150.0f;
 
+  // Seed for the underlying noise generator (separate from NoiseConfig for renderer/physics consistency).
+  std::uint32_t noiseSeed = 12345u;
+
   terrain::NoiseConfig noise;
 };
 
 }  // namespace ecs
-

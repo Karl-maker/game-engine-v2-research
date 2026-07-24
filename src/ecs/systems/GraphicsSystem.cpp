@@ -392,7 +392,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.cellSizeMeters = terrain.cellSizeMeters;
         draw.heightScaleMeters = terrain.heightScaleMeters;
         draw.noise = terrain.noise;
-        draw.noiseSeed = static_cast<std::uint32_t>(id) * 1337u;
+        draw.noiseSeed = terrain.noiseSeed;
         draw.shader = shader.shader;
         draw.renderMode = static_cast<int>(shader.renderMode);
         draw.cullMode = static_cast<int>(shader.cullMode);

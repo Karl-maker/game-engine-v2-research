@@ -29,6 +29,12 @@ void GameLoopService::maybePrintDebug(double fps, double deltaSeconds, std::uint
   if (m_debug.printEveryNFrames > 1 && (frameIndex % static_cast<std::uint64_t>(m_debug.printEveryNFrames)) != 0) {
     return;
   }
+  const double nowSeconds = m_timeSource.nowSeconds();
+  const double minDt = std::max(0.0, m_debug.minSecondsBetweenPrints);
+  if (minDt > 0.0 && (nowSeconds - m_lastDebugPrintSeconds) < minDt) {
+    return;
+  }
+  m_lastDebugPrintSeconds = nowSeconds;
 
   std::cout << "\r";
   bool first = true;

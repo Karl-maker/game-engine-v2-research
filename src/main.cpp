@@ -53,6 +53,11 @@ int main(int argc, char** argv) {
   std::cout << "  --uncapped | --cap-fps\n";
   std::cout << "  --fps N\n";
   std::cout << "  --width N  --height N\n";
+  std::cout << "  --chunks PATH\n";
+  std::cout << "  --chunk-size N\n";
+  std::cout << "  --chunk-search-radius N\n";
+  std::cout << "  --chunk-load-proximity N\n";
+  std::cout << "  --chunk-unload-proximity N\n";
   std::cout << "Type `q` then Enter to quit.\n\n";
 
   core::SteadyTimeSource timeSource;
@@ -117,6 +122,38 @@ int main(int argc, char** argv) {
       }
       continue;
     }
+    if (arg == "--chunks" && i + 1 < argc) {
+      cfg.gameplay.chunkConfigPath = std::string(argv[++i] ? argv[i] : "");
+      continue;
+    }
+    if (arg == "--chunk-size" && i + 1 < argc) {
+      try {
+        cfg.gameplay.chunkSizeMeters = static_cast<float>(std::stod(argv[++i]));
+      } catch (...) {
+      }
+      continue;
+    }
+    if (arg == "--chunk-search-radius" && i + 1 < argc) {
+      try {
+        cfg.gameplay.chunkSearchRadius = std::max(0, std::stoi(argv[++i]));
+      } catch (...) {
+      }
+      continue;
+    }
+    if (arg == "--chunk-load-proximity" && i + 1 < argc) {
+      try {
+        cfg.gameplay.chunkLoadProximityMeters = static_cast<float>(std::stod(argv[++i]));
+      } catch (...) {
+      }
+      continue;
+    }
+    if (arg == "--chunk-unload-proximity" && i + 1 < argc) {
+      try {
+        cfg.gameplay.chunkUnloadProximityMeters = static_cast<float>(std::stod(argv[++i]));
+      } catch (...) {
+      }
+      continue;
+    }
 
     if (arg.rfind("--", 0) == 0) {
       continue;  // unknown flag: ignore (demo-friendly)
@@ -137,6 +174,7 @@ int main(int argc, char** argv) {
   debug.showFrameIndex = false;
   debug.showLastInput = true;
   debug.printEveryNFrames = 1;
+  debug.minSecondsBetweenPrints = 0.10;
   debug.enabled = true;
 
   core::GameLoopService loop(timeSource, inputService, *game, cfg.loop, debug);

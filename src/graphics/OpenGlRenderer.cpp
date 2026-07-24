@@ -926,15 +926,18 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
 
   terrain::PerlinNoise2D noise(mesh.noiseSeed);
 
+  const float fullHalfW = (static_cast<float>(wCells) * t.cellSizeMeters) * 0.5f;
+  const float fullHalfH = (static_cast<float>(hCells) * t.cellSizeMeters) * 0.5f;
+
   std::vector<float> heights;
   heights.resize(static_cast<std::size_t>(vertsW * vertsH));
   for (int z = 0; z < vertsH; ++z) {
     for (int x = 0; x < vertsW; ++x) {
       const int cx = std::min(wCells, x * step);
       const int cz = std::min(hCells, z * step);
-      const float sx = static_cast<float>(cx) * t.cellSizeMeters;
-      const float sz = static_cast<float>(cz) * t.cellSizeMeters;
-      const float n = noise.sampleFractal(sx, sz, t.noise);
+      const float worldX = t.position.x + (static_cast<float>(cx) * t.cellSizeMeters - fullHalfW);
+      const float worldZ = t.position.z + (static_cast<float>(cz) * t.cellSizeMeters - fullHalfH);
+      const float n = noise.sampleFractal(worldX, worldZ, t.noise);
       heights[static_cast<std::size_t>(z * vertsW + x)] = n * t.heightScaleMeters;
     }
   }

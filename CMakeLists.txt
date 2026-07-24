@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(duppy
   src/main.cpp
+  src/data/Json.cpp
   src/ecs/EntityRegistry.cpp
   src/assets/MeshAssetService.cpp
   src/ecs/systems/AnimationSystem.cpp
@@ -32,7 +33,17 @@ add_executable(duppy
   src/ecs/systems/SocketSystem.cpp
   src/ecs/systems/TargetSystem.cpp
   src/ecs/systems/ThirdPersonCameraSystem.cpp
+  src/ecs/factories/AssetFactory.cpp
+  src/ecs/factories/BuildingFactory.cpp
+  src/ecs/factories/CharacterFactory.cpp
+  src/ecs/factories/EnemyFactory.cpp
+  src/ecs/factories/EntityFactory.cpp
+  src/ecs/factories/FactoryKeyService.cpp
+  src/ecs/factories/TerrainFactory.cpp
+  src/ecs/factories/WeaponFactory.cpp
   src/ecs/services/IKService.cpp
+  src/ecs/services/ChunkStreamingService.cpp
+  src/ecs/services/FileChunkSource.cpp
   src/ecs/services/RaycastConeFactoryService.cpp
   src/ecs/services/SpatialHashGridService.cpp
   src/terrain/PerlinNoise2D.cpp

@@ -78,10 +78,9 @@ float sampleTerrainHeight(ecs::EntityId terrainId,
                           const ecs::TerrainComponent& terrain,
                           const ecs::TransformComponent& terrainTr,
                           const math::Vec3& world) {
-  terrain::PerlinNoise2D noise(static_cast<std::uint32_t>(terrainId) * 1337u);
-  const float localX = world.x - terrainTr.position.x + static_cast<float>(terrain.gridWidth) * terrain.cellSizeMeters * 0.5f;
-  const float localZ = world.z - terrainTr.position.z + static_cast<float>(terrain.gridHeight) * terrain.cellSizeMeters * 0.5f;
-  return terrainTr.position.y + noise.sampleFractal(localX, localZ, terrain.noise) * terrain.heightScaleMeters;
+  (void)terrainId;
+  terrain::PerlinNoise2D noise(terrain.noiseSeed);
+  return terrainTr.position.y + noise.sampleFractal(world.x, world.z, terrain.noise) * terrain.heightScaleMeters;
 }
 
 }  // namespace
@@ -128,9 +127,18 @@ void CollisionDetectionSystem::tick(EntityRegistry& registry, ecs::services::Eve
 
   registry.view<ecs::TerrainComponent, ecs::TransformComponent>(
       [&](ecs::EntityId terrainId, const ecs::TerrainComponent& terrain, const ecs::TransformComponent& terrainTr) {
+        const float halfW = static_cast<float>(terrain.gridWidth) * terrain.cellSizeMeters * 0.5f;
+        const float halfD = static_cast<float>(terrain.gridHeight) * terrain.cellSizeMeters * 0.5f;
+        const float minX = terrainTr.position.x - halfW;
+        const float maxX = terrainTr.position.x + halfW;
+        const float minZ = terrainTr.position.z - halfD;
+        const float maxZ = terrainTr.position.z + halfD;
+
         for (const auto& [id, body] : bodies) {
           const auto* motion = registry.tryGet<ecs::MotionComponent>(id);
           if (!motion) continue;
+          if (body.transform.position.x < minX || body.transform.position.x > maxX) continue;
+          if (body.transform.position.z < minZ || body.transform.position.z > maxZ) continue;
           const float ground = sampleTerrainHeight(terrainId, terrain, terrainTr, body.transform.position);
           const float bottom = body.aabb.min.y;
           if (bottom >= ground) continue;

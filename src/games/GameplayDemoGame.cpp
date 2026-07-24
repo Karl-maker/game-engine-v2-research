@@ -34,6 +34,8 @@
 #include "ecs/events/RaycastEvents.h"
 #include "ecs/services/IKService.h"
 #include "ecs/services/RaycastConeFactoryService.h"
+#include "ecs/factories/FactoryKeyService.h"
+#include "ecs/services/FileChunkSource.h"
 #include "materials/presets/HighQualityDirtRockLayer.h"
 #include "materials/presets/StoneGrass.h"
 #include "materials/presets/HighQualityDirtRockGrassLayer.h"
@@ -380,6 +382,8 @@ void GameplayDemoGame::onStart() {
     terrain.cellSizeMeters = 1.0f;
     // Flatter terrain (less "mountainy").
     terrain.heightScaleMeters = 2.6f;
+    terrain.noiseSeed = 2222u;
+    terrain.noise.seed = 2222u;
     terrain.noise.frequency = 0.030f;
     terrain.noise.octaves = 2;
     terrain.noise.persistence = 0.45f;
@@ -600,6 +604,15 @@ void GameplayDemoGame::onStart() {
     std::cerr << "OpenGL renderer failed to start; falling back to terminal snapshot.\n";
   }
 #endif
+
+  ecs::services::registerFactoriesFromEcsFactoriesDir(m_factoryRegistry);
+  ecs::services::ChunkStreamingConfig chunkCfg{};
+  chunkCfg.chunkSizeMeters = m_config.chunkSizeMeters;
+  chunkCfg.searchRadiusChunks = m_config.chunkSearchRadius;
+  chunkCfg.loadProximityMeters = m_config.chunkLoadProximityMeters;
+  chunkCfg.unloadProximityMeters = m_config.chunkUnloadProximityMeters;
+  m_chunkStreaming.setConfig(chunkCfg);
+  m_chunkSource = std::make_unique<ecs::services::FileChunkSource>(m_config.chunkConfigPath);
 }
 
 void GameplayDemoGame::onTick(const core::TickContext& ctx) {
@@ -667,6 +680,10 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   // --- Motion intent -> transform movement ---
   m_movementSystem.tick(m_registry, m_events, ctx.deltaSeconds);
 
+  if (m_chunkSource) {
+    m_chunkStreaming.tick(m_registry, m_player, *m_chunkSource, m_factoryRegistry);
+  }
+
   // --- Collision detection emits contacts; resolution consumes them and separates bodies ---
   m_collisionDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds);
   m_collisionResolutionSystem.tick(m_registry, m_events);
@@ -715,6 +732,10 @@ void GameplayDemoGame::onStop() {
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   m_renderer.stop();
 #endif
+  if (m_chunkSource) {
+    m_chunkStreaming.unloadAll(m_registry);
+    m_chunkSource.reset();
+  }
   m_meshAssets.stop();
   std::cout << "\nStopped gameplay demo.\n";
 }

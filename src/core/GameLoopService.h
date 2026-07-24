@@ -53,6 +53,7 @@ class GameLoopService final {
 
   std::atomic<bool> m_quitRequested{false};
   std::string m_lastInput;
+  double m_lastDebugPrintSeconds = 0.0;
 };
 
 }  // namespace core
