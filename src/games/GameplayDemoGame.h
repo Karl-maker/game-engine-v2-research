@@ -16,6 +16,7 @@
 #include "ecs/systems/ControllerSystem.h"
 #include "ecs/systems/AnimationSystem.h"
 #include "ecs/systems/AttachmentSystem.h"
+#include "ecs/systems/AudioSystem.h"
 #include "ecs/systems/CollisionDetectionSystem.h"
 #include "ecs/systems/CollisionResolutionSystem.h"
 #include "ecs/systems/HitDetectionSystem.h"
@@ -54,6 +55,7 @@ class GameplayDemoGame final : public core::IGame {
   ecs::services::EventService m_events;
   ecs::systems::ControllerSystem m_controllerSystem;
   ecs::systems::AnimationSystem m_animationSystem;
+  ecs::systems::AudioSystem m_audioSystem;
   ecs::systems::IdleAnimationSystem m_idleAnimationSystem;
   ecs::systems::IKSystem m_ikSystem;
   ecs::systems::AttachmentSystem m_attachmentSystem;

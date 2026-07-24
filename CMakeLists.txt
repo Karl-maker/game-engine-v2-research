@@ -10,6 +10,7 @@ add_executable(duppy
   src/ecs/EntityRegistry.cpp
   src/assets/MeshAssetService.cpp
   src/ecs/systems/AnimationSystem.cpp
+  src/ecs/systems/AudioSystem.cpp
   src/ecs/systems/AttachmentSystem.cpp
   src/ecs/systems/CollisionDetectionSystem.cpp
   src/ecs/systems/CollisionResolutionSystem.cpp

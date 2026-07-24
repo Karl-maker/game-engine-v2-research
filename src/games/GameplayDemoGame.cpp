@@ -11,6 +11,7 @@
 #include "ecs/components/ColliderComponent.h"
 #include "ecs/components/CombatVolumeComponent.h"
 #include "ecs/components/ControllerComponent.h"
+#include "ecs/components/AudioComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/IKComponent.h"
 #include "ecs/components/IdentityComponent.h"
@@ -229,6 +230,17 @@ void GameplayDemoGame::onStart() {
     shader.shader.key = "graphics/shaders/model";
     shader.castShadows = true;
     shader.receiveShadows = true;
+  }
+
+  // Example audio source (data-only; AudioSystem currently tracks play state).
+  // Set `clipKey` to a real asset in your project to hook this up to a backend later.
+  {
+    auto& audio = m_registry.emplace<ecs::AudioComponent>(m_player);
+    audio.clipKey = "";      // e.g. "assets/audio/footstep.wav"
+    audio.loop = false;
+    audio.playOnStart = false;
+    audio.volume = 1.0f;
+    audio.pitch = 1.0f;
   }
   {
     auto& skeleton = m_registry.emplace<ecs::SkeletonComponent>(m_player);
@@ -645,6 +657,7 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
   m_skeletonAssetSyncSystem.tick(m_registry, m_meshAssets);
   m_idleAnimationSystem.tick(m_registry, ctx.deltaSeconds);
   m_animationSystem.tick(m_registry, ctx.deltaSeconds);
+  m_audioSystem.tick(m_registry, ctx.deltaSeconds);
   // m_ikSystem.tick(m_registry, m_events);
   m_hierarchySystem.tick(m_registry);
   m_attachmentSystem.update(m_registry, ctx.deltaSeconds);
