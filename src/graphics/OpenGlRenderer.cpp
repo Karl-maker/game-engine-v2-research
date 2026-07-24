@@ -501,6 +501,13 @@ void OpenGlRenderer::glfwCursorPosCallback(GLFWwindow* w, double x, double y) {
 OpenGlRenderer::~OpenGlRenderer() { stop(); }
 
 bool OpenGlRenderer::start(int width, int height, const char* title) {
+  WindowConfig cfg{};
+  cfg.width = width;
+  cfg.height = height;
+  return start(cfg, title);
+}
+
+bool OpenGlRenderer::start(const WindowConfig& cfg, const char* title) {
   if (m_window) return true;
   m_baseTitle = title ? title : "Duppy";
   m_lastTitleUpdateSeconds = 0.0;
@@ -517,7 +524,25 @@ bool OpenGlRenderer::start(int width, int height, const char* title) {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
 
-  m_window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+  GLFWmonitor* monitor = nullptr;
+  int w = std::max(1, cfg.width);
+  int h = std::max(1, cfg.height);
+  if (cfg.fullscreen) {
+    monitor = glfwGetPrimaryMonitor();
+    if (monitor) {
+      if (const GLFWvidmode* mode = glfwGetVideoMode(monitor)) {
+        w = mode->width;
+        h = mode->height;
+        if (cfg.refreshRateHz > 0) {
+          glfwWindowHint(GLFW_REFRESH_RATE, cfg.refreshRateHz);
+        } else {
+          glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+        }
+      }
+    }
+  }
+
+  m_window = glfwCreateWindow(w, h, title, monitor, nullptr);
   if (!m_window) {
     std::cerr << "Failed to create GLFW window\n";
     glfwTerminate();
@@ -525,7 +550,7 @@ bool OpenGlRenderer::start(int width, int height, const char* title) {
   }
 
   glfwMakeContextCurrent(m_window);
-  glfwSwapInterval(1);
+  glfwSwapInterval(cfg.vsync ? 1 : 0);
   glfwSetWindowUserPointer(m_window, this);
   glfwSetKeyCallback(m_window, &OpenGlRenderer::glfwKeyCallback);
   glfwSetCursorPosCallback(m_window, &OpenGlRenderer::glfwCursorPosCallback);

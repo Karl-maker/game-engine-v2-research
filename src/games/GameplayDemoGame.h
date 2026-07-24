@@ -43,13 +43,23 @@
 
 namespace games {
 
+struct GameplayDemoConfig final {
+  int windowWidth = 1280;
+  int windowHeight = 720;
+  bool fullscreen = false;
+  bool vsync = false;
+  int fullscreenRefreshRateHz = 0;  // 0 = platform default
+};
+
 class GameplayDemoGame final : public core::IGame {
  public:
+  explicit GameplayDemoGame(GameplayDemoConfig config = {}) : m_config(config) {}
   void onStart() override;
   void onTick(const core::TickContext& ctx) override;
   void onStop() override;
 
  private:
+  GameplayDemoConfig m_config{};
  ecs::EntityRegistry m_registry;
   core::ControlService m_controls;
   core::ThreadService m_threads;

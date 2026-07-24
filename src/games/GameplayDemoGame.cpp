@@ -590,7 +590,13 @@ void GameplayDemoGame::onStart() {
   }
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
-  if (!m_renderer.start(1280, 720, "Duppy - Gameplay Demo")) {
+  graphics::OpenGlRenderer::WindowConfig wcfg{};
+  wcfg.width = m_config.windowWidth;
+  wcfg.height = m_config.windowHeight;
+  wcfg.fullscreen = m_config.fullscreen;
+  wcfg.vsync = m_config.vsync;
+  wcfg.refreshRateHz = m_config.fullscreenRefreshRateHz;
+  if (!m_renderer.start(wcfg, "Duppy - Gameplay Demo")) {
     std::cerr << "OpenGL renderer failed to start; falling back to terminal snapshot.\n";
   }
 #endif

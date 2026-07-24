@@ -23,6 +23,14 @@ namespace graphics {
 
 class OpenGlRenderer final {
  public:
+  struct WindowConfig final {
+    int width = 1280;
+    int height = 720;
+    bool fullscreen = false;
+    bool vsync = false;
+    int refreshRateHz = 0;  // 0 = platform default
+  };
+
   struct RealtimeInput final {
     float moveX = 0.0f;   // -1..1 (A/D)
     float moveZ = 0.0f;   // -1..1 (S/W)
@@ -38,6 +46,7 @@ class OpenGlRenderer final {
   ~OpenGlRenderer();
 
   bool start(int width, int height, const char* title);
+  bool start(const WindowConfig& cfg, const char* title);
   void stop();
 
   bool isOpen() const;
