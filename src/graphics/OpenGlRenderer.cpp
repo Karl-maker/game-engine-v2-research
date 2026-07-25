@@ -1512,13 +1512,6 @@ OpenGlRenderer::RockMesh* OpenGlRenderer::getOrCreateRockMesh(
   const terrain::NoiseConfig groundCfg = groundTerrain ? groundTerrain->noise : terrain::NoiseConfig{};
   const float groundHeightScale = groundTerrain ? groundTerrain->heightScaleMeters : 0.0f;
 
-  const float terrainSizeX =
-      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridWidth)) * groundTerrain->cellSizeMeters) : 0.0f;
-  const float terrainSizeZ =
-      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridHeight)) * groundTerrain->cellSizeMeters) : 0.0f;
-  const float terrainHalfW = terrainSizeX * 0.5f;
-  const float terrainHalfD = terrainSizeZ * 0.5f;
-
   auto rand01 = [&](std::uint32_t n) {
     n ^= n >> 16;
     n *= 0x7feb352dU;
@@ -1590,11 +1583,7 @@ OpenGlRenderer::RockMesh* OpenGlRenderer::getOrCreateRockMesh(
 
     float groundY = groundTerrain ? groundTerrain->position.y : r.position.y;
     if (groundHeightScale != 0.0f) {
-      float localX = (inst.px - groundTerrain->position.x) + terrainHalfW;
-      float localZ = (inst.pz - groundTerrain->position.z) + terrainHalfD;
-      localX = std::clamp(localX, 0.0f, terrainSizeX);
-      localZ = std::clamp(localZ, 0.0f, terrainSizeZ);
-      groundY += heightNoise.sampleFractal(localX, localZ, groundCfg) * groundHeightScale;
+      groundY += heightNoise.sampleFractal(inst.px, inst.pz, groundCfg) * groundHeightScale;
     }
     inst.py = groundY - 0.01f;
 
@@ -1965,21 +1954,10 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   const terrain::NoiseConfig groundCfg = groundTerrain ? groundTerrain->noise : terrain::NoiseConfig{};
   const float groundHeightScale = groundTerrain ? groundTerrain->heightScaleMeters : 0.0f;
 
-  const float terrainSizeX =
-      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridWidth)) * groundTerrain->cellSizeMeters) : 0.0f;
-  const float terrainSizeZ =
-      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridHeight)) * groundTerrain->cellSizeMeters) : 0.0f;
-  const float terrainHalfW = terrainSizeX * 0.5f;
-  const float terrainHalfD = terrainSizeZ * 0.5f;
-
   auto sampleGroundY = [&](float worldX, float worldZ) -> float {
     float groundY = groundTerrain ? groundTerrain->position.y : g.position.y;
     if (!groundTerrain || groundHeightScale == 0.0f) return groundY;
-    float localX = (worldX - groundTerrain->position.x) + terrainHalfW;
-    float localZ = (worldZ - groundTerrain->position.z) + terrainHalfD;
-    localX = std::clamp(localX, 0.0f, terrainSizeX);
-    localZ = std::clamp(localZ, 0.0f, terrainSizeZ);
-    groundY += heightNoise.sampleFractal(localX, localZ, groundCfg) * groundHeightScale;
+    groundY += heightNoise.sampleFractal(worldX, worldZ, groundCfg) * groundHeightScale;
     return groundY;
   };
 

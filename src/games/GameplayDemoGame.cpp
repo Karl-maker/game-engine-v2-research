@@ -505,11 +505,11 @@ void GameplayDemoGame::onStart() {
     gp.interactionRadiusMeters = 1.0f;
     gp.interactionStrength = 1.0f;
 
-    // Billboard grass planes: three intersecting planes nearby, cheaper LOD farther out.
+    // Camera-relative crossed billboards nearby, collapsing to fewer planes farther out.
     gp.layers = {
         ecs::GrassPatchComponent::GrassLayer{.species = "BillboardGrassPlanes",
                                              .description =
-                                                 "Three off-center intersecting billboard planes with random heights and texture variation.",
+                                                 "Camera-relative crossed billboard grass planes with distance-based LOD and texture variation.",
                                              .density = 6.2f,
                                              .minScale = 0.56f,
                                              .maxScale = 0.98f,

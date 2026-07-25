@@ -64,10 +64,10 @@ mat3 rotY(float a) {
   );
 }
 
-float planeBaseYaw(float planeId) {
-  if (planeId < 0.5) return radians(-18.0);
-  if (planeId < 1.5) return radians(29.0);
-  return radians(72.0);
+float planeCrossYaw(float planeId) {
+  if (planeId < 0.5) return 0.0;
+  if (planeId < 1.5) return radians(58.0);
+  return radians(-58.0);
 }
 
 void main() {
@@ -105,12 +105,14 @@ void main() {
     local.x += sin(h * 3.14159 * mix(0.90, 1.35, fract(i_Var * 9.11)) + i_Var * 6.28318) * 0.024 * tip;
     local.z += sin(h * 4.71239 + i_Var * 8.213 + a_PlaneId) * 0.016 * tip;
 
-    // LOD: in far distance, only plane 0 faces camera.
+    // Camera-relative crossed billboards nearby, converging toward a single
+    // camera-facing plane with distance.
     vec3 toCamera = u_CameraPos - i_WorldPos;
     float cameraFacingYaw = atan(toCamera.x, toCamera.z);
     float lodToBillboard = smoothstep(u_LodTwoPlaneDist, u_LodOnePlaneDist, instanceDist);
-    float planeYaw = planeBaseYaw(a_PlaneId) + i_Rot;
-    planeYaw = mix(planeYaw, cameraFacingYaw, (a_PlaneId < 0.5) ? lodToBillboard : 0.0);
+    float crossedYaw = cameraFacingYaw + planeCrossYaw(a_PlaneId) + i_Rot;
+    float singleYaw = cameraFacingYaw;
+    float planeYaw = mix(crossedYaw, singleYaw, lodToBillboard);
 
     // Gentle GPU sway (no wind settings).
     float swayPhase = dot(i_WorldPos.xz, vec2(0.18, 0.24)) + u_Time * mix(0.55, 0.82, fract(i_Var * 7.73));
@@ -171,4 +173,3 @@ void main() {
   v_WorldPos = p;
   gl_Position = u_ViewProj * vec4(p, 1.0);
 }
-
