@@ -5,6 +5,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 add_executable(duppy
   src/main.cpp
   src/data/Json.cpp
@@ -65,6 +69,13 @@ if(MSVC)
   target_compile_options(duppy PRIVATE /W4 /permissive-)
 else()
   target_compile_options(duppy PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT DUPPY_IPO_SUPPORTED OUTPUT DUPPY_IPO_OUTPUT)
+if(DUPPY_IPO_SUPPORTED)
+  set_property(TARGET duppy PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+  set_property(TARGET duppy PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
 endif()
 
 find_package(Threads REQUIRED)

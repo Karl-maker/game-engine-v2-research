@@ -167,14 +167,31 @@ ecs::services::SpatialHashGridService::Aabb combatAabb(const ecs::TransformCompo
   }
 }
 
-math::Mat4 boneWorldMatrix(const ecs::SkeletonComponent& skeleton, int boneIndex) {
-  if (boneIndex < 0 || boneIndex >= static_cast<int>(skeleton.bones.size())) return math::identity();
-  math::Mat4 local = skeleton.currentPose.size() > static_cast<std::size_t>(boneIndex)
-                         ? skeleton.currentPose[static_cast<std::size_t>(boneIndex)]
-                         : skeleton.bones[static_cast<std::size_t>(boneIndex)].localBindTransform;
-  const int parent = skeleton.bones[static_cast<std::size_t>(boneIndex)].parentIndex;
-  if (parent < 0 || skeleton.space == ecs::SkeletonComponent::Space::World) return local;
-  return math::mul(boneWorldMatrix(skeleton, parent), local);
+void buildBoneWorldMatrices(const ecs::SkeletonComponent& skeleton,
+                            std::vector<math::Mat4>& out,
+                            std::vector<std::uint8_t>& computed) {
+  const std::size_t boneCount = skeleton.bones.size();
+  out.resize(boneCount);
+  computed.assign(boneCount, 0u);
+
+  const auto resolveBoneWorld = [&](auto&& self, int boneIndex) -> const math::Mat4& {
+    const std::size_t idx = static_cast<std::size_t>(boneIndex);
+    if (computed[idx] != 0u) return out[idx];
+
+    const math::Mat4 local = skeleton.currentPose.size() > idx ? skeleton.currentPose[idx] : skeleton.bones[idx].localBindTransform;
+    const int parent = skeleton.bones[idx].parentIndex;
+    if (parent < 0 || parent >= static_cast<int>(boneCount) || skeleton.space == ecs::SkeletonComponent::Space::World) {
+      out[idx] = local;
+    } else {
+      out[idx] = math::mul(self(self, parent), local);
+    }
+    computed[idx] = 1u;
+    return out[idx];
+  };
+
+  for (std::size_t i = 0; i < boneCount; ++i) {
+    (void)resolveBoneWorld(resolveBoneWorld, static_cast<int>(i));
+  }
 }
 
 bool readFloatParam(const ecs::ShaderComponent& shader, const char* name, float& out) {
@@ -535,10 +552,11 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         if (const auto* skeleton = registry.tryGet<ecs::SkeletonComponent>(id)) {
           const std::size_t count = std::min<std::size_t>(96, std::min(skeleton->bones.size(), skeleton->inverseBindMatrices.size()));
           if (skeleton->enabled && count > 0) {
+            buildBoneWorldMatrices(*skeleton, m_boneWorldScratch, m_boneWorldComputedScratch);
             draw.hasSkinning = true;
-            draw.skinMatrices.reserve(count);
+            draw.skinMatrixCount = count;
             for (std::size_t i = 0; i < count; ++i) {
-              draw.skinMatrices.push_back(math::mul(boneWorldMatrix(*skeleton, static_cast<int>(i)), skeleton->inverseBindMatrices[i]));
+              draw.skinMatrices[i] = math::mul(m_boneWorldScratch[i], skeleton->inverseBindMatrices[i]);
             }
           }
         }
@@ -630,6 +648,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
       registry.view<ecs::SkeletonComponent, ecs::TransformComponent>(
           [&](ecs::EntityId id, const ecs::SkeletonComponent& skeleton, const ecs::TransformComponent& tr) {
             if (!skeleton.enabled || skeleton.bones.empty()) return;
+            buildBoneWorldMatrices(skeleton, m_boneWorldScratch, m_boneWorldComputedScratch);
             math::Mat4 rootWorld = composeWorld(tr);
             if (const auto* mesh = registry.tryGet<ecs::MeshComponent>(id)) {
               rootWorld = math::mul(rootWorld, math::scale(mesh->scale));
@@ -637,8 +656,8 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
             for (std::size_t i = 0; i < skeleton.bones.size(); ++i) {
               const int parent = skeleton.bones[i].parentIndex;
               if (parent < 0) continue;
-              const math::Vec3 childPos = translationFromMat4(math::mul(rootWorld, boneWorldMatrix(skeleton, static_cast<int>(i))));
-              const math::Vec3 parentPos = translationFromMat4(math::mul(rootWorld, boneWorldMatrix(skeleton, parent)));
+              const math::Vec3 childPos = translationFromMat4(math::mul(rootWorld, m_boneWorldScratch[i]));
+              const math::Vec3 parentPos = translationFromMat4(math::mul(rootWorld, m_boneWorldScratch[static_cast<std::size_t>(parent)]));
               addLine(m_frame.debugLines, parentPos, childPos, {1.0f, 1.0f, 1.0f, 1.0f});
             }
           });

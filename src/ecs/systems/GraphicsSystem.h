@@ -24,6 +24,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <string>
 #include <vector>
 
@@ -217,7 +218,8 @@ class GraphicsSystem final {
     bool hasMetallicRoughnessTex = false;
     bool hasOrmTex = false;
     bool hasSkinning = false;
-    std::vector<math::Mat4> skinMatrices;
+    std::size_t skinMatrixCount = 0;
+    std::array<math::Mat4, 96> skinMatrices{};
   };
 
   struct FrameSnapshot final {
@@ -489,6 +491,8 @@ class GraphicsSystem final {
 
  private:
   FrameSnapshot m_frame{};
+  std::vector<math::Mat4> m_boneWorldScratch{};
+  std::vector<std::uint8_t> m_boneWorldComputedScratch{};
 };
 
 }  // namespace ecs::systems

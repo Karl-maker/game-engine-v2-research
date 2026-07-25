@@ -3260,13 +3260,13 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locCam >= 0) glUniform3f(locCam, frame.camera.position.x, frame.camera.position.y, frame.camera.position.z);
     const GLint locSkinned = glGetUniformLocation(program->programId, "u_Skinned");
     if (locSkinned >= 0) glUniform1i(locSkinned, m.hasSkinning ? 1 : 0);
-    if (m.hasSkinning && !m.skinMatrices.empty()) {
+    if (m.hasSkinning && m.skinMatrixCount > 0) {
       const GLint locBones = glGetUniformLocation(program->programId, "u_Bones[0]");
       if (locBones >= 0) {
         glUniformMatrix4fv(locBones,
-                           static_cast<GLsizei>(std::min<std::size_t>(96, m.skinMatrices.size())),
+                           static_cast<GLsizei>(std::min<std::size_t>(96, m.skinMatrixCount)),
                            GL_FALSE,
-                           m.skinMatrices.front().m);
+                           m.skinMatrices[0].m);
       }
     }
 
