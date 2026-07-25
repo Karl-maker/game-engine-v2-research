@@ -15,12 +15,13 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 constexpr float kDegToRad = kPi / 180.0f;
-constexpr float kRadToDeg = 180.0f / kPi;
 
 // Character-relative shoulder side.
 //  1.0f = camera on character's right.
 // -1.0f = camera on character's left.
 constexpr float kShoulderSide = -1.0f;
+constexpr float kIdleOrbitSpeedThreshold = 0.05f;
+constexpr float kIdleOrbitIntentThresholdSq = 0.0001f;
 
 float lerp(
     float a,
@@ -39,6 +40,28 @@ math::Vec3 lerpVec3(
       lerp(a.x, b.x, t),
       lerp(a.y, b.y, t),
       lerp(a.z, b.z, t)};
+}
+
+bool hasMoveIntent(
+    const ecs::ControllerComponent* controller) {
+
+  if (!controller ||
+      !controller->enabled) {
+    return false;
+  }
+
+  if (controller->moveRequest.hasDirection &&
+      math::lengthSq(
+          controller->moveRequest.direction) >
+          kIdleOrbitIntentThresholdSq) {
+    return true;
+  }
+
+  if (controller->moveRequest.hasDestination) {
+    return true;
+  }
+
+  return false;
 }
 
 }  // namespace
@@ -92,10 +115,12 @@ void ThirdPersonCameraSystem::tick(
         // Y = character/camera yaw
         // ---------------------------------------------------------
 
-        if (auto* controller =
-                registry.tryGet<
-                    ecs::ControllerComponent>(
-                    cam.target)) {
+        auto* controller =
+            registry.tryGet<
+                ecs::ControllerComponent>(
+                cam.target);
+
+        if (controller) {
 
           if (controller->enabled &&
               controller->lookRequest.hasRequest) {
@@ -108,52 +133,12 @@ void ThirdPersonCameraSystem::tick(
                 std::clamp(
                     cam.pitchDeg +
                         controller->
-                            lookRequest.lookDelta.x,
+                    lookRequest.lookDelta.x,
 
                     cam.minPitchDeg,
                     cam.maxPitchDeg);
-
-            targetTr->rotation.y =
-                cam.yawDeg;
           }
         }
-
-        // ---------------------------------------------------------
-        // CHARACTER FORWARD
-        //
-        // The character's facing direction controls the horizontal
-        // orbit position of the camera.
-        // ---------------------------------------------------------
-
-        const math::Vec3 characterForward{
-            std::sin(
-                targetTr->rotation.y *
-                kDegToRad),
-
-            0.0f,
-
-            std::cos(
-                targetTr->rotation.y *
-                kDegToRad)
-        };
-
-        // ---------------------------------------------------------
-        // CHARACTER RIGHT
-        //
-        // Used ONLY for the left/right shoulder offset.
-        // ---------------------------------------------------------
-
-        const math::Vec3 characterRight{
-            std::cos(
-                targetTr->rotation.y *
-                kDegToRad),
-
-            0.0f,
-
-            -std::sin(
-                targetTr->rotation.y *
-                kDegToRad)
-        };
 
         // ---------------------------------------------------------
         // VELOCITY
@@ -165,6 +150,61 @@ void ThirdPersonCameraSystem::tick(
           currentSpeed =
               motion->currentSpeed;
         }
+
+        const bool movingWithIntent =
+            currentSpeed >
+                kIdleOrbitSpeedThreshold ||
+            (motion &&
+             motion->isMoving) ||
+            hasMoveIntent(
+                controller);
+
+        if (movingWithIntent) {
+          targetTr->rotation.y =
+              cam.yawDeg;
+        }
+
+        const float orbitYawDeg =
+            movingWithIntent
+                ? targetTr->rotation.y
+                : cam.yawDeg;
+
+        // ---------------------------------------------------------
+        // CHARACTER FORWARD
+        //
+        // The character's facing direction controls the horizontal
+        // orbit position of the camera.
+        // ---------------------------------------------------------
+
+        const math::Vec3 characterForward{
+            std::sin(
+                orbitYawDeg *
+                kDegToRad),
+
+            0.0f,
+
+            std::cos(
+                orbitYawDeg *
+                kDegToRad)
+        };
+
+        // ---------------------------------------------------------
+        // CHARACTER RIGHT
+        //
+        // Used ONLY for the left/right shoulder offset.
+        // ---------------------------------------------------------
+
+        const math::Vec3 characterRight{
+            std::cos(
+                orbitYawDeg *
+                kDegToRad),
+
+            0.0f,
+
+            -std::sin(
+                orbitYawDeg *
+                kDegToRad)
+        };
 
         // ---------------------------------------------------------
         // CAMERA DISTANCE
@@ -269,7 +309,7 @@ void ThirdPersonCameraSystem::tick(
             cam.pitchDeg;
 
         camTr.rotation.y =
-            targetTr->rotation.y;
+            orbitYawDeg;
 
         camTr.rotation.z =
             0.0f;
