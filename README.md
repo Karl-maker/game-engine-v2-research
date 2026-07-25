@@ -257,6 +257,12 @@ To add a new mesh format:
 3. Return a populated `LoadedMeshAsset`.
 4. Point a `MeshComponent` at the file path.
 
+Mesh materials can also override shader texture refs through `ShaderComponent.textures` using slots like `albedo`, `normalgl`, `roughness`, `metallic`, `ao`, `specular`, `emissive`, `displacement`, `metallicRoughness`, and `orm`.
+
+The glTF loader now auto-imports base color, normal, metallic-roughness, occlusion, and emissive textures plus their common factors, and it also reads `KHR_materials_specular` when present.
+
+Mesh UVs are loaded from the source asset automatically when they exist; the engine does not generate new UV unwraps during load.
+
 Example:
 
 ```cpp

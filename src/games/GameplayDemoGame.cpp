@@ -349,12 +349,12 @@ void GameplayDemoGame::onStart() {
   cam.depthOfField.focusMode = ecs::CameraComponent::DepthOfFieldSettings::FocusMode::TargetEntity;
   cam.depthOfField.focusTarget = m_player;
   cam.depthOfField.focusTargetOffset = {0.0f, 1.6f, 0.0f};
-  cam.depthOfField.focusRange = 2.25f;
-  cam.depthOfField.blurStrength = 0.15f;
+  cam.depthOfField.focusRange = 0.25f;
+  cam.depthOfField.blurStrength = 0.05f;
 
   cam.motionBlur.enabled = true;
-  cam.motionBlur.strength = 0.75f;
-  cam.motionBlur.maxBlurPixels = 18.0f;
+  cam.motionBlur.strength = 0.05f;
+  cam.motionBlur.maxBlurPixels = 8.0f;
   cam.motionBlur.samples = 12;
 
   {
@@ -593,104 +593,104 @@ void GameplayDemoGame::onStart() {
   }
 
   // Billboard examples: full camera-facing and yaw-only, both using animated frame sequences.
-  {
-    const ecs::EntityId glowBillboard = m_registry.createEntity("billboard_glow");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(glowBillboard);
-    tr.position = {-4.0f, 0.0f, 5.0f};
-    auto& billboard = m_registry.emplace<ecs::BillboardComponent>(glowBillboard);
-    billboard.faceMode = ecs::BillboardComponent::FaceMode::CameraPlane;
-    billboard.sizeMeters = {1.8f, 1.8f};
-    billboard.pivot = {0.5f, 0.0f};
-    billboard.textureEnabled = true;
-    billboard.texture = {true, "assets/textures/ground/ground_color.jpg", 0};
-    billboard.animatedTexture.enabled = true;
-    billboard.animatedTexture.framesPerSecond = 2.25f;
-    billboard.animatedTexture.frames = {
-        {true, "assets/textures/ground/ground_color.jpg", 0},
-        {true, "assets/textures/grass/grass_color.jpg", 0},
-        {true, "assets/textures/stone/stone_color.jpg", 0},
-    };
-    billboard.tint = {1.0f, 1.0f, 1.0f, 0.92f};
-    billboard.maxRenderDistance = 120.0f;
-  }
-  {
-    const ecs::EntityId signBillboard = m_registry.createEntity("billboard_sign");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(signBillboard);
-    tr.position = {5.5f, 0.0f, 6.0f};
-    tr.rotation = {0.0f, 25.0f, 0.0f};
-    auto& billboard = m_registry.emplace<ecs::BillboardComponent>(signBillboard);
-    billboard.faceMode = ecs::BillboardComponent::FaceMode::YawOnly;
-    billboard.sizeMeters = {1.4f, 2.2f};
-    billboard.pivot = {0.5f, 0.0f};
-    billboard.textureEnabled = true;
-    billboard.texture = {true, "assets/textures/grass_rock/grass_rock_color.jpg", 0};
-    billboard.animatedTexture.enabled = true;
-    billboard.animatedTexture.framesPerSecond = 1.0f;
-    billboard.animatedTexture.pingPong = true;
-    billboard.animatedTexture.frames = {
-        {true, "assets/textures/grass_rock/grass_rock_color.jpg", 0},
-        {true, "assets/textures/rock/rock_color.jpg", 0},
-        {true, "assets/textures/dirt/dirt_color.jpg", 0},
-    };
-    billboard.tint = {1.0f, 1.0f, 1.0f, 0.95f};
-    billboard.maxRenderDistance = 144.0f;
-  }
+  // {
+  //   const ecs::EntityId glowBillboard = m_registry.createEntity("billboard_glow");
+  //   auto& tr = m_registry.emplace<ecs::TransformComponent>(glowBillboard);
+  //   tr.position = {-4.0f, 0.0f, 5.0f};
+  //   auto& billboard = m_registry.emplace<ecs::BillboardComponent>(glowBillboard);
+  //   billboard.faceMode = ecs::BillboardComponent::FaceMode::CameraPlane;
+  //   billboard.sizeMeters = {1.8f, 1.8f};
+  //   billboard.pivot = {0.5f, 0.0f};
+  //   billboard.textureEnabled = true;
+  //   billboard.texture = {true, "assets/textures/ground/ground_color.jpg", 0};
+  //   billboard.animatedTexture.enabled = true;
+  //   billboard.animatedTexture.framesPerSecond = 2.25f;
+  //   billboard.animatedTexture.frames = {
+  //       {true, "assets/textures/ground/ground_color.jpg", 0},
+  //       {true, "assets/textures/grass/grass_color.jpg", 0},
+  //       {true, "assets/textures/stone/stone_color.jpg", 0},
+  //   };
+  //   billboard.tint = {1.0f, 1.0f, 1.0f, 0.92f};
+  //   billboard.maxRenderDistance = 120.0f;
+  // }
+  // {
+  //   const ecs::EntityId signBillboard = m_registry.createEntity("billboard_sign");
+  //   auto& tr = m_registry.emplace<ecs::TransformComponent>(signBillboard);
+  //   tr.position = {5.5f, 0.0f, 6.0f};
+  //   tr.rotation = {0.0f, 25.0f, 0.0f};
+  //   auto& billboard = m_registry.emplace<ecs::BillboardComponent>(signBillboard);
+  //   billboard.faceMode = ecs::BillboardComponent::FaceMode::YawOnly;
+  //   billboard.sizeMeters = {1.4f, 2.2f};
+  //   billboard.pivot = {0.5f, 0.0f};
+  //   billboard.textureEnabled = true;
+  //   billboard.texture = {true, "assets/textures/grass_rock/grass_rock_color.jpg", 0};
+  //   billboard.animatedTexture.enabled = true;
+  //   billboard.animatedTexture.framesPerSecond = 1.0f;
+  //   billboard.animatedTexture.pingPong = true;
+  //   billboard.animatedTexture.frames = {
+  //       {true, "assets/textures/grass_rock/grass_rock_color.jpg", 0},
+  //       {true, "assets/textures/rock/rock_color.jpg", 0},
+  //       {true, "assets/textures/dirt/dirt_color.jpg", 0},
+  //   };
+  //   billboard.tint = {1.0f, 1.0f, 1.0f, 0.95f};
+  //   billboard.maxRenderDistance = 144.0f;
+  // }
 
-  // VFX examples: fire, electricity, and sparks.
-  {
-    const ecs::EntityId fire = m_registry.createEntity("campfire_vfx");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(fire);
-    tr.position = {2.0f, 0.0f, 2.0f};
-    tr.scale = {1.0f, 1.0f, 1.0f};
-    auto& vfx = m_registry.emplace<ecs::VfxComponent>(fire);
-    vfx.type = ecs::VfxComponent::Type::Fire;
-    vfx.quality = ecs::VfxComponent::Quality::Ultra;
-    vfx.maxRenderDistance = 96.0f;
-    vfx.spawnRate = 30.0f;
-    vfx.lifetimeSeconds = 1.15f;
-    vfx.sizeMeters = 0.42f;
-    vfx.heightMeters = 1.6f;
-    vfx.spreadRadiusMeters = 0.55f;
-    vfx.flickerStrength = 0.40f;
-    vfx.flickerSpeed = 9.0f;
-    vfx.primaryColor = {1.0f, 0.45f, 0.08f, 1.0f};
-    vfx.secondaryColor = {1.0f, 0.92f, 0.45f, 1.0f};
-  }
-  {
-    const ecs::EntityId arc = m_registry.createEntity("electric_arc_vfx");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(arc);
-    tr.position = {-3.0f, 1.5f, 4.5f};
-    tr.rotation = {0.0f, 35.0f, 0.0f};
-    auto& vfx = m_registry.emplace<ecs::VfxComponent>(arc);
-    vfx.type = ecs::VfxComponent::Type::Electricity;
-    vfx.quality = ecs::VfxComponent::Quality::High;
-    vfx.maxRenderDistance = 120.0f;
-    vfx.chargeLengthMeters = 4.5f;
-    vfx.arcJitter = 0.6f;
-    vfx.branchCount = 5;
-    vfx.segmentCount = 9;
-    vfx.pulseSpeed = 16.0f;
-    vfx.sizeMeters = 0.20f;
-    vfx.primaryColor = {0.35f, 0.85f, 1.0f, 1.0f};
-    vfx.secondaryColor = {0.9f, 1.0f, 1.0f, 1.0f};
-  }
-  {
-    const ecs::EntityId sparks = m_registry.createEntity("sparks_vfx");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(sparks);
-    tr.position = {0.0f, 1.2f, 3.5f};
-    auto& vfx = m_registry.emplace<ecs::VfxComponent>(sparks);
-    vfx.type = ecs::VfxComponent::Type::Sparks;
-    vfx.quality = ecs::VfxComponent::Quality::High;
-    vfx.maxRenderDistance = 88.0f;
-    vfx.sparkCount = 24;
-    vfx.spawnRate = 18.0f;
-    vfx.sizeMeters = 0.16f;
-    vfx.speedMetersPerSecond = 7.5f;
-    vfx.sparkTrailLengthMeters = 0.75f;
-    vfx.sparkFadeSeconds = 0.20f;
-    vfx.primaryColor = {1.0f, 0.65f, 0.15f, 1.0f};
-    vfx.secondaryColor = {1.0f, 0.95f, 0.70f, 1.0f};
-  }
+  // // VFX examples: fire, electricity, and sparks.
+  // {
+  //   const ecs::EntityId fire = m_registry.createEntity("campfire_vfx");
+  //   auto& tr = m_registry.emplace<ecs::TransformComponent>(fire);
+  //   tr.position = {2.0f, 0.0f, 2.0f};
+  //   tr.scale = {1.0f, 1.0f, 1.0f};
+  //   auto& vfx = m_registry.emplace<ecs::VfxComponent>(fire);
+  //   vfx.type = ecs::VfxComponent::Type::Fire;
+  //   vfx.quality = ecs::VfxComponent::Quality::Ultra;
+  //   vfx.maxRenderDistance = 96.0f;
+  //   vfx.spawnRate = 30.0f;
+  //   vfx.lifetimeSeconds = 1.15f;
+  //   vfx.sizeMeters = 0.42f;
+  //   vfx.heightMeters = 1.6f;
+  //   vfx.spreadRadiusMeters = 0.55f;
+  //   vfx.flickerStrength = 0.40f;
+  //   vfx.flickerSpeed = 9.0f;
+  //   vfx.primaryColor = {1.0f, 0.45f, 0.08f, 1.0f};
+  //   vfx.secondaryColor = {1.0f, 0.92f, 0.45f, 1.0f};
+  // }
+  // {
+  //   const ecs::EntityId arc = m_registry.createEntity("electric_arc_vfx");
+  //   auto& tr = m_registry.emplace<ecs::TransformComponent>(arc);
+  //   tr.position = {-3.0f, 1.5f, 4.5f};
+  //   tr.rotation = {0.0f, 35.0f, 0.0f};
+  //   auto& vfx = m_registry.emplace<ecs::VfxComponent>(arc);
+  //   vfx.type = ecs::VfxComponent::Type::Electricity;
+  //   vfx.quality = ecs::VfxComponent::Quality::High;
+  //   vfx.maxRenderDistance = 120.0f;
+  //   vfx.chargeLengthMeters = 4.5f;
+  //   vfx.arcJitter = 0.6f;
+  //   vfx.branchCount = 5;
+  //   vfx.segmentCount = 9;
+  //   vfx.pulseSpeed = 16.0f;
+  //   vfx.sizeMeters = 0.20f;
+  //   vfx.primaryColor = {0.35f, 0.85f, 1.0f, 1.0f};
+  //   vfx.secondaryColor = {0.9f, 1.0f, 1.0f, 1.0f};
+  // }
+  // {
+  //   const ecs::EntityId sparks = m_registry.createEntity("sparks_vfx");
+  //   auto& tr = m_registry.emplace<ecs::TransformComponent>(sparks);
+  //   tr.position = {0.0f, 1.2f, 3.5f};
+  //   auto& vfx = m_registry.emplace<ecs::VfxComponent>(sparks);
+  //   vfx.type = ecs::VfxComponent::Type::Sparks;
+  //   vfx.quality = ecs::VfxComponent::Quality::High;
+  //   vfx.maxRenderDistance = 88.0f;
+  //   vfx.sparkCount = 24;
+  //   vfx.spawnRate = 18.0f;
+  //   vfx.sizeMeters = 0.16f;
+  //   vfx.speedMetersPerSecond = 7.5f;
+  //   vfx.sparkTrailLengthMeters = 0.75f;
+  //   vfx.sparkFadeSeconds = 0.20f;
+  //   vfx.primaryColor = {1.0f, 0.65f, 0.15f, 1.0f};
+  //   vfx.secondaryColor = {1.0f, 0.95f, 0.70f, 1.0f};
+  // }
 
   m_light = m_registry.createEntity("sun");
   m_registry.emplace<ecs::TransformComponent>(m_light);

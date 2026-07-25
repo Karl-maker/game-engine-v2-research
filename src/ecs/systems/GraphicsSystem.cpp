@@ -203,6 +203,25 @@ bool readBaseColorParam(const ecs::ShaderComponent& shader, float& r, float& g, 
   return found;
 }
 
+bool readColorParam(const ecs::ShaderComponent& shader, const char* name, float& r, float& g, float& b) {
+  bool found = false;
+  for (const auto& p : shader.parameters) {
+    if (p.name != name) continue;
+    if (const auto* c = std::get_if<render::Color>(&p.value)) {
+      r = c->r;
+      g = c->g;
+      b = c->b;
+      found = true;
+    } else if (const auto* v = std::get_if<math::Vec3>(&p.value)) {
+      r = v->x;
+      g = v->y;
+      b = v->z;
+      found = true;
+    }
+  }
+  return found;
+}
+
 bool readBoolParam(const ecs::ShaderComponent& shader, const char* name, bool& out) {
   bool found = false;
   for (const auto& p : shader.parameters) {
@@ -312,6 +331,37 @@ void extractGrassTextures(const ecs::ShaderComponent& shader, GraphicsSystem::Fr
   if (out.grassTextures.empty() && out.hasAlbedoTex) {
     out.grassTextures.push_back(out.albedoTex);
   }
+}
+
+void extractMeshTextures(const ecs::ShaderComponent& shader, GraphicsSystem::MeshDraw& out) {
+  auto tryBind = [&](const char* slot, render::AssetRef& dst, bool& has) {
+    for (const auto& t : shader.textures) {
+      if (t.slot == slot && t.texture.enabled && !t.texture.key.empty()) {
+        dst = t.texture;
+        has = true;
+        return;
+      }
+    }
+  };
+
+  tryBind("albedo", out.albedoTex, out.hasAlbedoTex);
+  tryBind("baseColor", out.albedoTex, out.hasAlbedoTex);
+  tryBind("base_color", out.albedoTex, out.hasAlbedoTex);
+
+  tryBind("normalgl", out.normalTex, out.hasNormalTex);
+  if (!out.hasNormalTex) tryBind("normal", out.normalTex, out.hasNormalTex);
+
+  tryBind("roughness", out.roughnessTex, out.hasRoughnessTex);
+  tryBind("metallic", out.metallicTex, out.hasMetallicTex);
+  tryBind("ao", out.aoTex, out.hasAoTex);
+  if (!out.hasAoTex) tryBind("ambient_occlusion", out.aoTex, out.hasAoTex);
+  tryBind("specular", out.specularTex, out.hasSpecularTex);
+  tryBind("emissive", out.emissiveTex, out.hasEmissiveTex);
+  tryBind("displacement", out.displacementTex, out.hasDisplacementTex);
+  if (!out.hasDisplacementTex) tryBind("height", out.displacementTex, out.hasDisplacementTex);
+  tryBind("metallicRoughness", out.metallicRoughnessTex, out.hasMetallicRoughnessTex);
+  if (!out.hasMetallicRoughnessTex) tryBind("metallic_roughness", out.metallicRoughnessTex, out.hasMetallicRoughnessTex);
+  tryBind("orm", out.ormTex, out.hasOrmTex);
 }
 
 }  // namespace
@@ -468,6 +518,20 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.visible = mesh.visible;
         draw.castShadows = mesh.castShadows && shader.castShadows;
         draw.receiveShadows = mesh.receiveShadows && shader.receiveShadows;
+        draw.hasBaseColorParam = readBaseColorParam(shader, draw.baseColorR, draw.baseColorG, draw.baseColorB);
+        draw.hasRoughnessParam = readFloatParam(shader, "roughness", draw.roughness);
+        draw.hasMetallicParam = readFloatParam(shader, "metallic", draw.metallic);
+        draw.hasSpecularIntensityParam = readFloatParam(shader, "specularIntensity", draw.specularIntensity);
+        draw.hasNormalStrengthParam = readFloatParam(shader, "normalScale", draw.normalStrength);
+        if (!draw.hasNormalStrengthParam) {
+          draw.hasNormalStrengthParam = readFloatParam(shader, "normalStrength", draw.normalStrength);
+        }
+        draw.hasAoStrengthParam = readFloatParam(shader, "aoStrength", draw.aoStrength);
+        draw.hasEmissiveStrengthParam = readFloatParam(shader, "emissiveStrength", draw.emissiveStrength);
+        draw.hasDisplacementStrengthParam = readFloatParam(shader, "displacementStrength", draw.displacementStrength);
+        draw.hasEmissiveColorParam =
+            readColorParam(shader, "emissiveColor", draw.emissiveColorR, draw.emissiveColorG, draw.emissiveColorB);
+        extractMeshTextures(shader, draw);
         if (const auto* skeleton = registry.tryGet<ecs::SkeletonComponent>(id)) {
           const std::size_t count = std::min<std::size_t>(96, std::min(skeleton->bones.size(), skeleton->inverseBindMatrices.size()));
           if (skeleton->enabled && count > 0) {

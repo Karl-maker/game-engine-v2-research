@@ -24,6 +24,46 @@
 - Bind textures and material parameters after the shader path is known.
 - Use render-state overrides only when the default mesh pipeline is not enough.
 
+## Mesh material slots
+
+For mesh shaders, the current renderer now understands these texture slot names:
+
+- `albedo`, `baseColor`, `base_color`
+- `normalgl`, `normal`
+- `roughness`
+- `metallic`
+- `ao`, `ambient_occlusion`
+- `specular`
+- `emissive`
+- `displacement`, `height`
+- `metallicRoughness`, `metallic_roughness`
+- `orm`
+
+Useful mesh material parameters:
+
+- `baseColor`
+- `roughness`
+- `metallic`
+- `specularIntensity`
+- `normalScale` or `normalStrength`
+- `aoStrength`
+- `emissiveColor`
+- `emissiveStrength`
+- `displacementStrength`
+
+## UVs
+
+- Mesh UVs are loaded from the asset automatically when the source file already contains them.
+- The engine does not generate new UV unwraps during load.
+- If a mesh has no UVs, texture refs can still be assigned, but mapping quality depends entirely on the source asset.
+
+## Automatic glTF material import
+
+- The mesh loader now auto-imports glTF `baseColorTexture`, `normalTexture`, `metallicRoughnessTexture`, `occlusionTexture`, and `emissiveTexture`.
+- It also imports `baseColorFactor`, `roughnessFactor`, `metallicFactor`, `normalTexture.scale`, `occlusionTexture.strength`, and `emissiveFactor`.
+- If the asset uses `KHR_materials_specular`, the loader also imports `specularFactor` and `specularTexture`.
+- Explicit `ShaderComponent` texture refs or parameters still win over imported file material data.
+
 ## Field guide
 
 - `enabled` — Master on/off switch or similar behavior flag.
@@ -43,12 +83,21 @@
 
 ```cpp
 auto& component = registry.emplace<ecs::ShaderComponent>(entity);
-component = ecs::ShaderComponent{};
+component.shader.key = "graphics/shaders/model";
+component.textures.push_back({"albedo", render::AssetRef{true, "assets/textures/stone/stone_color.jpg", 0}, true});
+component.textures.push_back({"normalgl", render::AssetRef{true, "assets/textures/stone/stone_normalgl.jpg", 0}, false});
+component.textures.push_back({"roughness", render::AssetRef{true, "assets/textures/stone/stone_roughness.jpg", 0}, false});
+component.textures.push_back({"ao", render::AssetRef{true, "assets/textures/stone/stone_ambientocclusion.jpg", 0}, false});
+component.parameters.push_back({"roughness", 0.85f});
+component.parameters.push_back({"metallic", 0.0f});
+component.parameters.push_back({"specularIntensity", 0.35f});
+component.parameters.push_back({"normalScale", 1.25f});
 ```
 
 ## Common pairings
 
 - Keep texture keys stable because content and materials often refer to them by path.
+- Use `orm` or `metallicRoughness` when the source workflow already exports packed textures.
 
 ## Notes
 

@@ -33,9 +33,18 @@ struct MeshVertex final {
 struct MeshMaterial final {
   std::string name;
   math::Vec3 baseColorFactor{1.0f, 1.0f, 1.0f};
+  math::Vec3 emissiveFactor{0.0f, 0.0f, 0.0f};
+  float roughnessFactor = 1.0f;
+  float metallicFactor = 1.0f;
+  float normalScale = 1.0f;
+  float occlusionStrength = 1.0f;
+  float specularFactor = 1.0f;
   std::string baseColorTexture;
   std::string normalTexture;
   std::string metallicRoughnessTexture;
+  std::string occlusionTexture;
+  std::string emissiveTexture;
+  std::string specularTexture;
 };
 
 struct LoadedSubMesh final {

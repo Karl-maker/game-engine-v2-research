@@ -393,12 +393,28 @@ class GltfMeshLoader final : public IMeshAssetLoader {
       m.metallicRoughnessTexture =
           textureImagePath(root, baseDir, pbr.at("metallicRoughnessTexture").at("index").intOr(-1));
       m.normalTexture = textureImagePath(root, baseDir, jm.at("normalTexture").at("index").intOr(-1));
+      m.occlusionTexture = textureImagePath(root, baseDir, jm.at("occlusionTexture").at("index").intOr(-1));
+      m.emissiveTexture = textureImagePath(root, baseDir, jm.at("emissiveTexture").at("index").intOr(-1));
       const Json& color = pbr.at("baseColorFactor");
       if (color.isArray() && color.a.size() >= 3) {
         m.baseColorFactor = {color.at(static_cast<std::size_t>(0)).floatOr(1.0f),
                              color.at(static_cast<std::size_t>(1)).floatOr(1.0f),
                              color.at(static_cast<std::size_t>(2)).floatOr(1.0f)};
       }
+      m.roughnessFactor = pbr.at("roughnessFactor").floatOr(1.0f);
+      m.metallicFactor = pbr.at("metallicFactor").floatOr(1.0f);
+      m.normalScale = jm.at("normalTexture").at("scale").floatOr(1.0f);
+      m.occlusionStrength = jm.at("occlusionTexture").at("strength").floatOr(1.0f);
+      const Json& emissive = jm.at("emissiveFactor");
+      if (emissive.isArray() && emissive.a.size() >= 3) {
+        m.emissiveFactor = {emissive.at(static_cast<std::size_t>(0)).floatOr(0.0f),
+                            emissive.at(static_cast<std::size_t>(1)).floatOr(0.0f),
+                            emissive.at(static_cast<std::size_t>(2)).floatOr(0.0f)};
+      }
+      const Json& extensions = jm.at("extensions");
+      const Json& specularExt = extensions.at("KHR_materials_specular");
+      m.specularFactor = specularExt.at("specularFactor").floatOr(1.0f);
+      m.specularTexture = textureImagePath(root, baseDir, specularExt.at("specularTexture").at("index").intOr(-1));
       out.materials.push_back(std::move(m));
     }
   }

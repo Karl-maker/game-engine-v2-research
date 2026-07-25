@@ -3331,13 +3331,77 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     for (const auto& sm : gpu->subMeshes) {
       const assets::MeshMaterial* mat =
           sm.materialIndex < gpu->data.materials.size() ? &gpu->data.materials[sm.materialIndex] : nullptr;
-      const GLuint albedo = (mat && !mat->baseColorTexture.empty()) ? m_textures.requestTexture(mat->baseColorTexture, true) : 0;
-      const GLuint normal = (mat && !mat->normalTexture.empty()) ? m_textures.requestTexture(mat->normalTexture, false) : 0;
+      const math::Vec3 matBase = mat ? mat->baseColorFactor : math::Vec3{1.0f, 1.0f, 1.0f};
+      const math::Vec3 finalBaseColor{
+          (m.hasBaseColorParam ? m.baseColorR : 1.0f) * matBase.x,
+          (m.hasBaseColorParam ? m.baseColorG : 1.0f) * matBase.y,
+          (m.hasBaseColorParam ? m.baseColorB : 1.0f) * matBase.z,
+      };
+      const float finalRoughness = m.hasRoughnessParam ? m.roughness : (mat ? mat->roughnessFactor : m.roughness);
+      const float finalMetallic = m.hasMetallicParam ? m.metallic : (mat ? mat->metallicFactor : m.metallic);
+      const float finalSpecular = m.hasSpecularIntensityParam ? m.specularIntensity : (mat ? mat->specularFactor : m.specularIntensity);
+      const float finalNormalStrength = m.hasNormalStrengthParam ? m.normalStrength : (mat ? mat->normalScale : m.normalStrength);
+      const float finalAoStrength = m.hasAoStrengthParam ? m.aoStrength : (mat ? mat->occlusionStrength : m.aoStrength);
+      const math::Vec3 finalEmissiveColor = m.hasEmissiveColorParam
+                                                ? math::Vec3{m.emissiveColorR, m.emissiveColorG, m.emissiveColorB}
+                                                : (mat ? mat->emissiveFactor : math::Vec3{0.0f, 0.0f, 0.0f});
+      const float finalEmissiveStrength = m.hasEmissiveStrengthParam
+                                              ? m.emissiveStrength
+                                              : ((mat && (mat->emissiveFactor.x > 0.0f || mat->emissiveFactor.y > 0.0f ||
+                                                          mat->emissiveFactor.z > 0.0f))
+                                                     ? 1.0f
+                                                     : m.emissiveStrength);
+      const float finalDisplacementStrength =
+          m.hasDisplacementStrengthParam ? m.displacementStrength : m.displacementStrength;
+      const GLuint albedo = m.hasAlbedoTex ? m_textures.requestTexture(m.albedoTex.key, true)
+                                           : ((mat && !mat->baseColorTexture.empty())
+                                                  ? m_textures.requestTexture(mat->baseColorTexture, true)
+                                                  : 0);
+      const GLuint normal = m.hasNormalTex ? m_textures.requestTexture(m.normalTex.key, false)
+                                           : ((mat && !mat->normalTexture.empty())
+                                                  ? m_textures.requestTexture(mat->normalTexture, false)
+                                                  : 0);
+      const GLuint metallicRoughness =
+          m.hasMetallicRoughnessTex ? m_textures.requestTexture(m.metallicRoughnessTex.key, false)
+                                    : ((mat && !mat->metallicRoughnessTexture.empty())
+                                           ? m_textures.requestTexture(mat->metallicRoughnessTexture, false)
+                                           : 0);
+      const GLuint roughness = m.hasRoughnessTex ? m_textures.requestTexture(m.roughnessTex.key, false) : 0;
+      const GLuint metallic = m.hasMetallicTex ? m_textures.requestTexture(m.metallicTex.key, false) : 0;
+      const GLuint ao = m.hasAoTex ? m_textures.requestTexture(m.aoTex.key, false)
+                                   : ((mat && !mat->occlusionTexture.empty())
+                                          ? m_textures.requestTexture(mat->occlusionTexture, false)
+                                          : 0);
+      const GLuint specular = m.hasSpecularTex ? m_textures.requestTexture(m.specularTex.key, false)
+                                               : ((mat && !mat->specularTexture.empty())
+                                                      ? m_textures.requestTexture(mat->specularTexture, false)
+                                                      : 0);
+      const GLuint emissive = m.hasEmissiveTex ? m_textures.requestTexture(m.emissiveTex.key, true)
+                                               : ((mat && !mat->emissiveTexture.empty())
+                                                      ? m_textures.requestTexture(mat->emissiveTexture, true)
+                                                      : 0);
+      const GLuint displacement = m.hasDisplacementTex ? m_textures.requestTexture(m.displacementTex.key, false) : 0;
+      const GLuint orm = m.hasOrmTex ? m_textures.requestTexture(m.ormTex.key, false) : 0;
       const GLint locBase = glGetUniformLocation(program->programId, "u_BaseColor");
       if (locBase >= 0) {
-        const math::Vec3 c = mat ? mat->baseColorFactor : math::Vec3{1.0f, 1.0f, 1.0f};
-        glUniform3f(locBase, c.x, c.y, c.z);
+        glUniform3f(locBase, finalBaseColor.x, finalBaseColor.y, finalBaseColor.z);
       }
+      const GLint locRoughness = glGetUniformLocation(program->programId, "u_Roughness");
+      if (locRoughness >= 0) glUniform1f(locRoughness, finalRoughness);
+      const GLint locMetallic = glGetUniformLocation(program->programId, "u_Metallic");
+      if (locMetallic >= 0) glUniform1f(locMetallic, finalMetallic);
+      const GLint locSpecIntensity = glGetUniformLocation(program->programId, "u_SpecularIntensity");
+      if (locSpecIntensity >= 0) glUniform1f(locSpecIntensity, finalSpecular);
+      const GLint locNormalStrength = glGetUniformLocation(program->programId, "u_NormalStrength");
+      if (locNormalStrength >= 0) glUniform1f(locNormalStrength, finalNormalStrength);
+      const GLint locAoStrength = glGetUniformLocation(program->programId, "u_AOStrength");
+      if (locAoStrength >= 0) glUniform1f(locAoStrength, finalAoStrength);
+      const GLint locEmissiveColor = glGetUniformLocation(program->programId, "u_EmissiveColor");
+      if (locEmissiveColor >= 0) glUniform3f(locEmissiveColor, finalEmissiveColor.x, finalEmissiveColor.y, finalEmissiveColor.z);
+      const GLint locEmissiveStrength = glGetUniformLocation(program->programId, "u_EmissiveStrength");
+      if (locEmissiveStrength >= 0) glUniform1f(locEmissiveStrength, finalEmissiveStrength);
+      const GLint locDisplacementStrength = glGetUniformLocation(program->programId, "u_DisplacementStrength");
+      if (locDisplacementStrength >= 0) glUniform1f(locDisplacementStrength, finalDisplacementStrength);
       const GLint locUseAlbedo = glGetUniformLocation(program->programId, "u_UseAlbedo");
       if (locUseAlbedo >= 0) glUniform1i(locUseAlbedo, albedo != 0 ? 1 : 0);
       if (albedo != 0) {
@@ -3354,11 +3418,79 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         const GLint loc = glGetUniformLocation(program->programId, "u_NormalTex");
         if (loc >= 0) glUniform1i(loc, 1);
       }
+      const GLint locUseRoughness = glGetUniformLocation(program->programId, "u_UseRoughness");
+      if (locUseRoughness >= 0) glUniform1i(locUseRoughness, roughness != 0 ? 1 : 0);
+      if (roughness != 0) {
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, roughness);
+        const GLint loc = glGetUniformLocation(program->programId, "u_RoughnessTex");
+        if (loc >= 0) glUniform1i(loc, 2);
+      }
+      const GLint locUseMetallic = glGetUniformLocation(program->programId, "u_UseMetallic");
+      if (locUseMetallic >= 0) glUniform1i(locUseMetallic, metallic != 0 ? 1 : 0);
+      if (metallic != 0) {
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, metallic);
+        const GLint loc = glGetUniformLocation(program->programId, "u_MetallicTex");
+        if (loc >= 0) glUniform1i(loc, 3);
+      }
+      const GLint locUseAo = glGetUniformLocation(program->programId, "u_UseAO");
+      if (locUseAo >= 0) glUniform1i(locUseAo, ao != 0 ? 1 : 0);
+      if (ao != 0) {
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, ao);
+        const GLint loc = glGetUniformLocation(program->programId, "u_AOTex");
+        if (loc >= 0) glUniform1i(loc, 4);
+      }
+      const GLint locUseSpecular = glGetUniformLocation(program->programId, "u_UseSpecular");
+      if (locUseSpecular >= 0) glUniform1i(locUseSpecular, specular != 0 ? 1 : 0);
+      if (specular != 0) {
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D, specular);
+        const GLint loc = glGetUniformLocation(program->programId, "u_SpecularTex");
+        if (loc >= 0) glUniform1i(loc, 5);
+      }
+      const GLint locUseEmissive = glGetUniformLocation(program->programId, "u_UseEmissive");
+      if (locUseEmissive >= 0) glUniform1i(locUseEmissive, emissive != 0 ? 1 : 0);
+      if (emissive != 0) {
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, emissive);
+        const GLint loc = glGetUniformLocation(program->programId, "u_EmissiveTex");
+        if (loc >= 0) glUniform1i(loc, 6);
+      }
+      const GLint locUseDisplacement = glGetUniformLocation(program->programId, "u_UseDisplacement");
+      if (locUseDisplacement >= 0) glUniform1i(locUseDisplacement, displacement != 0 ? 1 : 0);
+      if (displacement != 0) {
+        glActiveTexture(GL_TEXTURE7);
+        glBindTexture(GL_TEXTURE_2D, displacement);
+        const GLint loc = glGetUniformLocation(program->programId, "u_DisplacementTex");
+        if (loc >= 0) glUniform1i(loc, 7);
+      }
+      const GLint locUseMetallicRoughness = glGetUniformLocation(program->programId, "u_UseMetallicRoughness");
+      if (locUseMetallicRoughness >= 0) glUniform1i(locUseMetallicRoughness, metallicRoughness != 0 ? 1 : 0);
+      if (metallicRoughness != 0) {
+        glActiveTexture(GL_TEXTURE8);
+        glBindTexture(GL_TEXTURE_2D, metallicRoughness);
+        const GLint loc = glGetUniformLocation(program->programId, "u_MetallicRoughnessTex");
+        if (loc >= 0) glUniform1i(loc, 8);
+      }
+      const GLint locUseOrm = glGetUniformLocation(program->programId, "u_UseOrm");
+      if (locUseOrm >= 0) glUniform1i(locUseOrm, orm != 0 ? 1 : 0);
+      if (orm != 0) {
+        glActiveTexture(GL_TEXTURE9);
+        glBindTexture(GL_TEXTURE_2D, orm);
+        const GLint loc = glGetUniformLocation(program->programId, "u_OrmTex");
+        if (loc >= 0) glUniform1i(loc, 9);
+      }
 
       glBindVertexArray(sm.vao);
       glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(sm.indexCount), GL_UNSIGNED_INT, nullptr);
     }
     glBindVertexArray(0);
+    for (int texUnit = 0; texUnit <= 9; ++texUnit) {
+      glActiveTexture(GL_TEXTURE0 + texUnit);
+      glBindTexture(GL_TEXTURE_2D, 0);
+    }
     glActiveTexture(GL_TEXTURE0);
   }
   recordPass("mesh_pass", passStart);
