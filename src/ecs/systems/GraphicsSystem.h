@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <array>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace ecs::systems {
@@ -170,6 +171,7 @@ class GraphicsSystem final {
     math::Vec3 position{};
     math::Vec3 rotation{};
     math::Vec3 scale{1.0f, 1.0f, 1.0f};
+    math::Mat4 modelMatrix = math::identity();
     render::AssetRef meshData{};
     render::AssetRef shader{};
     bool visible = true;
@@ -490,9 +492,18 @@ class GraphicsSystem final {
   const FrameSnapshot& tick(EntityRegistry& registry);
 
  private:
+  struct MeshTransformCacheEntry final {
+    math::Vec3 position{};
+    math::Vec3 rotation{};
+    math::Vec3 scale{1.0f, 1.0f, 1.0f};
+    math::Mat4 modelMatrix = math::identity();
+    bool valid = false;
+  };
+
   FrameSnapshot m_frame{};
   std::vector<math::Mat4> m_boneWorldScratch{};
   std::vector<std::uint8_t> m_boneWorldComputedScratch{};
+  std::unordered_map<EntityId, MeshTransformCacheEntry> m_meshTransformCache{};
 };
 
 }  // namespace ecs::systems

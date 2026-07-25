@@ -98,7 +98,7 @@ class OpenGlRenderer final {
 
   struct RockMesh final {
     struct Chunk final {
-      math::Vec3 center{};
+      math::Vec3 centerLocal{};
       float radius = 0.0f;
       std::uint32_t instanceOffset = 0;
       std::uint32_t instanceCount = 0;
@@ -125,7 +125,7 @@ class OpenGlRenderer final {
 
   struct GrassMesh final {
     struct Chunk final {
-      math::Vec3 center{};
+      math::Vec3 centerLocal{};
       float radius = 0.0f;
       std::uint32_t instanceOffset = 0;
       std::uint32_t instanceCount = 0;

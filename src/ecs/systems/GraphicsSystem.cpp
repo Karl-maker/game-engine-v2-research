@@ -85,6 +85,17 @@ math::Mat4 composeWorld(const ecs::TransformComponent& tr) {
                                        math::mul(math::rotateZ(tr.rotation.z * kDegToRad), math::scale(tr.scale)))));
 }
 
+math::Mat4 composeTransform(const math::Vec3& position, const math::Vec3& rotation, const math::Vec3& scale) {
+  return math::mul(math::translate(position),
+                   math::mul(math::rotateY(rotation.y * kDegToRad),
+                             math::mul(math::rotateX(rotation.x * kDegToRad),
+                                       math::mul(math::rotateZ(rotation.z * kDegToRad), math::scale(scale)))));
+}
+
+bool sameVec3(const math::Vec3& a, const math::Vec3& b) {
+  return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
 math::Vec3 translationFromMat4(const math::Mat4& m) { return {m.m[12], m.m[13], m.m[14]}; }
 
 void addLine(std::vector<GraphicsSystem::FrameSnapshot::DebugLine>& out,
@@ -530,6 +541,16 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.position = tr.position;
         draw.rotation = tr.rotation;
         draw.scale = {tr.scale.x * mesh.scale.x, tr.scale.y * mesh.scale.y, tr.scale.z * mesh.scale.z};
+        auto& transformCache = m_meshTransformCache[id];
+        if (!transformCache.valid || !sameVec3(transformCache.position, draw.position) ||
+            !sameVec3(transformCache.rotation, draw.rotation) || !sameVec3(transformCache.scale, draw.scale)) {
+          transformCache.position = draw.position;
+          transformCache.rotation = draw.rotation;
+          transformCache.scale = draw.scale;
+          transformCache.modelMatrix = composeTransform(draw.position, draw.rotation, draw.scale);
+          transformCache.valid = true;
+        }
+        draw.modelMatrix = transformCache.modelMatrix;
         draw.meshData = mesh.meshData;
         draw.shader = shader.shader;
         draw.visible = mesh.visible;

@@ -14,13 +14,14 @@ layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec2 a_Uv;
 layout(location = 2) in float a_PlaneId;
 
-layout(location = 3) in vec3 i_WorldPos;
+layout(location = 3) in vec3 i_LocalPos;
 layout(location = 4) in float i_Scale;
 layout(location = 5) in float i_Rot;
 layout(location = 6) in float i_Var;
 
 uniform mat4 u_ViewProj;
 uniform vec3 u_CameraPos;
+uniform vec3 u_InstanceOrigin;
 uniform float u_Time;
 
 uniform int u_GrassMode; // 0=clumps, 1=planes
@@ -82,7 +83,8 @@ void main() {
     // Billboard planes mode.
     planeIdOut = a_PlaneId;
 
-    float instanceDist = length(u_CameraPos - i_WorldPos);
+    vec3 instanceWorldPos = u_InstanceOrigin + i_LocalPos;
+    float instanceDist = length(u_CameraPos - instanceWorldPos);
     float visiblePlanes = 3.0;
     if (instanceDist >= u_LodOnePlaneDist) visiblePlanes = 1.0;
     else if (instanceDist >= u_LodTwoPlaneDist) visiblePlanes = 2.0;
@@ -107,7 +109,7 @@ void main() {
 
     // Camera-relative crossed billboards nearby, converging toward a single
     // camera-facing plane with distance.
-    vec3 toCamera = u_CameraPos - i_WorldPos;
+    vec3 toCamera = u_CameraPos - instanceWorldPos;
     float cameraFacingYaw = atan(toCamera.x, toCamera.z);
     float lodToBillboard = smoothstep(u_LodTwoPlaneDist, u_LodOnePlaneDist, instanceDist);
     float crossedYaw = cameraFacingYaw + planeCrossYaw(a_PlaneId) + i_Rot;
@@ -115,19 +117,20 @@ void main() {
     float planeYaw = mix(crossedYaw, singleYaw, lodToBillboard);
 
     // Gentle GPU sway (no wind settings).
-    float swayPhase = dot(i_WorldPos.xz, vec2(0.18, 0.24)) + u_Time * mix(0.55, 0.82, fract(i_Var * 7.73));
+    float swayPhase = dot(instanceWorldPos.xz, vec2(0.18, 0.24)) + u_Time * mix(0.55, 0.82, fract(i_Var * 7.73));
     float sway = sin(swayPhase + h * 1.8 + i_Var * 6.28318) * (0.016 + 0.014 * fract(i_Var * 31.0));
     local.x += sway * tip;
     local.z += cos(swayPhase * 0.78 + h * 2.6) * 0.011 * tip;
 
-    p = rotY(planeYaw) * (local * i_Scale) + i_WorldPos;
+    p = rotY(planeYaw) * (local * i_Scale) + instanceWorldPos;
   } else {
     // Clump ribbons mode.
     planeIdOut = 0.0;
     planeAlive = 1.0;
 
     mat3 R = rotY(i_Rot);
-    p = R * (a_Position * i_Scale) + i_WorldPos;
+    vec3 instanceWorldPos = u_InstanceOrigin + i_LocalPos;
+    p = R * (a_Position * i_Scale) + instanceWorldPos;
 
     // Wind: spatial field (waves), not independent wiggles.
     vec2 windDir = normalize(u_WindDirXZ);

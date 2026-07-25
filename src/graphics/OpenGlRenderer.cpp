@@ -1544,7 +1544,7 @@ OpenGlRenderer::RockMesh* OpenGlRenderer::getOrCreateRockMesh(
       const float z0 = -halfD + static_cast<float>(cz) * chunkSize;
       const float x1 = std::min(x0 + chunkSize, halfW);
       const float z1 = std::min(z0 + chunkSize, halfD);
-      cb.center = {r.position.x + (x0 + x1) * 0.5f, r.position.y, r.position.z + (z0 + z1) * 0.5f};
+      cb.center = {(x0 + x1) * 0.5f, 0.0f, (z0 + z1) * 0.5f};
       const float rx = (x1 - x0) * 0.5f;
       const float rz = (z1 - z0) * 0.5f;
       cb.radius = std::sqrt(rx * rx + rz * rz) + 1.2f;
@@ -1578,14 +1578,14 @@ OpenGlRenderer::RockMesh* OpenGlRenderer::getOrCreateRockMesh(
     if (cl < threshold) continue;
 
     RockInstance inst{};
-    inst.px = worldX;
-    inst.pz = worldZ;
+    inst.px = x;
+    inst.pz = z;
 
     float groundY = groundTerrain ? groundTerrain->position.y : r.position.y;
     if (groundHeightScale != 0.0f) {
-      groundY += heightNoise.sampleFractal(inst.px, inst.pz, groundCfg) * groundHeightScale;
+      groundY += heightNoise.sampleFractal(worldX, worldZ, groundCfg) * groundHeightScale;
     }
-    inst.py = groundY - 0.01f;
+    inst.py = groundY - r.position.y - 0.01f;
 
     const float s = r.minScale + (r.maxScale - r.minScale) * std::pow(rScale, 1.8f);
     inst.scale = s;
@@ -1605,7 +1605,7 @@ OpenGlRenderer::RockMesh* OpenGlRenderer::getOrCreateRockMesh(
   for (const auto& cb : chunkBuilds) {
     if (cb.instances.empty()) continue;
     RockMesh::Chunk c;
-    c.center = cb.center;
+    c.centerLocal = cb.center;
     c.radius = cb.radius;
     c.instanceOffset = static_cast<std::uint32_t>(allInstances.size());
     c.instanceCount = static_cast<std::uint32_t>(cb.instances.size());
@@ -2014,7 +2014,7 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
       const float z0 = -halfD + static_cast<float>(cz) * chunkSize;
       const float x1 = std::min(x0 + chunkSize, halfW);
       const float z1 = std::min(z0 + chunkSize, halfD);
-      cb.center = {g.position.x + (x0 + x1) * 0.5f, g.position.y, g.position.z + (z0 + z1) * 0.5f};
+      cb.center = {(x0 + x1) * 0.5f, 0.0f, (z0 + z1) * 0.5f};
       const float rx = (x1 - x0) * 0.5f;
       const float rz = (z1 - z0) * 0.5f;
       cb.radius = std::sqrt(rx * rx + rz * rz) + 1.6f;
@@ -2109,9 +2109,9 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
     if (slopeDeg < layer.minSlopeDeg || slopeDeg > layer.maxSlopeDeg) continue;
 
     GrassInstance inst{};
-    inst.px = worldX;
-    inst.py = groundY;
-    inst.pz = worldZ;
+    inst.px = x;
+    inst.py = groundY - g.position.y;
+    inst.pz = z;
     inst.scale = layer.minScale + (layer.maxScale - layer.minScale) * std::pow(rScale, 1.8f);
     inst.rot = rRot * twoPi;
     inst.var = rVar;
@@ -2130,7 +2130,7 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   for (const auto& cb : chunkBuilds) {
     if (cb.instances.empty()) continue;
     GrassMesh::Chunk c;
-    c.center = cb.center;
+    c.centerLocal = cb.center;
     c.radius = cb.radius;
     c.instanceOffset = static_cast<std::uint32_t>(allInstances.size());
     c.instanceCount = static_cast<std::uint32_t>(cb.instances.size());
@@ -2436,9 +2436,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 	          if (!m.visible || !m.castShadows) continue;
 	          GpuMeshAsset* gpu = getOrCreateGpuMesh(m.meshData.key);
 	          if (!gpu || !gpu->ready) continue;
-	          const math::Mat4 model = composeTransform(m.position, m.rotation, m.scale);
 	          const GLint locModel = glGetUniformLocation(meshShadowProg->programId, "u_Model");
-	          if (locModel >= 0) glUniformMatrix4fv(locModel, 1, GL_FALSE, model.m);
+	          if (locModel >= 0) glUniformMatrix4fv(locModel, 1, GL_FALSE, m.modelMatrix.m);
 	          for (const auto& sm : gpu->subMeshes) {
 	            glBindVertexArray(sm.vao);
 	            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(sm.indexCount), GL_UNSIGNED_INT, nullptr);
@@ -2463,13 +2462,17 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
           RockMesh* mesh = getOrCreateRockMesh(r, groundTerrain);
           if (!mesh || !mesh->vao || mesh->instanceCapacity == 0 || mesh->chunks.empty()) continue;
 
+          const GLint locOrigin = glGetUniformLocation(rockProg->programId, "u_InstanceOrigin");
+          if (locOrigin >= 0) glUniform3f(locOrigin, r.position.x, r.position.y, r.position.z);
+
           glBindVertexArray(mesh->vao);
           glBindBuffer(GL_ARRAY_BUFFER, mesh->instanceVbo);
 
           const float lodBias = std::max(0.25f, r.lodBias);
           const float maxDist = 120.0f / lodBias;
           for (const auto& c : mesh->chunks) {
-            const math::Vec3 d0 = frame.camera.position - c.center;
+            const math::Vec3 chunkCenter = r.position + c.centerLocal;
+            const math::Vec3 d0 = frame.camera.position - chunkCenter;
             const float distC = std::sqrt(d0.x * d0.x + d0.y * d0.y + d0.z * d0.z) - c.radius;
             if (distC > maxDist) continue;
 
@@ -3030,6 +3033,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       if (locSunCol >= 0) glUniform3f(locSunCol, sunCol.x, sunCol.y, sunCol.z);
       const GLint locSunInt = glGetUniformLocation(program->programId, "u_SunIntensity");
       if (locSunInt >= 0) glUniform1f(locSunInt, sunIntensity);
+      const GLint locOrigin = glGetUniformLocation(program->programId, "u_InstanceOrigin");
+      if (locOrigin >= 0) glUniform3f(locOrigin, gr.position.x, gr.position.y, gr.position.z);
 
       int maxBoundTextureUnits = 0;
 
@@ -3072,30 +3077,31 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
           };
           BoundGrassTex bound[6]{};
           int texCount = 0;
+          std::string texturePaths[6];
 
           if (!gr.grassTextures.empty()) {
             texCount = std::min(6, static_cast<int>(gr.grassTextures.size()));
             for (int i = 0; i < texCount; ++i) {
-              const std::string& path = gr.grassTextures[static_cast<std::size_t>(i)].key;
-              bound[i].id = m_textures.requestTexture(path, true);
+              texturePaths[i] = gr.grassTextures[static_cast<std::size_t>(i)].key;
+              bound[i].id = m_textures.requestTexture(texturePaths[i], true);
             }
           } else if (gr.hasAlbedoTex && !gr.albedoTex.key.empty()) {
             texCount = 1;
-            bound[0].id = m_textures.requestTexture(gr.albedoTex.key, true);
+            texturePaths[0] = gr.albedoTex.key;
+            bound[0].id = m_textures.requestTexture(texturePaths[0], true);
           } else {
             texCount = 1;
-            bound[0].id = m_textures.requestTexture(kDefaultGrassBillboardTexture, true);
+            texturePaths[0] = kDefaultGrassBillboardTexture;
+            bound[0].id = m_textures.requestTexture(texturePaths[0], true);
           }
 
           for (int texIndex = 0; texIndex < texCount; ++texIndex) {
             glActiveTexture(GL_TEXTURE0 + texIndex);
             glBindTexture(GL_TEXTURE_2D, bound[texIndex].id);
 
-            GLint w = 1;
-            GLint h = 1;
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
-            bound[texIndex].aspect = (h > 0) ? (static_cast<float>(w) / static_cast<float>(h)) : 1.0f;
+            if (const auto info = m_textures.getInfo(texturePaths[texIndex]); info && info->ready && info->height > 0) {
+              bound[texIndex].aspect = static_cast<float>(info->width) / static_cast<float>(info->height);
+            }
 
             const GLint loc = glGetUniformLocation(program->programId, samplerNames[texIndex]);
             if (loc >= 0) glUniform1i(loc, texIndex);
@@ -3195,10 +3201,11 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
         const math::Vec3 camFwdXZ = math::normalize(math::Vec3{frame.camera.forward.x, 0.0f, frame.camera.forward.z});
         for (const auto& c : mesh->chunks) {
-          const math::Vec3 d = frame.camera.position - c.center;
+          const math::Vec3 chunkCenter = gr.position + c.centerLocal;
+          const math::Vec3 d = frame.camera.position - chunkCenter;
           const float dist = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z) - c.radius;
           if (dist > maxDist) continue;
-          const math::Vec3 toChunkXZ{c.center.x - frame.camera.position.x, 0.0f, c.center.z - frame.camera.position.z};
+          const math::Vec3 toChunkXZ{chunkCenter.x - frame.camera.position.x, 0.0f, chunkCenter.z - frame.camera.position.z};
           const float horizDist = std::sqrt(toChunkXZ.x * toChunkXZ.x + toChunkXZ.z * toChunkXZ.z);
           if (horizDist > 7.0f && (camFwdXZ.x != 0.0f || camFwdXZ.z != 0.0f)) {
             const float invLen = 1.0f / std::max(0.001f, horizDist);
@@ -3251,9 +3258,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glDisable(GL_CULL_FACE);
     glCullFace(GL_BACK);
 
-    const math::Mat4 model = composeTransform(m.position, m.rotation, m.scale);
     const GLint locModel = glGetUniformLocation(program->programId, "u_Model");
-    if (locModel >= 0) glUniformMatrix4fv(locModel, 1, GL_FALSE, model.m);
+    if (locModel >= 0) glUniformMatrix4fv(locModel, 1, GL_FALSE, m.modelMatrix.m);
     const GLint locViewProj = glGetUniformLocation(program->programId, "u_ViewProj");
     if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
     const GLint locCam = glGetUniformLocation(program->programId, "u_CameraPos");
@@ -3539,7 +3545,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     const float lodBias = std::max(0.25f, r.lodBias);
     const float maxDist = 120.0f / lodBias;
     for (const auto& c : mesh->chunks) {
-      const math::Vec3 d = frame.camera.position - c.center;
+      const math::Vec3 chunkCenter = r.position + c.centerLocal;
+      const math::Vec3 d = frame.camera.position - chunkCenter;
       const float dist = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z) - c.radius;
       if (dist > maxDist) continue;
 
