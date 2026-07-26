@@ -1,75 +1,33 @@
 // Author: Karl-Johan Bailey
 
-#include "WeaponFactory.h"
+// ActorFactory
+// Spawns a lightweight world "actor" (no rigidbody/collider by default).
+
+#include "ecs/factories/PhysicalObjectFactory.h"
+#include "ecs/factories/WeaponFactory.h"
+#include "ecs/components/MeshComponent.h"
+#include "ecs/components/ShaderComponent.h"
+#include "ecs/components/TransformComponent.h"
+#include "ecs/components/RigidbodyComponent.h"
+
+#include <algorithm>
 
 namespace ecs::services {
 
 EntityId WeaponFactory::create(
     EntityRegistry& registry,
     const WeaponConfig& config) {
+  PhysicalObjectFactory objectFactory;
+  PhysicalObjectConfig objectCfg{};
+  objectCfg.transform = config.transform;
+  objectCfg.viewable = config.viewable;
+  objectCfg.physical = config.physical;
+  EntityId id = objectFactory.create(registry, objectCfg);
+  if (id == kInvalidEntityId) return id;
 
-  // Create the root character entity.
-  EntityId weaponEntity =
-      registry.createEntity();
+  // @TODO - Add Holster Setup Component
 
-  if (weaponEntity == kInvalidEntityId) {
-    return kInvalidEntityId;
-  }
-
-  // ------------------------------------------------------------
-  // Identity
-  // ------------------------------------------------------------
-
-  // Create and configure the character's identity component.
-  // registry.emplace<IdentityComponent>(characterEntity);
-
-  // ------------------------------------------------------------
-  // Transform
-  // ------------------------------------------------------------
-
-  // Create the character transform.
-  // registry.emplace<TransformComponent>(characterEntity);
-
-  // ------------------------------------------------------------
-  // Mesh
-  // ------------------------------------------------------------
-
-  // Create/configure the character mesh.
-  // registry.emplace<MeshComponent>(characterEntity);
-
-  // ------------------------------------------------------------
-  // Skeleton
-  // ------------------------------------------------------------
-
-  // Create/configure the character skeleton.
-  // registry.emplace<SkeletonComponent>(characterEntity);
-
-  // ------------------------------------------------------------
-  // Animation
-  // ------------------------------------------------------------
-
-  // Create/configure the animation component.
-  // registry.emplace<AnimationComponent>(characterEntity);
-
-  // ------------------------------------------------------------
-  // Character Controller
-  // ------------------------------------------------------------
-
-  // Create/configure the character controller.
-  // registry.emplace<CharacterControllerComponent>(characterEntity);
-
-  // ------------------------------------------------------------
-  // Motion
-  // ------------------------------------------------------------
-
-  // Create/configure the character motion component.
-  // registry.emplace<MotionComponent>(characterEntity);
-
-  // ------------------------------------------------------------
-  // Return the fully constructed character.
-  // ------------------------------------------------------------
-
-  return weaponEntity;
+  return id;
 }
 
 }  // namespace ecs::services

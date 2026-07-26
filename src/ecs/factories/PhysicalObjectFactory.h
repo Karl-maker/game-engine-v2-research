@@ -8,17 +8,17 @@
 
 namespace ecs::services {
 
-struct WeaponConfig final {
-  TransformInput transform{.name = "weapon"};
+struct PhysicalObjectConfig final {
+  TransformInput transform{.name = "physical_object"};
   ViewableInput viewable{};
   PhysicalInput physical{};
 };
 
-class WeaponFactory final {
+class PhysicalObjectFactory final {
  public:
   EntityId create(
       EntityRegistry& registry,
-      const WeaponConfig& config);
+      const PhysicalObjectConfig& config);
 };
 
 }  // namespace ecs::services
