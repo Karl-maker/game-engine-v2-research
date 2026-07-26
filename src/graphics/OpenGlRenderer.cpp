@@ -3312,6 +3312,33 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       glActiveTexture(GL_TEXTURE0);
     }
 
+    if (program->hasTessellation) {
+      glPatchParameteri(GL_PATCH_VERTICES, 3);
+      int q = m.tessQuality;
+      if (q < 0) q = 0;
+      if (q > 2) q = 2;
+      const float qScale = (q == 0) ? 0.45f : (q == 1 ? 0.70f : 1.0f);
+      const float qFarScale = (q == 0) ? 0.65f : (q == 1 ? 0.85f : 1.0f);
+
+      const float tessNear = m.tessNear;
+      const float tessFar = std::max(tessNear + 1.0f, m.tessFar * qFarScale);
+      const float tessMin = std::max(1.0f, m.tessMin);
+      const float tessMax = std::max(tessMin, std::min(64.0f, m.tessMax * qScale));
+
+      const GLint locCam = glGetUniformLocation(program->programId, "u_CameraPos");
+      if (locCam >= 0) glUniform3f(locCam, frame.camera.position.x, frame.camera.position.y, frame.camera.position.z);
+      const GLint locCamFwd = glGetUniformLocation(program->programId, "u_CameraForward");
+      if (locCamFwd >= 0) glUniform3f(locCamFwd, frame.camera.forward.x, frame.camera.forward.y, frame.camera.forward.z);
+      const GLint locTessNear = glGetUniformLocation(program->programId, "u_TessNear");
+      const GLint locTessFar = glGetUniformLocation(program->programId, "u_TessFar");
+      const GLint locTessMin = glGetUniformLocation(program->programId, "u_TessMin");
+      const GLint locTessMax = glGetUniformLocation(program->programId, "u_TessMax");
+      if (locTessNear >= 0) glUniform1f(locTessNear, tessNear);
+      if (locTessFar >= 0) glUniform1f(locTessFar, tessFar);
+      if (locTessMin >= 0) glUniform1f(locTessMin, tessMin);
+      if (locTessMax >= 0) glUniform1f(locTessMax, tessMax);
+    }
+
     for (const auto& sm : gpu->subMeshes) {
       const assets::MeshMaterial* mat =
           sm.materialIndex < gpu->data.materials.size() ? &gpu->data.materials[sm.materialIndex] : nullptr;
@@ -3468,7 +3495,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       }
 
       glBindVertexArray(sm.vao);
-      glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(sm.indexCount), GL_UNSIGNED_INT, nullptr);
+      const GLenum mode = program->hasTessellation ? GL_PATCHES : GL_TRIANGLES;
+      glDrawElements(mode, static_cast<GLsizei>(sm.indexCount), GL_UNSIGNED_INT, nullptr);
     }
     glBindVertexArray(0);
     for (int texUnit = 0; texUnit <= 9; ++texUnit) {

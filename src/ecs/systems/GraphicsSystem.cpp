@@ -287,6 +287,41 @@ bool readVec2Param(const ecs::ShaderComponent& shader, const char* name, float& 
   return found;
 }
 
+const ecs::ShaderComponent::LodBreakpoint* selectLodBreakpoint(const ecs::ShaderComponent& shader, float distanceMeters) {
+  const ecs::ShaderComponent::LodBreakpoint* chosen = nullptr;
+  for (const auto& bp : shader.lodBreakpoints) {
+    if (distanceMeters < bp.distanceMeters) continue;
+    chosen = &bp;
+  }
+  return chosen;
+}
+
+ecs::ShaderComponent resolveShaderAtDistance(const ecs::ShaderComponent& shader, float distanceMeters) {
+  ecs::ShaderComponent resolved = shader;
+  const auto* bp = selectLodBreakpoint(shader, distanceMeters);
+  if (bp) {
+    resolved.textures.insert(resolved.textures.end(), bp->textures.begin(), bp->textures.end());
+    resolved.parameters.insert(resolved.parameters.end(), bp->parameters.begin(), bp->parameters.end());
+  }
+  return resolved;
+}
+
+void applyBreakpointTessellation(const ecs::ShaderComponent& shader,
+                                 float distanceMeters,
+                                 float& tessNear,
+                                 float& tessFar,
+                                 float& tessMin,
+                                 float& tessMax,
+                                 int& tessQuality) {
+  if (const auto* bp = selectLodBreakpoint(shader, distanceMeters); bp && bp->overrideTessellation) {
+    tessNear = bp->tessNear;
+    tessFar = bp->tessFar;
+    tessMin = bp->tessMin;
+    tessMax = bp->tessMax;
+    tessQuality = bp->tessQuality;
+  }
+}
+
 void extractKnownTextures(const ecs::ShaderComponent& shader, GraphicsSystem::TerrainDraw& out) {
   auto tryBind = [&](const char* slot, render::AssetRef& dst, bool& has) {
     for (const auto& t : shader.textures) {
@@ -487,6 +522,20 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.tessEnableDistance = terrain.tessEnableDistance;
         draw.tessDisableDistance = terrain.tessDisableDistance;
         draw.viewDotBias = terrain.viewDotBias;
+        const math::Vec3 cameraPos = m_frame.camera.position;
+        const float terrainDistance = [&]() {
+          const float sizeX = static_cast<float>(std::max(2, terrain.gridWidth)) * terrain.cellSizeMeters;
+          const float sizeZ = static_cast<float>(std::max(2, terrain.gridHeight)) * terrain.cellSizeMeters;
+          const float halfX = 0.5f * sizeX;
+          const float halfZ = 0.5f * sizeZ;
+          const float nearestX = std::max(draw.position.x - halfX, std::min(cameraPos.x, draw.position.x + halfX));
+          const float nearestZ = std::max(draw.position.z - halfZ, std::min(cameraPos.z, draw.position.z + halfZ));
+          const float dx = nearestX - cameraPos.x;
+          const float dz = nearestZ - cameraPos.z;
+          return std::sqrt(dx * dx + dz * dz);
+        }();
+        ecs::ShaderComponent resolvedShader = resolveShaderAtDistance(shader, terrainDistance);
+
         draw.shader = shader.shader;
         draw.renderMode = static_cast<int>(shader.renderMode);
         draw.cullMode = static_cast<int>(shader.cullMode);
@@ -496,39 +545,40 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.doubleSided = shader.doubleSided;
         draw.receiveShadows = shader.receiveShadows;
         draw.castShadows = shader.castShadows;
-        draw.textureCount = shader.textures.size();
-        draw.parameterCount = shader.parameters.size();
+        draw.textureCount = resolvedShader.textures.size();
+        draw.parameterCount = resolvedShader.parameters.size();
 
-        (void)readBaseColorParam(shader, draw.baseColorR, draw.baseColorG, draw.baseColorB);
-        (void)readFloatParam(shader, "roughness", draw.roughness);
-        (void)readFloatParam(shader, "metallic", draw.metallic);
-        (void)readFloatParam(shader, "specularIntensity", draw.specularIntensity);
-        (void)readFloatParam(shader, "dirtColorNoiseStrength", draw.dirtColorNoiseStrength);
-        (void)readBoolParam(shader, "dirtSinksEnabled", draw.dirtSinksEnabled);
-        (void)readFloatParam(shader, "dirtSinkStrength", draw.dirtSinkStrength);
-        (void)readFloatParam(shader, "dirtSinkScale", draw.dirtSinkScale);
-        (void)readFloatParam(shader, "dirtSinkDensity", draw.dirtSinkDensity);
+        (void)readBaseColorParam(resolvedShader, draw.baseColorR, draw.baseColorG, draw.baseColorB);
+        (void)readFloatParam(resolvedShader, "roughness", draw.roughness);
+        (void)readFloatParam(resolvedShader, "metallic", draw.metallic);
+        (void)readFloatParam(resolvedShader, "specularIntensity", draw.specularIntensity);
+        (void)readFloatParam(resolvedShader, "dirtColorNoiseStrength", draw.dirtColorNoiseStrength);
+        (void)readBoolParam(resolvedShader, "dirtSinksEnabled", draw.dirtSinksEnabled);
+        (void)readFloatParam(resolvedShader, "dirtSinkStrength", draw.dirtSinkStrength);
+        (void)readFloatParam(resolvedShader, "dirtSinkScale", draw.dirtSinkScale);
+        (void)readFloatParam(resolvedShader, "dirtSinkDensity", draw.dirtSinkDensity);
 
-        extractKnownTextures(shader, draw);
-        (void)readVec2Param(shader, "uvTiling", draw.uvTilingX, draw.uvTilingY);
-        (void)readFloatParam(shader, "normalScale", draw.normalStrength);
-        (void)readFloatParam(shader, "aoStrength", draw.aoStrength);
-        (void)readFloatParam(shader, "displacementStrength", draw.displacementStrength);
+        extractKnownTextures(resolvedShader, draw);
+        (void)readVec2Param(resolvedShader, "uvTiling", draw.uvTilingX, draw.uvTilingY);
+        (void)readFloatParam(resolvedShader, "normalScale", draw.normalStrength);
+        (void)readFloatParam(resolvedShader, "aoStrength", draw.aoStrength);
+        (void)readFloatParam(resolvedShader, "displacementStrength", draw.displacementStrength);
 
         // Tessellation controls (if present on the material).
-        (void)readFloatParam(shader, "tessNear", draw.tessNear);
-        (void)readFloatParam(shader, "tessFar", draw.tessFar);
-        (void)readFloatParam(shader, "tessMin", draw.tessMin);
-        (void)readFloatParam(shader, "tessMax", draw.tessMax);
-        (void)readIntParam(shader, "tessQuality", draw.tessQuality);
+        (void)readFloatParam(resolvedShader, "tessNear", draw.tessNear);
+        (void)readFloatParam(resolvedShader, "tessFar", draw.tessFar);
+        (void)readFloatParam(resolvedShader, "tessMin", draw.tessMin);
+        (void)readFloatParam(resolvedShader, "tessMax", draw.tessMax);
+        (void)readIntParam(resolvedShader, "tessQuality", draw.tessQuality);
+        applyBreakpointTessellation(shader, terrainDistance, draw.tessNear, draw.tessFar, draw.tessMin, draw.tessMax, draw.tessQuality);
 
-        (void)readBoolParam(shader, "rockLayerEnabled", draw.rockLayerEnabled);
-        extractRockLayerTextures(shader, draw);
-        (void)readVec2Param(shader, "rockUvTiling", draw.rockUvTilingX, draw.rockUvTilingY);
-        (void)readFloatParam(shader, "rockNormalScale", draw.rockNormalStrength);
-        (void)readFloatParam(shader, "rockDisplacementStrength", draw.rockDisplacementStrength);
-        (void)readFloatParam(shader, "rockBlendStrength", draw.rockBlendStrength);
-        (void)readFloatParam(shader, "rockNoiseScale", draw.rockNoiseScale);
+        (void)readBoolParam(resolvedShader, "rockLayerEnabled", draw.rockLayerEnabled);
+        extractRockLayerTextures(resolvedShader, draw);
+        (void)readVec2Param(resolvedShader, "rockUvTiling", draw.rockUvTilingX, draw.rockUvTilingY);
+        (void)readFloatParam(resolvedShader, "rockNormalScale", draw.rockNormalStrength);
+        (void)readFloatParam(resolvedShader, "rockDisplacementStrength", draw.rockDisplacementStrength);
+        (void)readFloatParam(resolvedShader, "rockBlendStrength", draw.rockBlendStrength);
+        (void)readFloatParam(resolvedShader, "rockNoiseScale", draw.rockNoiseScale);
         m_frame.terrains.push_back(std::move(draw));
       });
 
@@ -556,20 +606,29 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.visible = mesh.visible;
         draw.castShadows = mesh.castShadows && shader.castShadows;
         draw.receiveShadows = mesh.receiveShadows && shader.receiveShadows;
-        draw.hasBaseColorParam = readBaseColorParam(shader, draw.baseColorR, draw.baseColorG, draw.baseColorB);
-        draw.hasRoughnessParam = readFloatParam(shader, "roughness", draw.roughness);
-        draw.hasMetallicParam = readFloatParam(shader, "metallic", draw.metallic);
-        draw.hasSpecularIntensityParam = readFloatParam(shader, "specularIntensity", draw.specularIntensity);
-        draw.hasNormalStrengthParam = readFloatParam(shader, "normalScale", draw.normalStrength);
+        const float meshDistance = math::length(m_frame.camera.position - draw.position);
+        ecs::ShaderComponent resolvedShader = resolveShaderAtDistance(shader, meshDistance);
+
+        draw.hasBaseColorParam = readBaseColorParam(resolvedShader, draw.baseColorR, draw.baseColorG, draw.baseColorB);
+        draw.hasRoughnessParam = readFloatParam(resolvedShader, "roughness", draw.roughness);
+        draw.hasMetallicParam = readFloatParam(resolvedShader, "metallic", draw.metallic);
+        draw.hasSpecularIntensityParam = readFloatParam(resolvedShader, "specularIntensity", draw.specularIntensity);
+        draw.hasNormalStrengthParam = readFloatParam(resolvedShader, "normalScale", draw.normalStrength);
         if (!draw.hasNormalStrengthParam) {
-          draw.hasNormalStrengthParam = readFloatParam(shader, "normalStrength", draw.normalStrength);
+          draw.hasNormalStrengthParam = readFloatParam(resolvedShader, "normalStrength", draw.normalStrength);
         }
-        draw.hasAoStrengthParam = readFloatParam(shader, "aoStrength", draw.aoStrength);
-        draw.hasEmissiveStrengthParam = readFloatParam(shader, "emissiveStrength", draw.emissiveStrength);
-        draw.hasDisplacementStrengthParam = readFloatParam(shader, "displacementStrength", draw.displacementStrength);
+        draw.hasAoStrengthParam = readFloatParam(resolvedShader, "aoStrength", draw.aoStrength);
+        draw.hasEmissiveStrengthParam = readFloatParam(resolvedShader, "emissiveStrength", draw.emissiveStrength);
+        draw.hasDisplacementStrengthParam = readFloatParam(resolvedShader, "displacementStrength", draw.displacementStrength);
         draw.hasEmissiveColorParam =
-            readColorParam(shader, "emissiveColor", draw.emissiveColorR, draw.emissiveColorG, draw.emissiveColorB);
-        extractMeshTextures(shader, draw);
+            readColorParam(resolvedShader, "emissiveColor", draw.emissiveColorR, draw.emissiveColorG, draw.emissiveColorB);
+        extractMeshTextures(resolvedShader, draw);
+        (void)readFloatParam(resolvedShader, "tessNear", draw.tessNear);
+        (void)readFloatParam(resolvedShader, "tessFar", draw.tessFar);
+        (void)readFloatParam(resolvedShader, "tessMin", draw.tessMin);
+        (void)readFloatParam(resolvedShader, "tessMax", draw.tessMax);
+        (void)readIntParam(resolvedShader, "tessQuality", draw.tessQuality);
+        applyBreakpointTessellation(shader, meshDistance, draw.tessNear, draw.tessFar, draw.tessMin, draw.tessMax, draw.tessQuality);
         if (const auto* skeleton = registry.tryGet<ecs::SkeletonComponent>(id)) {
           const std::size_t count = std::min<std::size_t>(96, std::min(skeleton->bones.size(), skeleton->inverseBindMatrices.size()));
           if (skeleton->enabled && count > 0) {
@@ -823,8 +882,11 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.interactionStrength = grass.interactionStrength;
         draw.shader = shader.shader;
 
-        extractGrassTextures(shader, draw);
-        (void)readFloatParam(shader, "grassAlbedoUvScale", draw.albedoUvScale);
+        const float grassDistance = math::length(m_frame.camera.position - draw.position);
+        ecs::ShaderComponent resolvedShader = resolveShaderAtDistance(shader, grassDistance);
+
+        extractGrassTextures(resolvedShader, draw);
+        (void)readFloatParam(resolvedShader, "grassAlbedoUvScale", draw.albedoUvScale);
 
         draw.layers.reserve(grass.layers.size());
         for (const auto& l : grass.layers) {

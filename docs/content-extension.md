@@ -104,6 +104,8 @@ Mesh material override tips:
 
 - add `ShaderComponent.textures` entries like `albedo`, `normalgl`, `roughness`, `metallic`, `ao`, `specular`, `emissive`, `displacement`, `metallicRoughness`, or `orm`
 - add `ShaderComponent.parameters` such as `roughness`, `metallic`, `specularIntensity`, `normalScale`, `aoStrength`, `emissiveColor`, `emissiveStrength`, or `displacementStrength`
+- add `ShaderComponent.lodBreakpoints` when you want those textures or parameters to swap by camera distance
+- set `overrideTessellation = true` inside a breakpoint when you also want a different tessellation band or quality at that distance
 - glTF files already auto-import base color, normal, metallic-roughness, occlusion, emissive, and `KHR_materials_specular` data when those channels exist in the file
 - rely on asset UVs for mapping; UV coordinates are loaded from the mesh file when they exist
 - if the asset has no UVs, the engine does not auto-generate a new unwrap during load

@@ -222,6 +222,13 @@ class GraphicsSystem final {
     bool hasSkinning = false;
     std::size_t skinMatrixCount = 0;
     std::array<math::Mat4, 96> skinMatrices{};
+
+    // Optional tessellation controls for shaders that support tessellation.
+    float tessNear = 6.0f;
+    float tessFar = 120.0f;
+    float tessMin = 2.0f;
+    float tessMax = 18.0f;
+    int tessQuality = 0;
   };
 
   struct FrameSnapshot final {

@@ -20,6 +20,24 @@
 namespace ecs {
 
 struct ShaderComponent {
+  struct LodBreakpoint final {
+    // Activate when the camera is at or beyond this distance from the renderable.
+    // Breakpoints should be authored in ascending order so later entries win.
+    float distanceMeters = 0.0f;
+
+    // Optional overrides that are merged on top of the base material.
+    std::vector<render::TextureBinding> textures;
+    std::vector<render::MaterialParameter> parameters;
+
+    // Optional tessellation override for shaders that support it.
+    bool overrideTessellation = false;
+    float tessNear = 0.0f;
+    float tessFar = 0.0f;
+    float tessMin = 0.0f;
+    float tessMax = 0.0f;
+    int tessQuality = 0;
+  };
+
   bool enabled = true;
 
   // Shader asset reference (engine-defined).
@@ -41,7 +59,9 @@ struct ShaderComponent {
 
   // Generic parameters for high-quality materials/shaders.
   std::vector<render::MaterialParameter> parameters;
+
+  // Ordered distance breakpoints for LOD-style material overrides.
+  std::vector<LodBreakpoint> lodBreakpoints;
 };
 
 }  // namespace ecs
-

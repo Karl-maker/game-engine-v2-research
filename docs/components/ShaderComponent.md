@@ -7,6 +7,7 @@
 - This is intended to support high-quality graphics by allowing:
 - - PBR-style textures (albedo/normal/orm/height/emissive)
 - - Parameter blocks (colors, roughness/metallic, tiling, etc)
+- - Distance-based LOD breakpoints for swapping textures and shader parameters
 - - Render state controls (depth, blend, cull, shadows)
 
 ## When to use it
@@ -51,6 +52,46 @@ Useful mesh material parameters:
 - `emissiveStrength`
 - `displacementStrength`
 
+## Distance breakpoints
+
+`ShaderComponent.lodBreakpoints` lets you author simple distance-based material swaps.
+
+Rules of thumb:
+
+- Sort breakpoints from near to far.
+- Each breakpoint becomes active when the camera is at or beyond its `distanceMeters`.
+- Later breakpoints win, so a far breakpoint can override textures or parameters from an earlier one.
+- Put any texture or parameter overrides you want in the breakpoint entry itself.
+- Set `overrideTessellation = true` when you also want to change tessellation quality or bands at that distance.
+
+Example:
+
+```cpp
+ecs::ShaderComponent component;
+component.shader.key = "shaders/pbr";
+component.textures.push_back({"albedo", render::AssetRef{true, "assets/textures/stone/stone_color.jpg", 0}, true});
+component.textures.push_back({"normalgl", render::AssetRef{true, "assets/textures/stone/stone_normalgl.jpg", 0}, false});
+
+ecs::ShaderComponent::LodBreakpoint mid;
+mid.distanceMeters = 48.0f;
+mid.textures.push_back({"albedo", render::AssetRef{true, "assets/textures/stone/stone_color_low.jpg", 0}, true});
+mid.textures.push_back({"normalgl", render::AssetRef{true, "assets/textures/stone/stone_normalgl_low.jpg", 0}, false});
+mid.parameters.push_back({"roughness", 0.95f});
+
+ecs::ShaderComponent::LodBreakpoint far;
+far.distanceMeters = 96.0f;
+far.textures.push_back({"albedo", render::AssetRef{true, "assets/textures/stone/stone_color_far.jpg", 0}, true});
+far.overrideTessellation = true;
+far.tessQuality = 0;
+far.tessNear = 12.0f;
+far.tessFar = 72.0f;
+far.tessMin = 1.0f;
+far.tessMax = 4.0f;
+
+component.lodBreakpoints.push_back(mid);
+component.lodBreakpoints.push_back(far);
+```
+
 ## UVs
 
 - Mesh UVs are loaded from the asset automatically when the source file already contains them.
@@ -78,6 +119,7 @@ Useful mesh material parameters:
 - `castShadows` — Master on/off switch or similar behavior flag.
 - `textures` — Stable reference used by content, loaders, or rendering systems.
 - `parameters` — Field of type `std::vector<render::MaterialParameter>` consumed by systems that read this component.
+- `lodBreakpoints` — Ordered list of distance-based overrides for textures, parameters, and optional tessellation settings.
 
 ## Example
 
