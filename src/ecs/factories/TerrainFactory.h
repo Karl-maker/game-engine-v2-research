@@ -9,6 +9,8 @@
 #include "ecs/EntityRegistry.h"
 #include "ecs/factories/FactoryInputs.h"
 
+#include <optional>
+
 namespace ecs::services {
 
 struct TerrainConfig final {
@@ -34,6 +36,12 @@ struct TerrainConfig final {
   float colliderThicknessMeters = 5.0f;
   physics::LayerMask collisionLayer = physics::kLayerWorld;
   bool hasShader = true;
+  // Optional base material preset/descriptor for the terrain surface.
+  // Example: materials::presets::HighQualityDirtRockGrassLayer().
+  std::optional<ecs::ShaderComponent> material;
+  // Terrain shader key used when attaching the render component.
+  // Defaults to the terrain shader instead of the generic mesh shader.
+  std::string shaderKey = "graphics/shaders/terrain";
   ViewableInput viewable{};
 };
 

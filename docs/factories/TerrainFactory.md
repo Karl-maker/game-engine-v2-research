@@ -35,7 +35,8 @@
 - `viewDotBias` — Field of type `float` consumed by systems that read this component.
 - `colliderEnabled` — Master on/off switch or similar behavior flag.
 - `colliderThicknessMeters` — Stable reference used by content, loaders, or rendering systems.
-- `shaderKey` — Stable reference used by content, loaders, or rendering systems.
+- `shaderKey` — Terrain shader key used when the factory attaches the render component.
+- `material` — Optional base terrain material preset/descriptor, such as `HighQualityDirtRockGrassLayer`.
 - `textures` — Optional `ShaderComponent` texture bindings for the terrain material.
 - `parameters` — Optional `ShaderComponent` material parameters.
 - `lodBreakpoints` — Optional ordered distance-based shader overrides, including tessellation changes.
@@ -53,6 +54,10 @@
     "gridHeight": 96,
     "cellSizeMeters": 1.0,
     "heightScaleMeters": 2.6,
+    "material": {
+      "preset": "HighQualityDirtRockGrassLayer"
+    },
+    "shaderKey": "graphics/shaders/terrain",
     "noise": {
       "seed": 12345,
       "frequency": 0.03,

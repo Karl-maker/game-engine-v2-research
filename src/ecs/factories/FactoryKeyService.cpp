@@ -10,6 +10,7 @@
 #include "ecs/factories/TerrainFactory.h"
 #include "ecs/factories/VfxFactory.h"
 #include "ecs/factories/WeaponFactory.h"
+#include "materials/presets/Presets.h"
 #include "ecs/services/IEntityFactory.h"
 #include "render/Color.h"
 #include "math/Vec4.h"
@@ -18,7 +19,9 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ecs::services {
@@ -97,6 +100,69 @@ ecs::VfxComponent::Quality parseVfxQuality(std::string value) {
   if (value == "medium" || value == "med") return ecs::VfxComponent::Quality::Medium;
   if (value == "ultra") return ecs::VfxComponent::Quality::Ultra;
   return ecs::VfxComponent::Quality::High;
+}
+
+std::vector<render::TextureBinding> readTextureBindings(const data::JsonValue& v);
+std::vector<render::MaterialParameter> readMaterialParameters(const data::JsonValue& v);
+std::vector<ShaderBreakpointInput> readShaderBreakpoints(const data::JsonValue& v);
+
+std::optional<ecs::ShaderComponent> resolveTerrainMaterialPreset(const std::string& preset) {
+  if (preset == "Dirt") return materials::presets::Dirt();
+  if (preset == "HighQualityDirt") return materials::presets::HighQualityDirt();
+  if (preset == "HighQualityDirtRockLayer") return materials::presets::HighQualityDirtRockLayer();
+  if (preset == "HighQualityDirtRockGrassLayer") return materials::presets::HighQualityDirtRockGrassLayer();
+  if (preset == "Mulch") return materials::presets::Mulch();
+  if (preset == "PebblyDirt") return materials::presets::PebblyDirt();
+  if (preset == "Sand") return materials::presets::Sand();
+  if (preset == "Stone") return materials::presets::Stone();
+  if (preset == "StoneGrass") return materials::presets::StoneGrass();
+  if (preset == "Sky") return materials::presets::SkyDay();
+  if (preset == "RealisticSkyClouds") return materials::presets::RealisticSkyClouds();
+  return std::nullopt;
+}
+
+std::optional<ecs::ShaderComponent> readTerrainMaterial(const data::JsonValue& v) {
+  const auto* obj = v.tryObject();
+  if (!obj) return std::nullopt;
+
+  std::optional<ecs::ShaderComponent> shader;
+  if (const auto* presetV = data::getObjectKey(*obj, "preset")) {
+    std::string preset;
+    if (data::readString(*presetV, preset)) {
+      shader = resolveTerrainMaterialPreset(preset);
+    }
+  }
+  if (!shader) shader.emplace();
+
+  if (const auto* keyV = data::getObjectKey(*obj, "shaderKey")) {
+    (void)data::readString(*keyV, shader->shader.key);
+  }
+  if (const auto* keyV = data::getObjectKey(*obj, "key")) {
+    (void)data::readString(*keyV, shader->shader.key);
+  }
+  if (const auto* tx = data::getObjectKey(*obj, "textures")) shader->textures = readTextureBindings(*tx);
+  if (const auto* pv = data::getObjectKey(*obj, "parameters")) shader->parameters = readMaterialParameters(*pv);
+  if (const auto* lv = data::getObjectKey(*obj, "lodBreakpoints")) {
+    const auto breakpoints = readShaderBreakpoints(*lv);
+    shader->lodBreakpoints.reserve(shader->lodBreakpoints.size() + breakpoints.size());
+    for (const auto& bp : breakpoints) {
+      ecs::ShaderComponent::LodBreakpoint out{};
+      out.distanceMeters = bp.distanceMeters;
+      out.textures = bp.textures;
+      out.parameters = bp.parameters;
+      out.overrideTessellation = bp.overrideTessellation;
+      out.tessNear = bp.tessNear;
+      out.tessFar = bp.tessFar;
+      out.tessMin = bp.tessMin;
+      out.tessMax = bp.tessMax;
+      out.tessQuality = bp.tessQuality;
+      shader->lodBreakpoints.push_back(std::move(out));
+    }
+  }
+  shader->castShadows = data::getBoolOr(*obj, "castShadows", shader->castShadows);
+  shader->receiveShadows = data::getBoolOr(*obj, "receiveShadows", shader->receiveShadows);
+
+  return shader;
 }
 
 render::TextureBinding readTextureBinding(const data::JsonValue::Object& obj) {
@@ -341,18 +407,11 @@ TerrainConfig readTerrainInput(const data::JsonValue::Object& obj, const Factory
   t.hasCollider = data::getBoolOr(obj, "colliderEnabled", t.hasCollider);
   t.colliderThicknessMeters = data::getFloatOr(obj, "colliderThicknessMeters", t.colliderThicknessMeters);
   t.hasShader = data::getBoolOr(obj, "shaderEnabled", t.hasShader);
+  t.shaderKey = data::getStringOr(obj, "shaderKey", t.shaderKey);
 
-  if (const auto* sv = data::getObjectKey(obj, "shader")) {
-    if (const auto* so = sv->tryObject()) {
-      t.viewable.shaderKey = data::getStringOr(*so, "key", t.viewable.shaderKey);
-      if (const auto* tx = data::getObjectKey(*so, "textures")) t.viewable.textures = readTextureBindings(*tx);
-      if (const auto* pv = data::getObjectKey(*so, "parameters")) t.viewable.parameters = readMaterialParameters(*pv);
-      if (const auto* lv = data::getObjectKey(*so, "lodBreakpoints")) t.viewable.lodBreakpoints = readShaderBreakpoints(*lv);
-      t.viewable.castShadows = data::getBoolOr(*so, "castShadows", t.viewable.castShadows);
-      t.viewable.receiveShadows = data::getBoolOr(*so, "receiveShadows", t.viewable.receiveShadows);
-    }
+  if (const auto* mv = data::getObjectKey(obj, "material")) {
+    t.material = readTerrainMaterial(*mv);
   }
-  if (const auto* sk = data::getObjectKey(obj, "shaderKey")) (void)data::readString(*sk, t.viewable.shaderKey);
   if (const auto* tx = data::getObjectKey(obj, "textures")) t.viewable.textures = readTextureBindings(*tx);
   if (const auto* pv = data::getObjectKey(obj, "parameters")) t.viewable.parameters = readMaterialParameters(*pv);
   if (const auto* lv = data::getObjectKey(obj, "lodBreakpoints")) t.viewable.lodBreakpoints = readShaderBreakpoints(*lv);

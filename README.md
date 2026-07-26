@@ -290,6 +290,7 @@ Common presets:
 - `RealisticSkyClouds`
 
 These presets build `render::ShaderComponent` descriptions with textures and parameters. Use them when you want a new entity to share a known look without hand-wiring every texture.
+For a one-stop include, `src/materials/presets/Presets.h` now exports the terrain and sky presets listed above.
 
 To create a new preset:
 
@@ -303,6 +304,14 @@ Example:
 ```cpp
 auto& shader = registry.emplace<ecs::ShaderComponent>(entity, materials::presets::HighQualityDirtRockLayer());
 shader.shader.key = "graphics/shaders/terrain";
+```
+
+Terrain factories can also take a preset directly:
+
+```cpp
+ecs::services::TerrainConfig cfg;
+cfg.material = materials::presets::HighQualityDirtRockGrassLayer();
+cfg.shaderKey = "graphics/shaders/terrain";
 ```
 
 ## HUD / UI

@@ -8,13 +8,14 @@
 #include "ecs/components/TransformComponent.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace ecs::services {
 
 namespace {
 
-void copyShaderBreakpoints(const ViewableInput& viewable, ecs::ShaderComponent& shader) {
-  shader.lodBreakpoints.reserve(viewable.lodBreakpoints.size());
+void appendShaderBreakpoints(const ViewableInput& viewable, ecs::ShaderComponent& shader) {
+  shader.lodBreakpoints.reserve(shader.lodBreakpoints.size() + viewable.lodBreakpoints.size());
   for (const auto& bp : viewable.lodBreakpoints) {
     ecs::ShaderComponent::LodBreakpoint out{};
     out.distanceMeters = bp.distanceMeters;
@@ -28,6 +29,15 @@ void copyShaderBreakpoints(const ViewableInput& viewable, ecs::ShaderComponent& 
     out.tessQuality = bp.tessQuality;
     shader.lodBreakpoints.push_back(std::move(out));
   }
+}
+
+void appendViewableOverrides(const ViewableInput& viewable, ecs::ShaderComponent& shader) {
+  shader.castShadows = shader.castShadows && viewable.castShadows;
+  shader.receiveShadows = shader.receiveShadows && viewable.receiveShadows;
+
+  shader.textures.insert(shader.textures.begin(), viewable.textures.begin(), viewable.textures.end());
+  shader.parameters.insert(shader.parameters.end(), viewable.parameters.begin(), viewable.parameters.end());
+  appendShaderBreakpoints(viewable, shader);
 }
 
 }  // namespace
@@ -71,13 +81,13 @@ EntityId TerrainFactory::create(EntityRegistry& registry, const TerrainConfig& c
     collider.terrain.thicknessMeters = std::max(0.01f, config.colliderThicknessMeters);
   }
 
-  if (config.hasShader && !config.viewable.shaderKey.empty()) {
-    auto& shader = registry.emplace<ecs::ShaderComponent>(id);
-    shader.shader.key = config.viewable.shaderKey;
-    shader.castShadows = config.viewable.castShadows;
-    shader.receiveShadows = config.viewable.receiveShadows;
-    shader.lodBreakpoints.reserve(config.viewable.lodBreakpoints.size());
-    copyShaderBreakpoints(config.viewable, shader);
+  if (config.hasShader) {
+    ecs::ShaderComponent shader = config.material.value_or(ecs::ShaderComponent{});
+    if (!config.shaderKey.empty()) {
+      shader.shader.key = config.shaderKey;
+    }
+    appendViewableOverrides(config.viewable, shader);
+    registry.emplace<ecs::ShaderComponent>(id, std::move(shader));
   }
 
   return id;
