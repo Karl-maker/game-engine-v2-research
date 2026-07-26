@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <filesystem>
 
 namespace ecs::services {
 
@@ -45,8 +46,9 @@ bool readCoord(const data::JsonValue& v, ChunkCoord& out) {
 FileChunkSource::FileChunkSource(std::string path) : m_path(std::move(path)) { (void)reload(); }
 
 bool FileChunkSource::reload() {
-  m_chunks.clear();
   if (m_path.empty()) return false;
+
+  std::unordered_map<ChunkCoord, ChunkDefinition, ChunkCoordHash> chunks;
 
   const std::string text = readTextFile(m_path);
   if (text.empty()) {
@@ -111,10 +113,23 @@ bool FileChunkSource::reload() {
       }
     }
 
-    m_chunks.emplace(coord, std::move(def));
+    chunks.emplace(coord, std::move(def));
   }
 
+  m_chunks = std::move(chunks);
+  std::error_code ec;
+  const auto wt = std::filesystem::last_write_time(m_path, ec);
+  if (!ec) m_lastWriteTime = wt;
   return true;
+}
+
+bool FileChunkSource::reloadIfChanged() {
+  if (m_path.empty()) return false;
+  std::error_code ec;
+  const auto wt = std::filesystem::last_write_time(m_path, ec);
+  if (ec) return false;
+  if (!m_chunks.empty() && wt == m_lastWriteTime) return false;
+  return reload();
 }
 
 std::optional<ChunkDefinition> FileChunkSource::loadChunk(const ChunkCoord& coord) {
@@ -124,4 +139,3 @@ std::optional<ChunkDefinition> FileChunkSource::loadChunk(const ChunkCoord& coor
 }
 
 }  // namespace ecs::services
-

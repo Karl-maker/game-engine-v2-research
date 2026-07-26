@@ -9,6 +9,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <filesystem>
 
 namespace ecs::services {
 
@@ -17,6 +18,7 @@ class FileChunkSource final : public IChunkSource {
   explicit FileChunkSource(std::string path);
 
   bool reload();
+  bool reloadIfChanged();
   const std::string& path() const { return m_path; }
 
   std::optional<ChunkDefinition> loadChunk(const ChunkCoord& coord) override;
@@ -24,7 +26,7 @@ class FileChunkSource final : public IChunkSource {
  private:
   std::string m_path;
   std::unordered_map<ChunkCoord, ChunkDefinition, ChunkCoordHash> m_chunks;
+  std::filesystem::file_time_type m_lastWriteTime{};
 };
 
 }  // namespace ecs::services
-

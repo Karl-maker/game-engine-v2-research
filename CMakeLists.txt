@@ -41,6 +41,8 @@ add_executable(duppy
   src/ecs/factories/ObjectFactory.cpp
   src/ecs/factories/PhysicalObjectFactory.cpp
   src/ecs/factories/ActorFactory.cpp
+  src/ecs/factories/TerrainFactory.cpp
+  src/ecs/factories/VfxFactory.cpp
   src/ecs/factories/WeaponFactory.cpp
   src/ecs/factories/CombatantFactory.cpp
   src/ecs/factories/FactoryKeyService.cpp
@@ -57,6 +59,7 @@ add_executable(duppy
   src/core/ThreadService.cpp
   src/games/AttachmentDemoGame.cpp
   src/games/GameplayDemoGame.cpp
+  src/games/ToolingDemoGame.cpp
   src/games/TargetDemoGame.cpp
 )
 

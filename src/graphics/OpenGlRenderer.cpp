@@ -571,16 +571,7 @@ void OpenGlRenderer::glfwKeyCallback(GLFWwindow* w, int key, int, int action, in
   auto* self = selfFrom(w);
   if (!self) return;
   const bool down = (action != GLFW_RELEASE);
-  if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-    self->m_cursorCaptured = !self->m_cursorCaptured;
-    glfwSetInputMode(w, GLFW_CURSOR, self->m_cursorCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-    if (glfwRawMouseMotionSupported()) {
-      glfwSetInputMode(w, GLFW_RAW_MOUSE_MOTION, self->m_cursorCaptured ? GLFW_TRUE : GLFW_FALSE);
-    }
-    self->m_hasMousePos = false;
-    self->m_accumMouseDx = 0.0;
-    self->m_accumMouseDy = 0.0;
-  }
+  if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) { self->toggleCursorCaptured(); }
   if (key == GLFW_KEY_SPACE) {
     if (action == GLFW_PRESS && !self->m_keySpaceHeld) {
       self->m_keySpaceQueued = true;
@@ -618,6 +609,25 @@ void OpenGlRenderer::glfwCursorPosCallback(GLFWwindow* w, double x, double y) {
   self->m_accumMouseDx += dx;
   self->m_accumMouseDy += dy;
 }
+
+void OpenGlRenderer::applyCursorCaptured(bool captured) {
+  if (!m_window) {
+    m_cursorCaptured = captured;
+    return;
+  }
+  m_cursorCaptured = captured;
+  glfwSetInputMode(m_window, GLFW_CURSOR, m_cursorCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+  if (glfwRawMouseMotionSupported()) {
+    glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, m_cursorCaptured ? GLFW_TRUE : GLFW_FALSE);
+  }
+  m_hasMousePos = false;
+  m_accumMouseDx = 0.0;
+  m_accumMouseDy = 0.0;
+}
+
+void OpenGlRenderer::setCursorCaptured(bool captured) { applyCursorCaptured(captured); }
+
+void OpenGlRenderer::toggleCursorCaptured() { applyCursorCaptured(!m_cursorCaptured); }
 
 int OpenGlRenderer::uniformLocation(std::uint32_t programId, const char* name) {
   if (programId == 0 || name == nullptr || *name == '\0') return -1;
@@ -736,11 +746,7 @@ bool OpenGlRenderer::start(const WindowConfig& cfg, const char* title) {
   glfwSetCursorPosCallback(m_window, &OpenGlRenderer::glfwCursorPosCallback);
 
   // Capture mouse for FPS-style look by default.
-  m_cursorCaptured = true;
-  glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-  if (glfwRawMouseMotionSupported()) {
-    glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
-  }
+  applyCursorCaptured(true);
 
   getFramebufferSize(m_window, &m_fbWidth, &m_fbHeight);
   glViewport(0, 0, m_fbWidth, m_fbHeight);
@@ -4292,10 +4298,6 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   m_hasPrevViewProj = true;
 
   // Allow escape to close.
-  if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-    glfwSetWindowShouldClose(m_window, GLFW_TRUE);
-  }
-
   const float renderMsSoFar = static_cast<float>((glfwGetTime() - renderStart) * 1000.0);
 
   passStart = glfwGetTime();

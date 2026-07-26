@@ -43,6 +43,22 @@ EntityId ObjectFactory::create(
   shader.shader.key = config.viewable.shaderKey;
   shader.castShadows = config.viewable.castShadows;
   shader.receiveShadows = config.viewable.receiveShadows;
+  shader.textures = config.viewable.textures;
+  shader.parameters = config.viewable.parameters;
+  shader.lodBreakpoints.reserve(config.viewable.lodBreakpoints.size());
+  for (const auto& bp : config.viewable.lodBreakpoints) {
+    ecs::ShaderComponent::LodBreakpoint out{};
+    out.distanceMeters = bp.distanceMeters;
+    out.textures = bp.textures;
+    out.parameters = bp.parameters;
+    out.overrideTessellation = bp.overrideTessellation;
+    out.tessNear = bp.tessNear;
+    out.tessFar = bp.tessFar;
+    out.tessMin = bp.tessMin;
+    out.tessMax = bp.tessMax;
+    out.tessQuality = bp.tessQuality;
+    shader.lodBreakpoints.push_back(std::move(out));
+  }
 
   return id;
 }

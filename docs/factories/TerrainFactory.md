@@ -36,7 +36,11 @@
 - `colliderEnabled` — Master on/off switch or similar behavior flag.
 - `colliderThicknessMeters` — Stable reference used by content, loaders, or rendering systems.
 - `shaderKey` — Stable reference used by content, loaders, or rendering systems.
-- `depthWrite` — Master on/off switch or similar behavior flag.
+- `textures` — Optional `ShaderComponent` texture bindings for the terrain material.
+- `parameters` — Optional `ShaderComponent` material parameters.
+- `lodBreakpoints` — Optional ordered distance-based shader overrides, including tessellation changes.
+- `shaderEnabled` — Master on/off switch for the terrain shader attachment.
+- `castShadows` / `receiveShadows` — Render hints forwarded to the terrain shader component.
 
 ## Example JSON
 

@@ -55,6 +55,8 @@ class OpenGlRenderer final {
   void pollEvents();
 
   RealtimeInput drainRealtimeInput();
+  void setCursorCaptured(bool captured);
+  void toggleCursorCaptured();
 
   void render(const ecs::systems::GraphicsSystem::FrameSnapshot& frame,
               bool debugHudEnabled,
@@ -69,6 +71,7 @@ class OpenGlRenderer final {
   static OpenGlRenderer* selfFrom(GLFWwindow* w);
   static void glfwKeyCallback(GLFWwindow* w, int key, int scancode, int action, int mods);
   static void glfwCursorPosCallback(GLFWwindow* w, double x, double y);
+  void applyCursorCaptured(bool captured);
   int uniformLocation(std::uint32_t programId, const char* name);
   std::uint32_t requestTextureAsset(const render::AssetRef& texture,
                                     const render::AnimatedTexture* animatedTexture,

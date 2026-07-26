@@ -7,11 +7,17 @@
 #include "ecs/factories/PhysicalObjectFactory.h"
 #include "ecs/factories/ActorFactory.h"
 #include "ecs/factories/CombatantFactory.h"
+#include "ecs/factories/TerrainFactory.h"
+#include "ecs/factories/VfxFactory.h"
 #include "ecs/factories/WeaponFactory.h"
 #include "ecs/services/IEntityFactory.h"
+#include "render/Color.h"
+#include "math/Vec4.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -76,6 +82,168 @@ ecs::ColliderComponent::Shape parseColliderShape(std::string value) {
   return ecs::ColliderComponent::Shape::Box;
 }
 
+ecs::VfxComponent::Type parseVfxType(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "electricity" || value == "lightning" || value == "arc") return ecs::VfxComponent::Type::Electricity;
+  if (value == "sparks" || value == "spark") return ecs::VfxComponent::Type::Sparks;
+  if (value == "smoke") return ecs::VfxComponent::Type::Smoke;
+  if (value == "steam") return ecs::VfxComponent::Type::Steam;
+  return ecs::VfxComponent::Type::Fire;
+}
+
+ecs::VfxComponent::Quality parseVfxQuality(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "low") return ecs::VfxComponent::Quality::Low;
+  if (value == "medium" || value == "med") return ecs::VfxComponent::Quality::Medium;
+  if (value == "ultra") return ecs::VfxComponent::Quality::Ultra;
+  return ecs::VfxComponent::Quality::High;
+}
+
+render::TextureBinding readTextureBinding(const data::JsonValue::Object& obj) {
+  render::TextureBinding out{};
+  out.slot = data::getStringOr(obj, "slot", out.slot);
+  out.srgb = data::getBoolOr(obj, "srgb", out.srgb);
+  if (const auto* tex = data::getObjectKey(obj, "texture")) {
+    if (const auto* to = tex->tryObject()) {
+      out.texture.enabled = data::getBoolOr(*to, "enabled", out.texture.enabled);
+      out.texture.key = data::getStringOr(*to, "key", out.texture.key);
+      if (const auto* id = data::getObjectKey(*to, "id")) {
+        int n = 0;
+        if (data::readInt(*id, n) && n >= 0) out.texture.id = static_cast<std::uint32_t>(n);
+      }
+    } else {
+      data::readString(*tex, out.texture.key);
+    }
+  }
+  if (out.texture.key.empty()) {
+    out.texture.key = data::getStringOr(obj, "key", out.texture.key);
+    out.texture.enabled = data::getBoolOr(obj, "enabled", out.texture.enabled);
+  }
+  return out;
+}
+
+bool readMaterialValue(const data::JsonValue& v, render::MaterialParamValue& out) {
+  if (const auto* b = v.tryBool()) {
+    out = *b;
+    return true;
+  }
+  if (const auto* n = v.tryNumber()) {
+    const double d = *n;
+    if (d >= static_cast<double>(std::numeric_limits<int>::min()) && d <= static_cast<double>(std::numeric_limits<int>::max()) &&
+        std::floor(d) == d) {
+      out = static_cast<int>(d);
+    } else {
+      out = static_cast<float>(d);
+    }
+    return true;
+  }
+  if (const auto* a = v.tryArray()) {
+    if (a->size() == 2) {
+      float x = 0.0f, y = 0.0f;
+      if (!data::readFloat((*a)[0], x) || !data::readFloat((*a)[1], y)) return false;
+      out = math::Vec2{x, y};
+      return true;
+    }
+    if (a->size() == 3) {
+      float x = 0.0f, y = 0.0f, z = 0.0f;
+      if (!data::readFloat((*a)[0], x) || !data::readFloat((*a)[1], y) || !data::readFloat((*a)[2], z)) return false;
+      out = math::Vec3{x, y, z};
+      return true;
+    }
+    if (a->size() == 4) {
+      float x = 0.0f, y = 0.0f, z = 0.0f, w = 0.0f;
+      if (!data::readFloat((*a)[0], x) || !data::readFloat((*a)[1], y) || !data::readFloat((*a)[2], z) ||
+          !data::readFloat((*a)[3], w)) {
+        return false;
+      }
+      out = math::Vec4{x, y, z, w};
+      return true;
+    }
+  }
+  if (const auto* o = v.tryObject()) {
+    float r = 1.0f, g = 1.0f, b = 1.0f, a = 1.0f;
+    if (const auto* rv = data::getObjectKey(*o, "r")) (void)data::readFloat(*rv, r);
+    if (const auto* gv = data::getObjectKey(*o, "g")) (void)data::readFloat(*gv, g);
+    if (const auto* bv = data::getObjectKey(*o, "b")) (void)data::readFloat(*bv, b);
+    if (const auto* av = data::getObjectKey(*o, "a")) (void)data::readFloat(*av, a);
+    out = render::Color{r, g, b, a};
+    return true;
+  }
+  return false;
+}
+
+render::MaterialParameter readMaterialParameter(const data::JsonValue::Object& obj) {
+  render::MaterialParameter out{};
+  out.name = data::getStringOr(obj, "name", out.name);
+  if (const auto* v = data::getObjectKey(obj, "value")) {
+    (void)readMaterialValue(*v, out.value);
+  }
+  return out;
+}
+
+std::vector<render::TextureBinding> readTextureBindings(const data::JsonValue& v) {
+  std::vector<render::TextureBinding> out;
+  if (const auto* arr = v.tryArray()) {
+    out.reserve(arr->size());
+    for (const auto& el : *arr) {
+      if (const auto* obj = el.tryObject()) out.push_back(readTextureBinding(*obj));
+    }
+  }
+  return out;
+}
+
+std::vector<render::MaterialParameter> readMaterialParameters(const data::JsonValue& v) {
+  std::vector<render::MaterialParameter> out;
+  if (const auto* arr = v.tryArray()) {
+    out.reserve(arr->size());
+    for (const auto& el : *arr) {
+      if (const auto* obj = el.tryObject()) out.push_back(readMaterialParameter(*obj));
+    }
+  }
+  return out;
+}
+
+std::vector<ShaderBreakpointInput> readShaderBreakpoints(const data::JsonValue& v) {
+  std::vector<ShaderBreakpointInput> out;
+  if (const auto* arr = v.tryArray()) {
+    out.reserve(arr->size());
+    for (const auto& el : *arr) {
+      if (const auto* obj = el.tryObject()) {
+        ShaderBreakpointInput bp{};
+        bp.distanceMeters = data::getFloatOr(*obj, "distanceMeters", bp.distanceMeters);
+        if (const auto* tex = data::getObjectKey(*obj, "textures")) bp.textures = readTextureBindings(*tex);
+        if (const auto* params = data::getObjectKey(*obj, "parameters")) bp.parameters = readMaterialParameters(*params);
+        bp.overrideTessellation = data::getBoolOr(*obj, "overrideTessellation", bp.overrideTessellation);
+        bp.tessNear = data::getFloatOr(*obj, "tessNear", bp.tessNear);
+        bp.tessFar = data::getFloatOr(*obj, "tessFar", bp.tessFar);
+        bp.tessMin = data::getFloatOr(*obj, "tessMin", bp.tessMin);
+        bp.tessMax = data::getFloatOr(*obj, "tessMax", bp.tessMax);
+        bp.tessQuality = data::getIntOr(*obj, "tessQuality", bp.tessQuality);
+        out.push_back(std::move(bp));
+      }
+    }
+  }
+  return out;
+}
+
+bool readColorValue(const data::JsonValue& v, render::Color& out) {
+  render::MaterialParamValue value;
+  if (!readMaterialValue(v, value)) return false;
+  if (const auto* c = std::get_if<render::Color>(&value)) {
+    out = *c;
+    return true;
+  }
+  if (const auto* v4 = std::get_if<math::Vec4>(&value)) {
+    out = {v4->x, v4->y, v4->z, v4->w};
+    return true;
+  }
+  if (const auto* v3 = std::get_if<math::Vec3>(&value)) {
+    out = {v3->x, v3->y, v3->z, 1.0f};
+    return true;
+  }
+  return false;
+}
+
 TransformInput readTransformInput(const data::JsonValue::Object& obj, const FactoryContext& ctx) {
   TransformInput t{};
   t.name = data::getStringOr(obj, "name", t.name);
@@ -100,6 +268,9 @@ ViewableInput readViewableInput(const data::JsonValue::Object& obj) {
   v.receiveShadows = data::getBoolOr(obj, "receiveShadows", v.receiveShadows);
   if (const auto* tv = data::getObjectKey(obj, "tags")) v.tags = readStringArrayOrEmpty(*tv);
   if (const auto* sk = data::getObjectKey(obj, "shaderKey")) (void)data::readString(*sk, v.shaderKey);
+  if (const auto* tx = data::getObjectKey(obj, "textures")) v.textures = readTextureBindings(*tx);
+  if (const auto* pv = data::getObjectKey(obj, "parameters")) v.parameters = readMaterialParameters(*pv);
+  if (const auto* lv = data::getObjectKey(obj, "lodBreakpoints")) v.lodBreakpoints = readShaderBreakpoints(*lv);
 
   // Optional nested objects.
   if (const auto* mv = data::getObjectKey(obj, "mesh")) {
@@ -121,8 +292,141 @@ ViewableInput readViewableInput(const data::JsonValue::Object& obj) {
   if (const auto* sv = data::getObjectKey(obj, "shader")) {
     if (const auto* so = sv->tryObject()) {
       v.shaderKey = data::getStringOr(*so, "key", v.shaderKey);
+      if (const auto* tx = data::getObjectKey(*so, "textures")) v.textures = readTextureBindings(*tx);
+      if (const auto* pv = data::getObjectKey(*so, "parameters")) v.parameters = readMaterialParameters(*pv);
+      if (const auto* lv = data::getObjectKey(*so, "lodBreakpoints")) v.lodBreakpoints = readShaderBreakpoints(*lv);
+      v.castShadows = data::getBoolOr(*so, "castShadows", v.castShadows);
+      v.receiveShadows = data::getBoolOr(*so, "receiveShadows", v.receiveShadows);
     }
   }
+
+  return v;
+}
+
+TerrainConfig readTerrainInput(const data::JsonValue::Object& obj, const FactoryContext& ctx) {
+  TerrainConfig t{};
+  t.transform = readTransformInput(obj, ctx);
+  t.transform.name = data::getStringOr(obj, "name", t.transform.name);
+  t.gridWidth = data::getIntOr(obj, "gridWidth", t.gridWidth);
+  t.gridHeight = data::getIntOr(obj, "gridHeight", t.gridHeight);
+  t.cellSizeMeters = data::getFloatOr(obj, "cellSizeMeters", t.cellSizeMeters);
+  t.heightScaleMeters = data::getFloatOr(obj, "heightScaleMeters", t.heightScaleMeters);
+  if (const auto* v = data::getObjectKey(obj, "noiseSeed")) {
+    int seed = static_cast<int>(t.noiseSeed);
+    if (data::readInt(*v, seed) && seed >= 0) t.noiseSeed = static_cast<std::uint32_t>(seed);
+  }
+  if (const auto* nv = data::getObjectKey(obj, "noise")) {
+    if (const auto* no = nv->tryObject()) {
+      if (const auto* seedV = data::getObjectKey(*no, "seed")) {
+        int seed = static_cast<int>(t.noise.seed);
+        if (data::readInt(*seedV, seed) && seed >= 0) t.noise.seed = static_cast<std::uint32_t>(seed);
+      }
+      t.noise.frequency = data::getFloatOr(*no, "frequency", t.noise.frequency);
+      t.noise.octaves = data::getIntOr(*no, "octaves", t.noise.octaves);
+      t.noise.lacunarity = data::getFloatOr(*no, "lacunarity", t.noise.lacunarity);
+      t.noise.persistence = data::getFloatOr(*no, "persistence", t.noise.persistence);
+    }
+  }
+  t.lodMaxRenderDistance = data::getFloatOr(obj, "lodMaxRenderDistance", t.lodMaxRenderDistance);
+  t.lodStep1Distance = data::getFloatOr(obj, "lodStep1Distance", t.lodStep1Distance);
+  t.lodStep2Distance = data::getFloatOr(obj, "lodStep2Distance", t.lodStep2Distance);
+  t.lodStep4Distance = data::getFloatOr(obj, "lodStep4Distance", t.lodStep4Distance);
+  t.lodStep8Distance = data::getFloatOr(obj, "lodStep8Distance", t.lodStep8Distance);
+  t.lodStep16Distance = data::getFloatOr(obj, "lodStep16Distance", t.lodStep16Distance);
+  t.lodForceNearDistance = data::getFloatOr(obj, "lodForceNearDistance", t.lodForceNearDistance);
+  t.tessLockDistance = data::getFloatOr(obj, "tessLockDistance", t.tessLockDistance);
+  t.tessEnableDistance = data::getFloatOr(obj, "tessEnableDistance", t.tessEnableDistance);
+  t.tessDisableDistance = data::getFloatOr(obj, "tessDisableDistance", t.tessDisableDistance);
+  t.viewDotBias = data::getFloatOr(obj, "viewDotBias", t.viewDotBias);
+  t.hasCollider = data::getBoolOr(obj, "colliderEnabled", t.hasCollider);
+  t.colliderThicknessMeters = data::getFloatOr(obj, "colliderThicknessMeters", t.colliderThicknessMeters);
+  t.hasShader = data::getBoolOr(obj, "shaderEnabled", t.hasShader);
+
+  if (const auto* sv = data::getObjectKey(obj, "shader")) {
+    if (const auto* so = sv->tryObject()) {
+      t.viewable.shaderKey = data::getStringOr(*so, "key", t.viewable.shaderKey);
+      if (const auto* tx = data::getObjectKey(*so, "textures")) t.viewable.textures = readTextureBindings(*tx);
+      if (const auto* pv = data::getObjectKey(*so, "parameters")) t.viewable.parameters = readMaterialParameters(*pv);
+      if (const auto* lv = data::getObjectKey(*so, "lodBreakpoints")) t.viewable.lodBreakpoints = readShaderBreakpoints(*lv);
+      t.viewable.castShadows = data::getBoolOr(*so, "castShadows", t.viewable.castShadows);
+      t.viewable.receiveShadows = data::getBoolOr(*so, "receiveShadows", t.viewable.receiveShadows);
+    }
+  }
+  if (const auto* sk = data::getObjectKey(obj, "shaderKey")) (void)data::readString(*sk, t.viewable.shaderKey);
+  if (const auto* tx = data::getObjectKey(obj, "textures")) t.viewable.textures = readTextureBindings(*tx);
+  if (const auto* pv = data::getObjectKey(obj, "parameters")) t.viewable.parameters = readMaterialParameters(*pv);
+  if (const auto* lv = data::getObjectKey(obj, "lodBreakpoints")) t.viewable.lodBreakpoints = readShaderBreakpoints(*lv);
+  t.viewable.visible = data::getBoolOr(obj, "visible", t.viewable.visible);
+  t.viewable.castShadows = data::getBoolOr(obj, "castShadows", t.viewable.castShadows);
+  t.viewable.receiveShadows = data::getBoolOr(obj, "receiveShadows", t.viewable.receiveShadows);
+
+  return t;
+}
+
+VfxConfig readVfxInput(const data::JsonValue::Object& obj, const FactoryContext& ctx) {
+  VfxConfig v{};
+  v.transform = readTransformInput(obj, ctx);
+  v.transform.name = data::getStringOr(obj, "name", v.transform.name);
+
+  auto readInto = [&](const data::JsonValue::Object& src) {
+    if (const auto* t = data::getObjectKey(src, "type")) {
+      std::string s;
+      if (data::readString(*t, s)) v.vfx.type = parseVfxType(std::move(s));
+    }
+    if (const auto* q = data::getObjectKey(src, "quality")) {
+      std::string s;
+      if (data::readString(*q, s)) v.vfx.quality = parseVfxQuality(std::move(s));
+    }
+    v.vfx.enabled = data::getBoolOr(src, "enabled", v.vfx.enabled);
+    v.vfx.autoQuality = data::getBoolOr(src, "autoQuality", v.vfx.autoQuality);
+    v.vfx.maxRenderDistance = data::getFloatOr(src, "maxRenderDistance", v.vfx.maxRenderDistance);
+    v.vfx.lodNearDistance = data::getFloatOr(src, "lodNearDistance", v.vfx.lodNearDistance);
+    v.vfx.lodMidDistance = data::getFloatOr(src, "lodMidDistance", v.vfx.lodMidDistance);
+    v.vfx.lodFarDistance = data::getFloatOr(src, "lodFarDistance", v.vfx.lodFarDistance);
+    v.vfx.lodUltraDistance = data::getFloatOr(src, "lodUltraDistance", v.vfx.lodUltraDistance);
+    v.vfx.lodForceNearDistance = data::getFloatOr(src, "lodForceNearDistance", v.vfx.lodForceNearDistance);
+    v.vfx.viewDotBias = data::getFloatOr(src, "viewDotBias", v.vfx.viewDotBias);
+    v.vfx.intensity = data::getFloatOr(src, "intensity", v.vfx.intensity);
+    v.vfx.spawnRate = data::getFloatOr(src, "spawnRate", v.vfx.spawnRate);
+    v.vfx.burstInterval = data::getFloatOr(src, "burstInterval", v.vfx.burstInterval);
+    v.vfx.lifetimeSeconds = data::getFloatOr(src, "lifetimeSeconds", v.vfx.lifetimeSeconds);
+    v.vfx.sizeMeters = data::getFloatOr(src, "sizeMeters", v.vfx.sizeMeters);
+    v.vfx.sizeVariance = data::getFloatOr(src, "sizeVariance", v.vfx.sizeVariance);
+    v.vfx.speedMetersPerSecond = data::getFloatOr(src, "speedMetersPerSecond", v.vfx.speedMetersPerSecond);
+    v.vfx.speedVariance = data::getFloatOr(src, "speedVariance", v.vfx.speedVariance);
+    v.vfx.gravityScale = data::getFloatOr(src, "gravityScale", v.vfx.gravityScale);
+    v.vfx.drag = data::getFloatOr(src, "drag", v.vfx.drag);
+    v.vfx.flickerStrength = data::getFloatOr(src, "flickerStrength", v.vfx.flickerStrength);
+    v.vfx.flickerSpeed = data::getFloatOr(src, "flickerSpeed", v.vfx.flickerSpeed);
+    v.vfx.looping = data::getBoolOr(src, "looping", v.vfx.looping);
+    v.vfx.castLight = data::getBoolOr(src, "castLight", v.vfx.castLight);
+    if (const auto* seedV = data::getObjectKey(src, "seed")) {
+      int seed = static_cast<int>(v.vfx.seed);
+      if (data::readInt(*seedV, seed) && seed >= 0) v.vfx.seed = static_cast<std::uint32_t>(seed);
+    }
+    v.vfx.heightMeters = data::getFloatOr(src, "heightMeters", v.vfx.heightMeters);
+    v.vfx.upwardBias = data::getFloatOr(src, "upwardBias", v.vfx.upwardBias);
+    v.vfx.spreadRadiusMeters = data::getFloatOr(src, "spreadRadiusMeters", v.vfx.spreadRadiusMeters);
+    v.vfx.heatHazeStrength = data::getFloatOr(src, "heatHazeStrength", v.vfx.heatHazeStrength);
+    v.vfx.chargeLengthMeters = data::getFloatOr(src, "chargeLengthMeters", v.vfx.chargeLengthMeters);
+    v.vfx.arcJitter = data::getFloatOr(src, "arcJitter", v.vfx.arcJitter);
+    v.vfx.branchCount = data::getIntOr(src, "branchCount", v.vfx.branchCount);
+    v.vfx.segmentCount = data::getIntOr(src, "segmentCount", v.vfx.segmentCount);
+    v.vfx.pulseSpeed = data::getFloatOr(src, "pulseSpeed", v.vfx.pulseSpeed);
+    v.vfx.sparkCount = data::getIntOr(src, "sparkCount", v.vfx.sparkCount);
+    v.vfx.sparkSpreadDegrees = data::getFloatOr(src, "sparkSpreadDegrees", v.vfx.sparkSpreadDegrees);
+    v.vfx.sparkTrailLengthMeters = data::getFloatOr(src, "sparkTrailLengthMeters", v.vfx.sparkTrailLengthMeters);
+    v.vfx.sparkFadeSeconds = data::getFloatOr(src, "sparkFadeSeconds", v.vfx.sparkFadeSeconds);
+    if (const auto* c = data::getObjectKey(src, "primaryColor")) (void)readColorValue(*c, v.vfx.primaryColor);
+    if (const auto* c = data::getObjectKey(src, "secondaryColor")) (void)readColorValue(*c, v.vfx.secondaryColor);
+  };
+
+  if (const auto* component = data::getObjectKey(obj, "component")) {
+    if (const auto* co = component->tryObject()) {
+      readInto(*co);
+    }
+  }
+  readInto(obj);
 
   return v;
 }
@@ -288,6 +592,40 @@ class ActorJsonFactory final : public IEntityFactory {
   }
 };
 
+class TerrainJsonFactory final : public IEntityFactory {
+ public:
+  EntityId create(
+      EntityRegistry& registry,
+      const data::JsonValue& config,
+      const FactoryContext& ctx) override {
+    TerrainConfig cfg{};
+
+    if (const auto* obj = config.tryObject()) {
+      cfg = readTerrainInput(*obj, ctx);
+    }
+
+    TerrainFactory factory;
+    return factory.create(registry, cfg);
+  }
+};
+
+class VfxJsonFactory final : public IEntityFactory {
+ public:
+  EntityId create(
+      EntityRegistry& registry,
+      const data::JsonValue& config,
+      const FactoryContext& ctx) override {
+    VfxConfig cfg{};
+
+    if (const auto* obj = config.tryObject()) {
+      cfg = readVfxInput(*obj, ctx);
+    }
+
+    VfxFactory factory;
+    return factory.create(registry, cfg);
+  }
+};
+
 class CombatantJsonFactory final : public IEntityFactory {
  public:
   EntityId create(
@@ -316,6 +654,8 @@ void registerFactoriesFromEcsFactoriesDir(EntityFactoryRegistry& out) {
   out.registerFactory("object", std::make_unique<ObjectJsonFactory>());
   out.registerFactory("physical_object", std::make_unique<PhysicalObjectJsonFactory>());
   out.registerFactory("actor", std::make_unique<ActorJsonFactory>());
+  out.registerFactory("terrain", std::make_unique<TerrainJsonFactory>());
+  out.registerFactory("vfx", std::make_unique<VfxJsonFactory>());
   out.registerFactory("combatant", std::make_unique<CombatantJsonFactory>());
   out.registerFactory("weapon", std::make_unique<WeaponJsonFactory>());
 }

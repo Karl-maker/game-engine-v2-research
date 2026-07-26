@@ -7,8 +7,12 @@
 
 #include "ecs/components/ColliderComponent.h"
 #include "ecs/components/MeshComponent.h"
+#include "ecs/components/ShaderComponent.h"
+#include "render/MaterialParameter.h"
+#include "render/TextureBinding.h"
 #include "math/Vec3.h"
 #include "physics/LayerMask.h"
+#include "terrain/NoiseConfig.h"
 
 #include <string>
 #include <vector>
@@ -20,6 +24,18 @@ struct TransformInput final {
   math::Vec3 position{0.0f, 0.0f, 0.0f};
   math::Vec3 rotationDeg{0.0f, 0.0f, 0.0f};
   math::Vec3 scale{1.0f, 1.0f, 1.0f};
+};
+
+struct ShaderBreakpointInput final {
+  float distanceMeters = 0.0f;
+  std::vector<render::TextureBinding> textures;
+  std::vector<render::MaterialParameter> parameters;
+  bool overrideTessellation = false;
+  float tessNear = 0.0f;
+  float tessFar = 0.0f;
+  float tessMin = 0.0f;
+  float tessMax = 0.0f;
+  int tessQuality = 0;
 };
 
 struct ViewableInput final {
@@ -36,6 +52,36 @@ struct ViewableInput final {
 
   // Shader asset key (engine-defined).
   std::string shaderKey = "graphics/shaders/model";
+  std::vector<render::TextureBinding> textures;
+  std::vector<render::MaterialParameter> parameters;
+  std::vector<ShaderBreakpointInput> lodBreakpoints;
+};
+
+struct TerrainInput final {
+  TransformInput transform{.name = "terrain"};
+  bool enabled = true;
+  int gridWidth = 512;
+  int gridHeight = 512;
+  float cellSizeMeters = 1.0f;
+  float heightScaleMeters = 150.0f;
+  std::uint32_t noiseSeed = 12345u;
+  terrain::NoiseConfig noise{};
+  float lodMaxRenderDistance = 240.0f;
+  float lodStep1Distance = 24.0f;
+  float lodStep2Distance = 48.0f;
+  float lodStep4Distance = 84.0f;
+  float lodStep8Distance = 132.0f;
+  float lodStep16Distance = 180.0f;
+  float lodForceNearDistance = 18.0f;
+  float tessLockDistance = 16.0f;
+  float tessEnableDistance = 72.0f;
+  float tessDisableDistance = 112.0f;
+  float viewDotBias = 0.05f;
+  bool hasCollider = true;
+  float colliderThicknessMeters = 5.0f;
+  physics::LayerMask collisionLayer = physics::kLayerWorld;
+  bool hasShader = true;
+  ViewableInput viewable{};
 };
 
 struct PhysicalInput final {
@@ -74,4 +120,3 @@ struct StatsInput final {
 };
 
 }  // namespace ecs::services
-

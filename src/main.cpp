@@ -6,6 +6,7 @@
 #include "games/AttachmentDemoGame.h"
 #include "games/EnemyFollowDemoGame.h"
 #include "games/GameplayDemoGame.h"
+#include "games/ToolingDemoGame.h"
 #include "games/TargetDemoGame.h"
 
 #include <algorithm>
@@ -15,17 +16,20 @@
 
 namespace {
 
-struct AppConfig final {
+  struct AppConfig final {
   core::GameLoopConfig loop{};
   games::GameplayDemoConfig gameplay{};
 };
 
 static bool isModeToken(const std::string& s) {
   return s == "attachment" || s == "target" || s == "enemy" || s == "enemy-follow" || s == "gameplay" || s == "graphics" ||
-         s == "2" || s == "3" || s == "4";
+         s == "tooling" || s == "editor" || s == "view" || s == "2" || s == "3" || s == "4";
 }
 
 static std::unique_ptr<core::IGame> makeGameFromMode(const std::string& mode, const AppConfig& cfg) {
+  if (mode == "tooling" || mode == "editor" || mode == "view") {
+    return std::make_unique<games::ToolingDemoGame>(cfg.gameplay);
+  }
   if (mode == "enemy" || mode == "enemy-follow" || mode == "3") {
     return std::make_unique<games::EnemyFollowDemoGame>();
   }
@@ -47,6 +51,7 @@ int main(int argc, char** argv) {
   std::cout << "  ./duppy target\n";
   std::cout << "  ./duppy enemy\n";
   std::cout << "  ./duppy gameplay\n";
+  std::cout << "  ./duppy tooling\n";
   std::cout << "Flags:\n";
   std::cout << "  --fullscreen | --windowed\n";
   std::cout << "  --refresh-rate N\n";
@@ -200,6 +205,12 @@ int main(int argc, char** argv) {
   }
 
   auto game = makeGameFromMode(mode, cfg);
+
+  if (mode == "tooling" || mode == "editor" || mode == "view") {
+    debugConsoleEnabled = true;
+    debugOverlayEnabled = true;
+    debugWorldEnabled = true;
+  }
 
   core::DebugConfig debug;
   // The enemy demo renders its own full-screen table, so disable the loop HUD there.
