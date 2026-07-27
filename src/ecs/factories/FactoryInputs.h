@@ -119,4 +119,8 @@ struct StatsInput final {
   float swimmingSpeed = 10.0f;
 };
 
+struct GrassInput final {
+   
+}
+
 }  // namespace ecs::services
