@@ -57,10 +57,8 @@ add_executable(duppy
   src/core/GameLoopService.cpp
   src/core/SteadyTimeSource.cpp
   src/core/ThreadService.cpp
-  src/games/AttachmentDemoGame.cpp
-  src/games/GameplayDemoGame.cpp
-  src/games/ToolingDemoGame.cpp
-  src/games/TargetDemoGame.cpp
+  src/games/Game.cpp
+  src/games/Tooling.cpp
 )
 
 target_include_directories(duppy PRIVATE src)

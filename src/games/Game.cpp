@@ -1,4 +1,4 @@
-#include "games/GameplayDemoGame.h"
+#include "games/Game.h"
 
 // Author: Karl-Johan Bailey
 
@@ -222,7 +222,7 @@ std::string formatSceneCounts(const ecs::systems::GraphicsSystem::FrameSnapshot&
 
 }  // namespace
 
-void GameplayDemoGame::onStart() {
+void Game::onStart() {
   std::cout << "\x1B[2J\x1B[H";
   std::cout << "Gameplay demo (graphics snapshot)\n";
   std::cout << "- Creates camera + terrain(shader) + light\n";
@@ -842,7 +842,7 @@ void GameplayDemoGame::onStart() {
   m_chunkSource = std::make_unique<ecs::services::FileChunkSource>(m_config.chunkConfigPath);
 }
 
-void GameplayDemoGame::onTick(const core::TickContext& ctx) {
+void Game::onTick(const core::TickContext& ctx) {
   m_frameDebugger.beginFrame();
   const auto profile = [&](const char* label, auto&& fn) {
     auto scope = m_frameDebugger.scoped(label);
@@ -989,7 +989,7 @@ void GameplayDemoGame::onTick(const core::TickContext& ctx) {
 
 }
 
-void GameplayDemoGame::onStop() {
+void Game::onStop() {
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   m_renderer.stop();
 #endif

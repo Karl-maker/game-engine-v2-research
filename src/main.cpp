@@ -3,11 +3,8 @@
 #include "core/ConsoleInputService.h"
 #include "core/GameLoopService.h"
 #include "core/SteadyTimeSource.h"
-#include "games/AttachmentDemoGame.h"
-#include "games/EnemyFollowDemoGame.h"
-#include "games/GameplayDemoGame.h"
-#include "games/ToolingDemoGame.h"
-#include "games/TargetDemoGame.h"
+#include "games/Game.h"
+#include "games/Tooling.h"
 
 #include <algorithm>
 #include <iostream>
@@ -18,7 +15,7 @@ namespace {
 
   struct AppConfig final {
   core::GameLoopConfig loop{};
-  games::GameplayDemoConfig gameplay{};
+  games::GameConfig gameplay{};
 };
 
 static bool isModeToken(const std::string& s) {
@@ -28,18 +25,12 @@ static bool isModeToken(const std::string& s) {
 
 static std::unique_ptr<core::IGame> makeGameFromMode(const std::string& mode, const AppConfig& cfg) {
   if (mode == "tooling" || mode == "editor" || mode == "view") {
-    return std::make_unique<games::ToolingDemoGame>(cfg.gameplay);
+    return std::make_unique<games::Tooling>(cfg.gameplay);
   }
-  if (mode == "enemy" || mode == "enemy-follow" || mode == "3") {
-    return std::make_unique<games::EnemyFollowDemoGame>();
+  if (mode == "game" || mode == "graphics" || mode == "4") {
+    return std::make_unique<games::Game>(cfg.gameplay);
   }
-  if (mode == "gameplay" || mode == "graphics" || mode == "4") {
-    return std::make_unique<games::GameplayDemoGame>(cfg.gameplay);
-  }
-  if (mode == "target" || mode == "2") {
-    return std::make_unique<games::TargetDemoGame>();
-  }
-  return std::make_unique<games::AttachmentDemoGame>();
+  return std::make_unique<games::Game>();
 }
 
 }  // namespace

@@ -1,6 +1,6 @@
 // Author: Karl-Johan Bailey
 
-#include "games/ToolingDemoGame.h"
+#include "games/Tooling.h"
 
 #include "core/TickContext.h"
 
@@ -68,7 +68,7 @@ std::string formatSceneCounts(const ecs::systems::GraphicsSystem::FrameSnapshot&
 
 }  // namespace
 
-void ToolingDemoGame::applyToolingConfigToRuntime() {
+void Tooling::applyToolingConfigToRuntime() {
   ecs::services::ChunkStreamingConfig chunkCfg{};
   chunkCfg.chunkSizeMeters = m_config.chunkSizeMeters;
   chunkCfg.searchRadiusChunks = m_config.chunkSearchRadius;
@@ -77,7 +77,7 @@ void ToolingDemoGame::applyToolingConfigToRuntime() {
   m_chunkStreaming.setConfig(chunkCfg);
 }
 
-bool ToolingDemoGame::loadToolingConfig() {
+bool Tooling::loadToolingConfig() {
   if (m_toolingConfigPath.empty()) return false;
 
   std::ifstream f(m_toolingConfigPath);
@@ -119,7 +119,7 @@ bool ToolingDemoGame::loadToolingConfig() {
   return true;
 }
 
-bool ToolingDemoGame::reloadToolingConfigIfChanged() {
+bool Tooling::reloadToolingConfigIfChanged() {
   if (m_toolingConfigPath.empty()) return false;
 
   std::error_code ec;
@@ -129,7 +129,7 @@ bool ToolingDemoGame::reloadToolingConfigIfChanged() {
   return loadToolingConfig();
 }
 
-void ToolingDemoGame::onStart() {
+void Tooling::onStart() {
   std::cout << "\x1B[2J\x1B[H";
   std::cout << "Tooling mode (editor view)\n";
   std::cout << "- Free camera + graphics snapshot only\n";
@@ -237,7 +237,7 @@ void ToolingDemoGame::onStart() {
 #endif
 }
 
-void ToolingDemoGame::onTick(const core::TickContext& ctx) {
+void Tooling::onTick(const core::TickContext& ctx) {
   m_frameDebugger.beginFrame();
 
   for (const auto& line : ctx.inputLines) {
@@ -337,7 +337,7 @@ void ToolingDemoGame::onTick(const core::TickContext& ctx) {
 #endif
 }
 
-void ToolingDemoGame::onStop() {
+void Tooling::onStop() {
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   m_renderer.stop();
 #endif

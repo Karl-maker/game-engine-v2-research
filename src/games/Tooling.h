@@ -10,7 +10,7 @@
 #include "core/FrameDebugger.h"
 #include "core/IGame.h"
 #include "core/ThreadService.h"
-#include "games/GameplayDemoGame.h"
+#include "games/Game.h"
 #include "ecs/EntityId.h"
 #include "ecs/EntityRegistry.h"
 #include "assets/MeshAssetService.h"
@@ -28,9 +28,9 @@
 
 namespace games {
 
-class ToolingDemoGame final : public core::IGame {
+class Tooling final : public core::IGame {
  public:
-  explicit ToolingDemoGame(const GameplayDemoConfig& config = {}) : m_config(config) {}
+  explicit Tooling(const GameConfig& config = {}) : m_config(config) {}
   void onStart() override;
   void onTick(const core::TickContext& ctx) override;
   void onStop() override;
@@ -40,7 +40,7 @@ class ToolingDemoGame final : public core::IGame {
   bool reloadToolingConfigIfChanged();
   bool loadToolingConfig();
 
-  GameplayDemoConfig m_config{};
+  GameConfig m_config{};
   std::string m_toolingConfigPath = "assets/world/tooling_view.json";
   std::filesystem::file_time_type m_toolingConfigWriteTime{};
   math::Vec3 m_cameraStartPosition{0.0f, 36.0f, 120.0f};

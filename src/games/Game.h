@@ -51,30 +51,30 @@
 
 namespace games {
 
-struct GameplayDemoConfig final {
+struct GameConfig final {
   int windowWidth = 1280;
   int windowHeight = 720;
   bool fullscreen = false;
   bool vsync = false;
   int fullscreenRefreshRateHz = 144;  // 0 = platform default; 144 is a good high-refresh default
 
-  std::string chunkConfigPath = "assets/world/chunks_demo.json";
+  std::string chunkConfigPath = "assets/world/config.json";
   float chunkSizeMeters = 96.0f;
   int chunkSearchRadius = 2;
   float chunkLoadProximityMeters = 14.0f;
   float chunkUnloadProximityMeters = 22.0f;
 };
 
-class GameplayDemoGame final : public core::IGame {
+class Game final : public core::IGame {
  public:
-  explicit GameplayDemoGame(GameplayDemoConfig config = {}) : m_config(config) {}
+  explicit Game(GameConfig config = {}) : m_config(config) {}
   void onStart() override;
   void onTick(const core::TickContext& ctx) override;
   void onStop() override;
 
  private:
-  GameplayDemoConfig m_config{};
- ecs::EntityRegistry m_registry;
+  GameConfig m_config{};
+  ecs::EntityRegistry m_registry;
   core::ControlService m_controls;
   core::FrameDebugger m_frameDebugger;
   core::ThreadService m_threads;
