@@ -7,6 +7,7 @@
 #include "ecs/factories/PhysicalObjectFactory.h"
 #include "ecs/factories/ActorFactory.h"
 #include "ecs/factories/CombatantFactory.h"
+#include "ecs/factories/GrassPatchFactory.h"
 #include "ecs/factories/TerrainFactory.h"
 #include "ecs/factories/VfxFactory.h"
 #include "ecs/factories/WeaponFactory.h"
@@ -45,6 +46,12 @@ ecs::MeshComponent::MeshType parseMeshType(std::string value) {
   if (value == "skinned" || value == "skin") return ecs::MeshComponent::MeshType::Skinned;
   if (value == "procedural" || value == "proc") return ecs::MeshComponent::MeshType::Procedural;
   return ecs::MeshComponent::MeshType::Static;
+}
+
+terrain::NoiseType parseNoiseType(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "value") return terrain::NoiseType::Value;
+  return terrain::NoiseType::Perlin;
 }
 
 bool readVec3OrUniform(
@@ -422,6 +429,141 @@ TerrainConfig readTerrainInput(const data::JsonValue::Object& obj, const Factory
   return t;
 }
 
+GrassInput readGrassInput(const data::JsonValue::Object& obj) {
+  GrassInput g{};
+
+  auto readNoise = [&](const data::JsonValue& v, terrain::NoiseConfig& out) {
+    const auto* no = v.tryObject();
+    if (!no) return;
+    if (const auto* tv = data::getObjectKey(*no, "type")) {
+      std::string s;
+      if (data::readString(*tv, s)) out.type = parseNoiseType(std::move(s));
+    }
+    if (const auto* seedV = data::getObjectKey(*no, "seed")) {
+      int seed = static_cast<int>(out.seed);
+      if (data::readInt(*seedV, seed) && seed >= 0) out.seed = static_cast<std::uint32_t>(seed);
+    }
+    out.frequency = data::getFloatOr(*no, "frequency", out.frequency);
+    out.octaves = data::getIntOr(*no, "octaves", out.octaves);
+    out.lacunarity = data::getFloatOr(*no, "lacunarity", out.lacunarity);
+    out.persistence = data::getFloatOr(*no, "persistence", out.persistence);
+  };
+
+  auto readLayer = [&](const data::JsonValue& v) {
+    const auto* lo = v.tryObject();
+    if (!lo) return;
+    GrassLayerInput l{};
+    l.species = data::getStringOr(*lo, "species", l.species);
+    l.description = data::getStringOr(*lo, "description", l.description);
+    l.density = data::getFloatOr(*lo, "density", l.density);
+    l.minScale = data::getFloatOr(*lo, "minScale", l.minScale);
+    l.maxScale = data::getFloatOr(*lo, "maxScale", l.maxScale);
+    l.bladeSpacing = data::getFloatOr(*lo, "bladeSpacing", l.bladeSpacing);
+    l.bendStrength = data::getFloatOr(*lo, "bendStrength", l.bendStrength);
+    l.curveStrength = data::getFloatOr(*lo, "curveStrength", l.curveStrength);
+    l.twistStrength = data::getFloatOr(*lo, "twistStrength", l.twistStrength);
+    l.minSlopeDeg = data::getFloatOr(*lo, "minSlopeDeg", l.minSlopeDeg);
+    l.maxSlopeDeg = data::getFloatOr(*lo, "maxSlopeDeg", l.maxSlopeDeg);
+    l.minAltitude = data::getFloatOr(*lo, "minAltitude", l.minAltitude);
+    l.maxAltitude = data::getFloatOr(*lo, "maxAltitude", l.maxAltitude);
+    l.noiseScale = data::getFloatOr(*lo, "noiseScale", l.noiseScale);
+    l.noiseStrength = data::getFloatOr(*lo, "noiseStrength", l.noiseStrength);
+    l.windStrength = data::getFloatOr(*lo, "windStrength", l.windStrength);
+    l.maxDistance = data::getFloatOr(*lo, "maxDistance", l.maxDistance);
+    g.layers.push_back(std::move(l));
+  };
+
+  auto readShaderInto = [&](const data::JsonValue::Object& src) {
+    if (const auto* k = data::getObjectKey(src, "shaderKey")) (void)data::readString(*k, g.shaderKey);
+    g.shaderKey = data::getStringOr(src, "key", g.shaderKey);
+    if (const auto* tx = data::getObjectKey(src, "textures")) g.textures = readTextureBindings(*tx);
+    if (const auto* pv = data::getObjectKey(src, "parameters")) g.parameters = readMaterialParameters(*pv);
+    if (const auto* lv = data::getObjectKey(src, "lodBreakpoints")) g.lodBreakpoints = readShaderBreakpoints(*lv);
+    g.doubleSided = data::getBoolOr(src, "doubleSided", g.doubleSided);
+    g.depthWrite = data::getBoolOr(src, "depthWrite", g.depthWrite);
+    g.castShadows = data::getBoolOr(src, "castShadows", g.castShadows);
+    g.receiveShadows = data::getBoolOr(src, "receiveShadows", g.receiveShadows);
+  };
+
+  auto readInto = [&](const data::JsonValue::Object& src) {
+    g.enabled = data::getBoolOr(src, "enabled", g.enabled);
+    if (const auto* a = data::getObjectKey(src, "area")) (void)data::readVec3(*a, g.area);
+    g.densityMultiplier = data::getFloatOr(src, "densityMultiplier", g.densityMultiplier);
+    if (const auto* seedV = data::getObjectKey(src, "seed")) {
+      int seed = static_cast<int>(g.seed);
+      if (data::readInt(*seedV, seed) && seed >= 0) g.seed = static_cast<std::uint32_t>(seed);
+    }
+
+    if (const auto* dv = data::getObjectKey(src, "densityNoise")) readNoise(*dv, g.densityNoise);
+    g.densityNoiseThreshold = data::getFloatOr(src, "densityNoiseThreshold", g.densityNoiseThreshold);
+    g.densityNoiseContrast = data::getFloatOr(src, "densityNoiseContrast", g.densityNoiseContrast);
+    g.densityNoiseStrength = data::getFloatOr(src, "densityNoiseStrength", g.densityNoiseStrength);
+
+    if (const auto* iv = data::getObjectKey(src, "islandNoise")) readNoise(*iv, g.islandNoise);
+    if (const auto* ov = data::getObjectKey(src, "islandNoiseOffset")) (void)data::readVec3(*ov, g.islandNoiseOffset);
+    g.islandNoiseThreshold = data::getFloatOr(src, "islandNoiseThreshold", g.islandNoiseThreshold);
+    g.islandNoiseSoftness = data::getFloatOr(src, "islandNoiseSoftness", g.islandNoiseSoftness);
+    g.islandNoiseContrast = data::getFloatOr(src, "islandNoiseContrast", g.islandNoiseContrast);
+    g.islandNoiseStrength = data::getFloatOr(src, "islandNoiseStrength", g.islandNoiseStrength);
+
+    if (const auto* tv = data::getObjectKey(src, "sourceTerrainEntity")) {
+      int n = 0;
+      if (data::readInt(*tv, n) && n > 0) g.sourceTerrainEntity = static_cast<ecs::EntityId>(n);
+    }
+    if (const auto* tv = data::getObjectKey(src, "sourceTerrain")) {
+      if (const auto* n = tv->tryNumber()) {
+        if (*n > 0) g.sourceTerrainEntity = static_cast<ecs::EntityId>(static_cast<std::uint32_t>(*n));
+      } else if (const auto* to = tv->tryObject()) {
+        g.autoBindTerrain = data::getBoolOr(*to, "autoBind", g.autoBindTerrain);
+        if (const auto* ev = data::getObjectKey(*to, "entity")) {
+          int n = 0;
+          if (data::readInt(*ev, n) && n > 0) g.sourceTerrainEntity = static_cast<ecs::EntityId>(n);
+        }
+      } else if (const auto* b = tv->tryBool()) {
+        g.autoBindTerrain = *b;
+      } else if (const auto* s = tv->tryString()) {
+        g.autoBindTerrain = (*s == "auto");
+      }
+    }
+    g.autoBindTerrain = data::getBoolOr(src, "autoBindTerrain", g.autoBindTerrain);
+
+    if (const auto* lv = data::getObjectKey(src, "layers")) {
+      if (const auto* la = lv->tryArray()) {
+        g.layers.clear();
+        g.layers.reserve(la->size());
+        for (const auto& el : *la) readLayer(el);
+      }
+    }
+
+    g.interactionEnabled = data::getBoolOr(src, "interactionEnabled", g.interactionEnabled);
+    g.interactionRadiusMeters = data::getFloatOr(src, "interactionRadiusMeters", g.interactionRadiusMeters);
+    g.interactionStrength = data::getFloatOr(src, "interactionStrength", g.interactionStrength);
+
+    g.castShadows = data::getBoolOr(src, "castShadows", g.castShadows);
+    g.receiveShadows = data::getBoolOr(src, "receiveShadows", g.receiveShadows);
+    g.lodBias = data::getFloatOr(src, "lodBias", g.lodBias);
+
+    g.hasShader = data::getBoolOr(src, "shaderEnabled", g.hasShader);
+    if (const auto* sk = data::getObjectKey(src, "shader")) {
+      if (const auto* so = sk->tryObject()) readShaderInto(*so);
+    }
+    if (const auto* tx = data::getObjectKey(src, "textures")) g.textures = readTextureBindings(*tx);
+    if (const auto* pv = data::getObjectKey(src, "parameters")) g.parameters = readMaterialParameters(*pv);
+    if (const auto* lv = data::getObjectKey(src, "lodBreakpoints")) g.lodBreakpoints = readShaderBreakpoints(*lv);
+    if (const auto* k = data::getObjectKey(src, "shaderKey")) (void)data::readString(*k, g.shaderKey);
+    g.shaderKey = data::getStringOr(src, "shaderKey", g.shaderKey);
+  };
+
+  if (const auto* gv = data::getObjectKey(obj, "grass")) {
+    if (const auto* go = gv->tryObject()) {
+      readInto(*go);
+    }
+  }
+
+  readInto(obj);
+  return g;
+}
+
 VfxConfig readVfxInput(const data::JsonValue::Object& obj, const FactoryContext& ctx) {
   VfxConfig v{};
   v.transform = readTransformInput(obj, ctx);
@@ -668,6 +810,25 @@ class TerrainJsonFactory final : public IEntityFactory {
   }
 };
 
+class GrassPatchJsonFactory final : public IEntityFactory {
+ public:
+  EntityId create(
+      EntityRegistry& registry,
+      const data::JsonValue& config,
+      const FactoryContext& ctx) override {
+    GrassPatchConfig cfg{};
+
+    if (const auto* obj = config.tryObject()) {
+      cfg.transform = readTransformInput(*obj, ctx);
+      cfg.transform.name = data::getStringOr(*obj, "name", cfg.transform.name);
+      cfg.grass = readGrassInput(*obj);
+    }
+
+    GrassPatchFactory factory;
+    return factory.create(registry, cfg);
+  }
+};
+
 class VfxJsonFactory final : public IEntityFactory {
  public:
   EntityId create(
@@ -714,6 +875,7 @@ void registerFactoriesFromEcsFactoriesDir(EntityFactoryRegistry& out) {
   out.registerFactory("physical_object", std::make_unique<PhysicalObjectJsonFactory>());
   out.registerFactory("actor", std::make_unique<ActorJsonFactory>());
   out.registerFactory("terrain", std::make_unique<TerrainJsonFactory>());
+  out.registerFactory("grass_patch", std::make_unique<GrassPatchJsonFactory>());
   out.registerFactory("vfx", std::make_unique<VfxJsonFactory>());
   out.registerFactory("combatant", std::make_unique<CombatantJsonFactory>());
   out.registerFactory("weapon", std::make_unique<WeaponJsonFactory>());

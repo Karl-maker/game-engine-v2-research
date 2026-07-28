@@ -42,6 +42,7 @@ add_executable(duppy
   src/ecs/factories/PhysicalObjectFactory.cpp
   src/ecs/factories/ActorFactory.cpp
   src/ecs/factories/TerrainFactory.cpp
+  src/ecs/factories/GrassPatchFactory.cpp
   src/ecs/factories/VfxFactory.cpp
   src/ecs/factories/WeaponFactory.cpp
   src/ecs/factories/CombatantFactory.cpp

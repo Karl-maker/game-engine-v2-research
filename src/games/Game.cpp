@@ -472,66 +472,6 @@ void Game::onStart() {
     shader.parameters.push_back({"dirtSinksEnabled", false});
   }
 
-  // Grass patches (instanced clumps; layered for variation).
-  {
-    const ecs::EntityId grass = m_registry.createEntity("grass_patch");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(grass);
-    tr.position = {0.0f, 0.0f, 0.0f};
-
-    auto& gp = m_registry.emplace<ecs::GrassPatchComponent>(grass);
-    gp.sourceTerrainEntity = m_terrain;
-    gp.area = {10.0f, 0.0f, 5.0f};
-    gp.seed = 9001u;
-    gp.densityMultiplier = 1.2f;
-    gp.densityNoise.seed = 1777u;
-    gp.densityNoise.frequency = 0.12f;
-    gp.densityNoise.octaves = 2;
-    gp.densityNoise.persistence = 0.50f;
-    gp.densityNoise.lacunarity = 2.0f;
-    gp.densityNoiseThreshold = 0.10f;
-    gp.densityNoiseContrast = 0.72f;
-    gp.densityNoiseStrength = 1.0f;
-    gp.islandNoise.seed = 7331u;
-    gp.islandNoise.frequency = 0.042f;
-    gp.islandNoise.octaves = 3;
-    gp.islandNoise.persistence = 0.62f;
-    gp.islandNoise.lacunarity = 2.05f;
-    gp.islandNoiseOffset = {0.0f, 0.0f, 0.0f};
-    gp.islandNoiseThreshold = 0.40f;
-    gp.islandNoiseSoftness = 0.20f;
-    gp.islandNoiseContrast = 1.15f;
-    gp.islandNoiseStrength = 0.92f;
-    gp.interactionEnabled = false;
-    gp.interactionRadiusMeters = 1.0f;
-    gp.interactionStrength = 1.0f;
-
-    // Camera-relative crossed billboards nearby, collapsing to fewer planes farther out.
-    gp.layers = {
-        ecs::GrassPatchComponent::GrassLayer{.species = "BillboardGrassPlanes",
-                                             .description =
-                                                 "Camera-relative crossed billboard grass planes with distance-based LOD and texture variation.",
-                                             .density = 6.2f,
-                                             .minScale = 0.56f,
-                                             .maxScale = 0.98f,
-                                             .bladeSpacing = 0.70f,
-                                             .bendStrength = 0.16f,
-                                             .curveStrength = 0.16f,
-                                             .twistStrength = 0.0f,
-                                             .noiseScale = 0.052f,
-                                             .noiseStrength = 0.56f,
-                                             .windStrength = 0.0f,
-                                             .maxDistance = 42.0f},
-    };
-
-    auto& sh = m_registry.emplace<ecs::ShaderComponent>(grass);
-    sh.shader.key = "graphics/shaders/grass";
-    sh.doubleSided = true;
-    sh.depthWrite = true;
-    sh.receiveShadows = false;
-    sh.castShadows = false;
-    sh.textures.push_back({"grass_tex0", render::AssetRef{true, "assets/textures/vegitation/grass_patch_02/Material_baseColor.png", 0}, true});
-  }
-
   // HUD example: flat screen image/bar + world-space label.
   {
     m_hud = m_registry.createEntity("hud");
