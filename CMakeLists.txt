@@ -46,6 +46,7 @@ add_executable(duppy
   src/ecs/factories/VfxFactory.cpp
   src/ecs/factories/WeaponFactory.cpp
   src/ecs/factories/CombatantFactory.cpp
+  src/ecs/factories/PlayableCharacterFactory.cpp
   src/ecs/factories/FactoryKeyService.cpp
   src/ecs/services/IKService.cpp
   src/ecs/services/ChunkStreamingService.cpp

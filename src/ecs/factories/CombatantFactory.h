@@ -17,6 +17,10 @@ struct CombatantConfig final {
   PhysicalInput physical{};
   SkeletonInput skeleton{};
   StatsInput stats{};
+  AnimationInput animation{};
+  PoseInput pose{};
+  IkInput ik{};
+  SensorConeInput sensorCone{};
 };
 
 class CombatantFactory final {
@@ -25,4 +29,3 @@ class CombatantFactory final {
 };
 
 }  // namespace ecs::services
-

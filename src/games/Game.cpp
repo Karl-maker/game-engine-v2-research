@@ -38,6 +38,7 @@
 #include "ecs/services/IKService.h"
 #include "ecs/services/RaycastConeFactoryService.h"
 #include "ecs/factories/FactoryKeyService.h"
+#include "ecs/factories/PlayableCharacterFactory.h"
 #include "ecs/services/FileChunkSource.h"
 #include "materials/presets/HighQualityDirtRockLayer.h"
 #include "materials/presets/StoneGrass.h"
@@ -64,18 +65,6 @@ math::Vec3 forwardFromPitchYawDeg(float pitchDeg, float yawDeg) {
   const float pitch = pitchDeg * kDegToRad;
   const float yaw = yawDeg * kDegToRad;
   return math::Vec3{std::cos(pitch) * std::sin(yaw), -std::sin(pitch), std::cos(pitch) * std::cos(yaw)};
-}
-
-void configurePlayerHeadIk(ecs::EntityRegistry& registry, ecs::EntityId actor, ecs::EntityId target) {
-  auto* ik = registry.tryGet<ecs::IKComponent>(actor);
-  if (!ik) return;
-
-  auto& headChain = ecs::services::IKService::ensureChain(*ik, "look_at_camera", {"Neck_7", "Head_6"});
-  headChain.overrideAnimation = true;
-  ecs::services::IKService::setEntityTarget(headChain, target, {0.0f, -0.10f, 0.0f});
-  ecs::services::IKService::setWeight(headChain, 1.0f);
-  ecs::services::IKService::setBlendTimes(headChain, 0.25f, 0.20f);
-  ecs::services::IKService::setIterations(headChain, 6);
 }
 
 void updatePlayerHeadFacingIk(ecs::EntityRegistry& registry, ecs::EntityId actor, ecs::EntityId camera) {
@@ -238,197 +227,50 @@ void Game::onStart() {
   m_meshAssets.start();
 
   m_camera = m_registry.createEntity("camera");
-  auto& camTr = m_registry.emplace<ecs::TransformComponent>(m_camera);
-  camTr.position = {0.0f, 3.0f, -6.0f};
-  camTr.rotation = {12.0f, 0.0f, 0.0f};  // pitch/yaw/roll (deg)
-  auto& cam = m_registry.emplace<ecs::CameraComponent>(m_camera);
-
-  m_player = m_registry.createEntity("business_man");
-  auto& playerTr = m_registry.emplace<ecs::TransformComponent>(m_player);
-  playerTr.position = {0.0f, 0.0f, 0.0f};
-  playerTr.rotation = {0.0f, 0.0f, 0.0f};
-  m_registry.emplace<ecs::ControllerComponent>(m_player);
-  m_registry.emplace<ecs::CharacterComponent>(m_player);
   {
-    auto& motion = m_registry.emplace<ecs::MotionComponent>(m_player);
-    motion.mode = ecs::MotionComponent::Mode::Walking;
-    motion.isGrounded = false;
+    ecs::services::PlayableCharacterConfig cfg{};
+    cfg.base.transform.name = "business_man";
+    cfg.base.transform.position = {0.0f, 0.0f, 0.0f};
+    cfg.base.transform.rotationDeg = {0.0f, 0.0f, 0.0f};
+
+    cfg.base.viewable.meshId = "business-man";
+    cfg.base.viewable.meshKey = "assets/models/business-man/scene.gltf";
+    cfg.base.viewable.meshType = ecs::MeshComponent::MeshType::Skinned;
+    cfg.base.viewable.meshScale = {1.25f, 1.25f, 1.25f};
+    cfg.base.viewable.skeletonId = "business-man#skin0";
+    cfg.base.viewable.castShadows = true;
+    cfg.base.viewable.receiveShadows = true;
+    cfg.base.viewable.tags = {"character", "player"};
+    cfg.base.viewable.shaderKey = "graphics/shaders/model";
+
+    cfg.base.physical.hasRigidbody = true;
+    cfg.base.physical.mass = 80.0f;
+    cfg.base.physical.useGravity = true;
+    cfg.base.physical.kinematic = false;
+    cfg.base.physical.hasCollider = true;
+    cfg.base.physical.colliderShape = ecs::ColliderComponent::Shape::Capsule;
+    cfg.base.physical.colliderSize = {0.38f, 1.85f, 0.38f};
+    cfg.base.physical.colliderOffset = {0.0f, 0.925f, 0.0f};
+    cfg.base.physical.collisionLayer = physics::kLayerCharacter;
+
+    cfg.base.stats.walkingSpeed = 1.8f;
+    cfg.base.stats.runningSpeed = 7.0f;
+
+    cfg.base.skeleton.skeletonData = "assets/models/business-man/scene.gltf";
+
+    cfg.base.animation.enabled = true;
+    cfg.base.pose.enabled = true;
+    cfg.base.ik.enabled = true;
+    cfg.base.sensorCone.enabled = true;
+
+    cfg.camera.cameraEntity = m_camera;
+    cfg.camera.transform.position = {0.0f, 3.0f, -6.0f};
+    cfg.camera.transform.rotationDeg = {12.0f, 0.0f, 0.0f};
+
+    ecs::services::PlayableCharacterFactory factory;
+    m_player = factory.create(m_registry, cfg);
   }
-  {
-    auto& body = m_registry.emplace<ecs::RigidbodyComponent>(m_player);
-    body.mass = 80.0f;
-    body.inverseMass = 1.0f / body.mass;
-    body.useGravity = true;
-  }
-  {
-    auto& collider = m_registry.emplace<ecs::ColliderComponent>(m_player);
-    collider.shape = ecs::ColliderComponent::Shape::Capsule;
-    collider.size = {0.38f, 1.85f, 0.38f};
-    collider.offset = {0.0f, 0.925f, 0.0f};
-    collider.collisionLayer = physics::kLayerCharacter;
-  }
-  {
-    auto& stats = m_registry.emplace<ecs::StatsComponent>(m_player);
-    stats.walkingSpeed = 1.8f;
-    stats.runningSpeed = 7.0f;
-  }
-  {
-    auto& mesh = m_registry.emplace<ecs::MeshComponent>(m_player);
-    mesh.meshId = "business-man";
-    mesh.meshData.enabled = true;
-    mesh.meshData.key = "assets/models/business-man/scene.gltf";
-    mesh.meshType = ecs::MeshComponent::MeshType::Skinned;
-    mesh.scale = {1.25f, 1.25f, 1.25f};
-    mesh.skeletonId = "business-man#skin0";
-    mesh.castShadows = true;
-    mesh.receiveShadows = true;
-    mesh.tags = {"character", "player"};
-
-    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_player);
-    shader.shader.key = "graphics/shaders/model";
-    shader.castShadows = true;
-    shader.receiveShadows = true;
-  }
-
-  // Example audio source (data-only; AudioSystem currently tracks play state).
-  // Set `clipKey` to a real asset in your project to hook this up to a backend later.
-  {
-    auto& audio = m_registry.emplace<ecs::AudioComponent>(m_player);
-    audio.clipKey = "";      // e.g. "assets/audio/footstep.wav"
-    audio.loop = false;
-    audio.playOnStart = false;
-    audio.volume = 1.0f;
-    audio.pitch = 1.0f;
-  }
-  {
-    auto& skeleton = m_registry.emplace<ecs::SkeletonComponent>(m_player);
-    skeleton.skeletonId = "business-man#skin0";
-    skeleton.skeletonData = "assets/models/business-man/scene.gltf";
-    skeleton.updateMode = ecs::SkeletonComponent::UpdateMode::WhenVisible;
-  }
-  {
-    // Example: a pose override can drive a subset of bones (e.g., a hand pose).
-    // PoseSystem blends this on top of animation/IK based on the pose weight.
-    auto& pose = m_registry.emplace<ecs::PoseComponent>(m_player);
-    pose.poses.push_back(
-        ecs::PoseComponent::Pose{.name = "right_hand_pose", .enabled = true, .weight = 0.0f, .bones = {}});
-  }
-  {
-    auto& animation = m_registry.emplace<ecs::AnimationComponent>(m_player);
-    animation.availableClips = {"IdleV4.2(maya_head)", "Idle", "Walk", "Run"};
-    animation.layers.push_back({"Base Layer", 1.0f, ecs::AnimationComponent::BlendMode::Override, {}, "IdleV4.2(maya_head)", "", 0.0f});
-    animation.idleAnimationClip = "IdleV4.2(maya_head)";
-    animation.idleDelaySeconds = 5.0f;
-  }
-  {
-    auto& ik = m_registry.emplace<ecs::IKComponent>(m_player);
-    ik.enabled = true;
-    configurePlayerHeadIk(m_registry, m_player, m_camera);
-    configurePlayerHandReachIk(m_registry, m_player, ecs::kInvalidEntityId);
-  }
-  {
-    auto& thirdPerson = m_registry.emplace<ecs::ThirdPersonCameraComponent>(m_camera);
-
-    thirdPerson.target = m_player;
-
-    // Look toward upper chest / shoulder area.
-    thirdPerson.targetOffset = {0.0f, 1.8f, 0.0f};
-    thirdPerson.distance = 1.7f;
-
-    // Small vertical lift.
-    thirdPerson.height = 0.50f;
-
-    thirdPerson.pitchDeg = 5.0f;
-    thirdPerson.minPitchDeg = -30.0f;
-    thirdPerson.maxPitchDeg = 45.0f;
-
-    thirdPerson.yawDeg = playerTr.rotation.y;
-  }
-
-  cam.depthOfField.enabled = true;
-  cam.depthOfField.focusMode = ecs::CameraComponent::DepthOfFieldSettings::FocusMode::TargetEntity;
-  cam.depthOfField.focusTarget = m_player;
-  cam.depthOfField.focusTargetOffset = {0.0f, 1.6f, 0.0f};
-  cam.depthOfField.focusRange = 0.25f;
-  cam.depthOfField.blurStrength = 0.05f;
-
-  cam.motionBlur.enabled = true;
-  cam.motionBlur.strength = 0.05f;
-  cam.motionBlur.maxBlurPixels = 8.0f;
-  cam.motionBlur.samples = 12;
-
-  {
-    ecs::services::RaycastConeFactoryService rayFactory;
-    ecs::services::SensorConeConfig cfg;
-    cfg.sensorName = "player_head_sensor";
-    cfg.socketName = "player_head_socket";
-    cfg.socketPositionOffset = {0.0f, 0.00f, 0.00f};
-    cfg.cone.baseName = "player_head_ray";
-    cfg.cone.rayCount = 12;
-    cfg.cone.coneAngleDeg = 22.0f;
-    cfg.cone.length = 16.0f;
-    cfg.cone.radius = 0.0f;
-    cfg.cone.collisionLayers = physics::kLayerCharacter;
-    cfg.cone.ignoreLayers = 0;
-    cfg.cone.ignoreSelf = true;
-    cfg.cone.maxHits = 1;
-    cfg.cone.originLocalOffset = {0.0f, 0.0f, 0.0f};
-    rayFactory.createSensorCone(m_registry, m_player, cfg);
-  }
-
-  // A second character that just stands there.
-  {
-    const auto npc = m_registry.createEntity("business_man_npc");
-    m_demoNpc = npc;
-    auto& npcTr = m_registry.emplace<ecs::TransformComponent>(npc);
-    npcTr.position = {3.25f, 0.0f, -8.0f};
-    npcTr.rotation = {0.0f, 180.0f, 0.0f};
-
-    auto& npcMesh = m_registry.emplace<ecs::MeshComponent>(npc);
-    npcMesh.meshId = "business-man";
-    npcMesh.meshData.enabled = true;
-    npcMesh.meshData.key = "assets/models/business-man/scene.gltf";
-    npcMesh.meshType = ecs::MeshComponent::MeshType::Skinned;
-    npcMesh.scale = {1.25f, 1.25f, 1.25f};
-    npcMesh.skeletonId = "business-man#skin0";
-    npcMesh.castShadows = true;
-    npcMesh.receiveShadows = true;
-
-    auto& npcShader = m_registry.emplace<ecs::ShaderComponent>(npc);
-    npcShader.shader.key = "graphics/shaders/model";
-    npcShader.castShadows = true;
-    npcShader.receiveShadows = true;
-
-    m_registry.emplace<ecs::SkeletonComponent>(npc);
-    m_registry.emplace<ecs::CharacterComponent>(npc);
-    {
-      auto& npcMotion = m_registry.emplace<ecs::MotionComponent>(npc);
-      npcMotion.mode = ecs::MotionComponent::Mode::Walking;
-      npcMotion.isGrounded = true;
-      npcMotion.isMoving = false;
-    }
-    {
-      auto& npcBody = m_registry.emplace<ecs::RigidbodyComponent>(npc);
-      npcBody.mass = 90.0f;
-      npcBody.inverseMass = 1.0f / npcBody.mass;
-      npcBody.useGravity = true;
-    }
-    {
-      auto& npcCollider = m_registry.emplace<ecs::ColliderComponent>(npc);
-      npcCollider.shape = ecs::ColliderComponent::Shape::Capsule;
-      npcCollider.size = {0.38f, 1.85f, 0.38f};
-      npcCollider.offset = {0.0f, 0.925f, 0.0f};
-      npcCollider.collisionLayer = physics::kLayerCharacter;
-    }
-    auto& npcAnim = m_registry.emplace<ecs::AnimationComponent>(npc);
-    npcAnim.availableClips = {"IdleV4.2(maya_head)", "Idle", "Walk", "Run"};
-    npcAnim.layers.push_back({"Base Layer", 1.0f, ecs::AnimationComponent::BlendMode::Override, {}, "Idle", "", 0.0f});
-    npcAnim.idleAnimationClip = "IdleV4.2(maya_head)";
-    npcAnim.idleDelaySeconds = 5.0f;
-  }
-
-  configurePlayerHandReachIk(m_registry, m_player, m_demoNpc);
-
+  
   m_terrain = m_registry.createEntity("terrain");
   m_registry.emplace<ecs::TransformComponent>(m_terrain);
   {

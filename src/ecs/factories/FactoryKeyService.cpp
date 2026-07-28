@@ -8,6 +8,7 @@
 #include "ecs/factories/ActorFactory.h"
 #include "ecs/factories/CombatantFactory.h"
 #include "ecs/factories/GrassPatchFactory.h"
+#include "ecs/factories/PlayableCharacterFactory.h"
 #include "ecs/factories/TerrainFactory.h"
 #include "ecs/factories/VfxFactory.h"
 #include "ecs/factories/WeaponFactory.h"
@@ -112,6 +113,13 @@ ecs::VfxComponent::Quality parseVfxQuality(std::string value) {
 std::vector<render::TextureBinding> readTextureBindings(const data::JsonValue& v);
 std::vector<render::MaterialParameter> readMaterialParameters(const data::JsonValue& v);
 std::vector<ShaderBreakpointInput> readShaderBreakpoints(const data::JsonValue& v);
+SkeletonInput readSkeletonInput(const data::JsonValue::Object& obj);
+StatsInput readStatsInput(const data::JsonValue::Object& obj);
+PhysicalInput readPhysicalInput(const data::JsonValue::Object& obj);
+AnimationInput readAnimationInput(const data::JsonValue::Object& obj);
+PoseInput readPoseInput(const data::JsonValue::Object& obj);
+IkInput readIkInput(const data::JsonValue::Object& obj);
+SensorConeInput readSensorConeInput(const data::JsonValue::Object& obj);
 
 std::optional<ecs::ShaderComponent> resolveTerrainMaterialPreset(const std::string& preset) {
   if (preset == "Dirt") return materials::presets::Dirt();
@@ -564,6 +572,64 @@ GrassInput readGrassInput(const data::JsonValue::Object& obj) {
   return g;
 }
 
+PlayableCharacterConfig readPlayableCharacterInput(const data::JsonValue::Object& obj, const FactoryContext& ctx) {
+  PlayableCharacterConfig pc{};
+
+  pc.base.transform = readTransformInput(obj, ctx);
+  pc.base.transform.name = data::getStringOr(obj, "name", pc.base.transform.name);
+  pc.base.viewable = readViewableInput(obj);
+  pc.base.physical = readPhysicalInput(obj);
+  pc.base.skeleton = readSkeletonInput(obj);
+  pc.base.stats = readStatsInput(obj);
+  pc.base.animation = readAnimationInput(obj);
+  pc.base.pose = readPoseInput(obj);
+  pc.base.ik = readIkInput(obj);
+  pc.base.sensorCone = readSensorConeInput(obj);
+
+  pc.hasController = data::getBoolOr(obj, "hasController", pc.hasController);
+
+  if (const auto* cv = data::getObjectKey(obj, "camera")) {
+    if (const auto* co = cv->tryObject()) {
+      pc.camera.transform = readTransformInput(*co, ctx);
+      pc.camera.transform.name = data::getStringOr(*co, "name", pc.camera.transform.name);
+      if (const auto* v = data::getObjectKey(*co, "targetOffset")) (void)data::readVec3(*v, pc.camera.targetOffset);
+      pc.camera.distance = data::getFloatOr(*co, "distance", pc.camera.distance);
+      pc.camera.height = data::getFloatOr(*co, "height", pc.camera.height);
+      pc.camera.pitchDeg = data::getFloatOr(*co, "pitchDeg", pc.camera.pitchDeg);
+      pc.camera.minPitchDeg = data::getFloatOr(*co, "minPitchDeg", pc.camera.minPitchDeg);
+      pc.camera.maxPitchDeg = data::getFloatOr(*co, "maxPitchDeg", pc.camera.maxPitchDeg);
+
+      pc.camera.depthOfFieldEnabled = data::getBoolOr(*co, "depthOfFieldEnabled", pc.camera.depthOfFieldEnabled);
+      pc.camera.dofFocusRange = data::getFloatOr(*co, "dofFocusRange", pc.camera.dofFocusRange);
+      pc.camera.dofBlurStrength = data::getFloatOr(*co, "dofBlurStrength", pc.camera.dofBlurStrength);
+      if (const auto* v = data::getObjectKey(*co, "dofFocusTargetOffset")) (void)data::readVec3(*v, pc.camera.dofFocusTargetOffset);
+
+      pc.camera.motionBlurEnabled = data::getBoolOr(*co, "motionBlurEnabled", pc.camera.motionBlurEnabled);
+      pc.camera.motionBlurStrength = data::getFloatOr(*co, "motionBlurStrength", pc.camera.motionBlurStrength);
+      pc.camera.motionBlurMaxBlurPixels = data::getFloatOr(*co, "motionBlurMaxBlurPixels", pc.camera.motionBlurMaxBlurPixels);
+      pc.camera.motionBlurSamples = data::getIntOr(*co, "motionBlurSamples", pc.camera.motionBlurSamples);
+    }
+  }
+
+  // Optional nested base config.
+  if (const auto* bv = data::getObjectKey(obj, "base")) {
+    if (const auto* bo = bv->tryObject()) {
+      pc.base.transform = readTransformInput(*bo, ctx);
+      pc.base.transform.name = data::getStringOr(*bo, "name", pc.base.transform.name);
+      pc.base.viewable = readViewableInput(*bo);
+      pc.base.physical = readPhysicalInput(*bo);
+      pc.base.skeleton = readSkeletonInput(*bo);
+      pc.base.stats = readStatsInput(*bo);
+      pc.base.animation = readAnimationInput(*bo);
+      pc.base.pose = readPoseInput(*bo);
+      pc.base.ik = readIkInput(*bo);
+      pc.base.sensorCone = readSensorConeInput(*bo);
+    }
+  }
+
+  return pc;
+}
+
 VfxConfig readVfxInput(const data::JsonValue::Object& obj, const FactoryContext& ctx) {
   VfxConfig v{};
   v.transform = readTransformInput(obj, ctx);
@@ -712,6 +778,136 @@ PhysicalInput readPhysicalInput(const data::JsonValue::Object& obj) {
   return p;
 }
 
+AnimationInput readAnimationInput(const data::JsonValue::Object& obj) {
+  AnimationInput a{};
+
+  const auto* av = data::getObjectKey(obj, "animation");
+  const auto* ao = av ? av->tryObject() : nullptr;
+  if (!ao) return a;
+
+  a.enabled = data::getBoolOr(*ao, "enabled", a.enabled);
+  a.idleDelaySeconds = data::getFloatOr(*ao, "idleDelaySeconds", a.idleDelaySeconds);
+  a.idleAnimationClip = data::getStringOr(*ao, "idleAnimationClip", a.idleAnimationClip);
+  a.idleAnimationLayer = data::getStringOr(*ao, "idleAnimationLayer", a.idleAnimationLayer);
+
+  if (const auto* clipsV = data::getObjectKey(*ao, "availableClips")) {
+    a.availableClips = readStringArrayOrEmpty(*clipsV);
+  }
+
+  if (const auto* layersV = data::getObjectKey(*ao, "layers")) {
+    if (const auto* arr = layersV->tryArray()) {
+      a.layers.clear();
+      a.layers.reserve(arr->size());
+      for (const auto& el : *arr) {
+        if (const auto* lo = el.tryObject()) {
+          AnimationLayerInput l{};
+          l.name = data::getStringOr(*lo, "name", l.name);
+          l.weight = data::getFloatOr(*lo, "weight", l.weight);
+          l.blendMode = data::getStringOr(*lo, "blendMode", l.blendMode);
+          if (const auto* mv = data::getObjectKey(*lo, "mask")) l.mask = readStringArrayOrEmpty(*mv);
+          l.currentState = data::getStringOr(*lo, "currentState", l.currentState);
+          l.nextState = data::getStringOr(*lo, "nextState", l.nextState);
+          l.transition = data::getFloatOr(*lo, "transition", l.transition);
+          a.layers.push_back(std::move(l));
+        }
+      }
+    }
+  }
+
+  return a;
+}
+
+PoseInput readPoseInput(const data::JsonValue::Object& obj) {
+  PoseInput p{};
+
+  const auto* pv = data::getObjectKey(obj, "pose");
+  const auto* po = pv ? pv->tryObject() : nullptr;
+  if (!po) return p;
+
+  p.enabled = data::getBoolOr(*po, "enabled", p.enabled);
+  p.defaultPoseName = data::getStringOr(*po, "defaultPoseName", p.defaultPoseName);
+  p.defaultPoseEnabled = data::getBoolOr(*po, "defaultPoseEnabled", p.defaultPoseEnabled);
+  p.defaultPoseWeight = data::getFloatOr(*po, "defaultPoseWeight", p.defaultPoseWeight);
+  return p;
+}
+
+static void readIkChainInput(const data::JsonValue& v, IkChainInput& out) {
+  const auto* o = v.tryObject();
+  if (!o) return;
+
+  out.enabled = data::getBoolOr(*o, "enabled", out.enabled);
+  out.name = data::getStringOr(*o, "name", out.name);
+  if (const auto* bv = data::getObjectKey(*o, "bones")) out.bones = readStringArrayOrEmpty(*bv);
+  if (const auto* ev = data::getObjectKey(*o, "targetEntity")) {
+    int n = 0;
+    if (data::readInt(*ev, n) && n > 0) out.targetEntity = static_cast<ecs::EntityId>(n);
+  }
+  if (const auto* ov = data::getObjectKey(*o, "targetOffset")) (void)data::readVec3(*ov, out.targetOffset);
+  if (const auto* lv = data::getObjectKey(*o, "targetLocalOffset")) (void)data::readVec3(*lv, out.targetLocalOffset);
+  out.weight = data::getFloatOr(*o, "weight", out.weight);
+  out.blendInSeconds = data::getFloatOr(*o, "blendInSeconds", out.blendInSeconds);
+  out.blendOutSeconds = data::getFloatOr(*o, "blendOutSeconds", out.blendOutSeconds);
+  out.iterations = data::getIntOr(*o, "iterations", out.iterations);
+  out.overrideAnimation = data::getBoolOr(*o, "overrideAnimation", out.overrideAnimation);
+}
+
+IkInput readIkInput(const data::JsonValue::Object& obj) {
+  IkInput ik{};
+
+  const auto* iv = data::getObjectKey(obj, "ik");
+  const auto* io = iv ? iv->tryObject() : nullptr;
+  if (!io) return ik;
+
+  ik.enabled = data::getBoolOr(*io, "enabled", ik.enabled);
+  if (const auto* hv = data::getObjectKey(*io, "headLook")) readIkChainInput(*hv, ik.headLook);
+  if (const auto* rv = data::getObjectKey(*io, "reachTarget")) readIkChainInput(*rv, ik.reachTarget);
+  return ik;
+}
+
+SensorConeInput readSensorConeInput(const data::JsonValue::Object& obj) {
+  SensorConeInput s{};
+
+  const auto* sv = data::getObjectKey(obj, "sensorCone");
+  const auto* so = sv ? sv->tryObject() : nullptr;
+  if (!so) return s;
+
+  s.enabled = data::getBoolOr(*so, "enabled", s.enabled);
+  s.sensorName = data::getStringOr(*so, "sensorName", s.sensorName);
+  s.socketName = data::getStringOr(*so, "socketName", s.socketName);
+  if (const auto* v = data::getObjectKey(*so, "socketPositionOffset")) (void)data::readVec3(*v, s.socketPositionOffset);
+
+  if (const auto* cv = data::getObjectKey(*so, "cone")) {
+    if (const auto* co = cv->tryObject()) {
+      s.cone.rayCount = data::getIntOr(*co, "rayCount", s.cone.rayCount);
+      s.cone.coneAngleDeg = data::getFloatOr(*co, "coneAngleDeg", s.cone.coneAngleDeg);
+      s.cone.length = data::getFloatOr(*co, "length", s.cone.length);
+      s.cone.radius = data::getFloatOr(*co, "radius", s.cone.radius);
+      if (const auto* lv = data::getObjectKey(*co, "collisionLayers")) {
+        if (const auto* n = lv->tryNumber()) {
+          s.cone.collisionLayers = static_cast<physics::LayerMask>(static_cast<std::uint32_t>(*n));
+        } else {
+          std::string str;
+          if (data::readString(*lv, str)) s.cone.collisionLayers = parseLayerMask(std::move(str));
+        }
+      }
+      if (const auto* lv = data::getObjectKey(*co, "ignoreLayers")) {
+        if (const auto* n = lv->tryNumber()) {
+          s.cone.ignoreLayers = static_cast<physics::LayerMask>(static_cast<std::uint32_t>(*n));
+        } else {
+          std::string str;
+          if (data::readString(*lv, str)) s.cone.ignoreLayers = parseLayerMask(std::move(str));
+        }
+      }
+      s.cone.ignoreSelf = data::getBoolOr(*co, "ignoreSelf", s.cone.ignoreSelf);
+      s.cone.maxHits = data::getIntOr(*co, "maxHits", s.cone.maxHits);
+      if (const auto* v = data::getObjectKey(*co, "originLocalOffset")) (void)data::readVec3(*v, s.cone.originLocalOffset);
+      s.cone.baseName = data::getStringOr(*co, "baseName", s.cone.baseName);
+    }
+  }
+
+  return s;
+}
+
 class ObjectJsonFactory final : public IEntityFactory {
  public:
   EntityId create(
@@ -786,6 +982,10 @@ class ActorJsonFactory final : public IEntityFactory {
       cfg.physical = readPhysicalInput(*obj);
       cfg.skeleton = readSkeletonInput(*obj);
       cfg.stats = readStatsInput(*obj);
+      cfg.animation = readAnimationInput(*obj);
+      cfg.pose = readPoseInput(*obj);
+      cfg.ik = readIkInput(*obj);
+      cfg.sensorCone = readSensorConeInput(*obj);
     }
 
     ActorFactory factory;
@@ -829,6 +1029,23 @@ class GrassPatchJsonFactory final : public IEntityFactory {
   }
 };
 
+class PlayableCharacterJsonFactory final : public IEntityFactory {
+ public:
+  EntityId create(
+      EntityRegistry& registry,
+      const data::JsonValue& config,
+      const FactoryContext& ctx) override {
+    PlayableCharacterConfig cfg{};
+
+    if (const auto* obj = config.tryObject()) {
+      cfg = readPlayableCharacterInput(*obj, ctx);
+    }
+
+    PlayableCharacterFactory factory;
+    return factory.create(registry, cfg);
+  }
+};
+
 class VfxJsonFactory final : public IEntityFactory {
  public:
   EntityId create(
@@ -861,6 +1078,10 @@ class CombatantJsonFactory final : public IEntityFactory {
       cfg.physical = readPhysicalInput(*obj);
       cfg.skeleton = readSkeletonInput(*obj);
       cfg.stats = readStatsInput(*obj);
+      cfg.animation = readAnimationInput(*obj);
+      cfg.pose = readPoseInput(*obj);
+      cfg.ik = readIkInput(*obj);
+      cfg.sensorCone = readSensorConeInput(*obj);
     }
 
     CombatantFactory factory;
@@ -876,6 +1097,7 @@ void registerFactoriesFromEcsFactoriesDir(EntityFactoryRegistry& out) {
   out.registerFactory("actor", std::make_unique<ActorJsonFactory>());
   out.registerFactory("terrain", std::make_unique<TerrainJsonFactory>());
   out.registerFactory("grass_patch", std::make_unique<GrassPatchJsonFactory>());
+  out.registerFactory("playable_character", std::make_unique<PlayableCharacterJsonFactory>());
   out.registerFactory("vfx", std::make_unique<VfxJsonFactory>());
   out.registerFactory("combatant", std::make_unique<CombatantJsonFactory>());
   out.registerFactory("weapon", std::make_unique<WeaponJsonFactory>());

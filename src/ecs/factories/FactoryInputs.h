@@ -120,6 +120,101 @@ struct StatsInput final {
   float swimmingSpeed = 10.0f;
 };
 
+struct AnimationLayerInput final {
+  std::string name = "Base Layer";
+  float weight = 1.0f;
+  std::string blendMode = "Override";  // "Override" or "Additive"
+  std::vector<std::string> mask;
+  std::string currentState = "Idle";
+  std::string nextState;
+  float transition = 0.0f;
+};
+
+struct AnimationInput final {
+  bool enabled = false;
+  std::vector<std::string> availableClips = {"IdleV4.2(maya_head)", "Idle", "Walk", "Run"};
+  std::vector<AnimationLayerInput> layers = {AnimationLayerInput{.currentState = "IdleV4.2(maya_head)"}};
+  float idleDelaySeconds = 5.0f;
+  std::string idleAnimationClip = "IdleV4.2(maya_head)";
+  std::string idleAnimationLayer = "Base Layer";
+};
+
+struct PoseInput final {
+  bool enabled = false;
+  std::string defaultPoseName = "right_hand_pose";
+  bool defaultPoseEnabled = true;
+  float defaultPoseWeight = 0.0f;
+};
+
+struct IkChainInput final {
+  bool enabled = true;
+  std::string name;
+  std::vector<std::string> bones;
+
+  // Optional entity target for initialization.
+  EntityId targetEntity = kInvalidEntityId;
+  math::Vec3 targetOffset{0.0f, 0.0f, 0.0f};
+  math::Vec3 targetLocalOffset{0.0f, 0.0f, 0.0f};
+
+  float weight = 1.0f;
+  float blendInSeconds = 0.25f;
+  float blendOutSeconds = 0.20f;
+  int iterations = 8;
+  bool overrideAnimation = true;
+};
+
+struct IkInput final {
+  bool enabled = false;
+
+  // Defaults match the current demo skeleton.
+  IkChainInput headLook{
+      .enabled = true,
+      .name = "look_at_camera",
+      .bones = {"Neck_7", "Head_6"},
+      .targetEntity = kInvalidEntityId,
+      .targetOffset = {0.0f, -0.10f, 0.0f},
+      .weight = 1.0f,
+      .blendInSeconds = 0.25f,
+      .blendOutSeconds = 0.20f,
+      .iterations = 6,
+      .overrideAnimation = true,
+  };
+
+  IkChainInput reachTarget{
+      .enabled = true,
+      .name = "reach_seen_target",
+      .bones = {"RightArm_44", "RightForeArm_43", "RightHand_42"},
+      .targetEntity = kInvalidEntityId,
+      .targetOffset = {0.0f, 1.2f, 0.15f},
+      .weight = 0.92f,
+      .blendInSeconds = 0.25f,
+      .blendOutSeconds = 0.20f,
+      .iterations = 8,
+      .overrideAnimation = true,
+  };
+};
+
+struct RaycastConeInput final {
+  int rayCount = 12;
+  float coneAngleDeg = 22.0f;
+  float length = 16.0f;
+  float radius = 0.0f;
+  physics::LayerMask collisionLayers = physics::kLayerCharacter;
+  physics::LayerMask ignoreLayers = 0;
+  bool ignoreSelf = true;
+  int maxHits = 1;
+  math::Vec3 originLocalOffset{0.0f, 0.0f, 0.0f};
+  std::string baseName = "player_head_ray";
+};
+
+struct SensorConeInput final {
+  bool enabled = false;
+  std::string sensorName = "player_head_sensor";
+  std::string socketName = "player_head_socket";
+  math::Vec3 socketPositionOffset{0.0f, 0.0f, 0.0f};
+  RaycastConeInput cone{};
+};
+
 struct GrassLayerInput final {
   std::string species = "BillboardGrassPlanes";
   std::string description =

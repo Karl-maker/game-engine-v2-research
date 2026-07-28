@@ -17,6 +17,10 @@ struct ActorConfig final {
   PhysicalInput physical{};
   SkeletonInput skeleton{};
   StatsInput stats{};
+  AnimationInput animation{};
+  PoseInput pose{};
+  IkInput ik{};
+  SensorConeInput sensorCone{};
 };
 
 class ActorFactory final {
@@ -25,4 +29,3 @@ class ActorFactory final {
 };
 
 }  // namespace ecs::services
-
