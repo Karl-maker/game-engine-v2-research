@@ -493,13 +493,13 @@ void Game::onStart() {
     m_registry.emplace<ecs::TransformComponent>(skyEntity);
 
     auto& skyc = m_registry.emplace<ecs::SkyComponent>(skyEntity);
-    skyc.skyType = ecs::SkyComponent::SkyType::Day;
+    skyc.skyType = ecs::SkyComponent::SkyType::Night;
     skyc.useSkyTypePreset = true;
     skyc.linkedDirectionalLightEntity = m_light;
     skyc.cloudType = ecs::SkyComponent::CloudType::Scattered;
     skyc.quality = ecs::SkyComponent::Quality::High;
     skyc.cloudCoverage = 0.78f;
-    skyc.cloudDensity = 0.65f;
+    skyc.cloudDensity = 0.85f;
     skyc.cloudScale = 1.0f;
     skyc.cloudSpeed = 0.020f;
     skyc.cloudWindDirection = {1.0f, 0.35f};
