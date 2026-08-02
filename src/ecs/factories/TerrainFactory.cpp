@@ -7,6 +7,8 @@
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
 
+#include "materials/presets/HighQualityDirtRockLayer.h"
+
 #include <algorithm>
 #include <utility>
 
@@ -82,12 +84,14 @@ EntityId TerrainFactory::create(EntityRegistry& registry, const TerrainConfig& c
   }
 
   if (config.hasShader) {
-    ecs::ShaderComponent shader = config.material.value_or(ecs::ShaderComponent{});
-    if (!config.shaderKey.empty()) {
-      shader.shader.key = config.shaderKey;
-    }
-    appendViewableOverrides(config.viewable, shader);
-    registry.emplace<ecs::ShaderComponent>(id, std::move(shader));
+    auto& shader = registry.emplace<ecs::ShaderComponent>(id, materials::presets::HighQualityDirtRockLayer());
+    shader.shader.key = "graphics/shaders/terrain";
+    shader.depthWrite = true;
+    shader.parameters.push_back({"dirtSinksEnabled", false});
+    shader.parameters.push_back({"pebblesEnabled", false});
+    shader.parameters.push_back({"roughness", 1.0f});
+    shader.parameters.push_back({"metallic", 0.0f});
+    shader.parameters.push_back({"specularIntensity", 0.05f});
   }
 
   return id;

@@ -271,48 +271,48 @@ void Game::onStart() {
     m_player = factory.create(m_registry, cfg);
   }
   
-  m_terrain = m_registry.createEntity("terrain");
-  m_registry.emplace<ecs::TransformComponent>(m_terrain);
-  {
-    auto& terrain = m_registry.emplace<ecs::TerrainComponent>(m_terrain);
-    terrain.gridWidth = 96;
-    terrain.gridHeight = 96;
-    terrain.cellSizeMeters = 1.0f;
-    // Flatter terrain (less "mountainy").
-    terrain.heightScaleMeters = 2.6f;
-    terrain.noiseSeed = 2222u;
-    terrain.noise.seed = 2222u;
-    terrain.noise.frequency = 0.030f;
-    terrain.noise.octaves = 2;
-    terrain.noise.persistence = 0.45f;
-    terrain.noise.lacunarity = 2.0f;
-    terrain.lodMaxRenderDistance = 240.0f;
-    terrain.lodStep1Distance = 24.0f;
-    terrain.lodStep2Distance = 48.0f;
-    terrain.lodStep4Distance = 84.0f;
-    terrain.lodStep8Distance = 132.0f;
-    terrain.lodStep16Distance = 180.0f;
-    terrain.lodForceNearDistance = 18.0f;
-    terrain.tessLockDistance = 16.0f;
-    terrain.tessEnableDistance = 72.0f;
-    terrain.tessDisableDistance = 112.0f;
-    terrain.viewDotBias = 0.05f;
-    auto& collider = m_registry.emplace<ecs::ColliderComponent>(m_terrain);
-    collider.shape = ecs::ColliderComponent::Shape::Terrain;
-    collider.collisionLayer = physics::kLayerWorld;
-    collider.terrain.enabled = true;
-    collider.terrain.sourceTerrainEntity = m_terrain;
-    collider.terrain.collisionLayer = physics::kLayerWorld;
-    collider.terrain.thicknessMeters = 5.0f;
+  // m_terrain = m_registry.createEntity("terrain");
+  // m_registry.emplace<ecs::TransformComponent>(m_terrain);
+  // {
+  //   auto& terrain = m_registry.emplace<ecs::TerrainComponent>(m_terrain);
+  //   terrain.gridWidth = 96;
+  //   terrain.gridHeight = 96;
+  //   terrain.cellSizeMeters = 1.0f;
+  //   // Flatter terrain (less "mountainy").
+  //   terrain.heightScaleMeters = 2.6f;
+  //   terrain.noiseSeed = 2222u;
+  //   terrain.noise.seed = 2222u;
+  //   terrain.noise.frequency = 0.030f;
+  //   terrain.noise.octaves = 2;
+  //   terrain.noise.persistence = 0.45f;
+  //   terrain.noise.lacunarity = 2.0f;
+  //   terrain.lodMaxRenderDistance = 240.0f;
+  //   terrain.lodStep1Distance = 24.0f;
+  //   terrain.lodStep2Distance = 48.0f;
+  //   terrain.lodStep4Distance = 84.0f;
+  //   terrain.lodStep8Distance = 132.0f;
+  //   terrain.lodStep16Distance = 180.0f;
+  //   terrain.lodForceNearDistance = 18.0f;
+  //   terrain.tessLockDistance = 16.0f;
+  //   terrain.tessEnableDistance = 72.0f;
+  //   terrain.tessDisableDistance = 112.0f;
+  //   terrain.viewDotBias = 0.05f;
+  //   auto& collider = m_registry.emplace<ecs::ColliderComponent>(m_terrain);
+  //   collider.shape = ecs::ColliderComponent::Shape::Terrain;
+  //   collider.collisionLayer = physics::kLayerWorld;
+  //   collider.terrain.enabled = true;
+  //   collider.terrain.sourceTerrainEntity = m_terrain;
+  //   collider.terrain.collisionLayer = physics::kLayerWorld;
+  //   collider.terrain.thicknessMeters = 5.0f;
 
-    auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::HighQualityDirtRockLayer());
-    // Render using the current OpenGL demo shader (textures are ignored for now).
-    shader.shader.key = "graphics/shaders/terrain";
-    shader.depthWrite = true;
+  //   auto& shader = m_registry.emplace<ecs::ShaderComponent>(m_terrain, materials::presets::HighQualityDirtRockLayer());
+  //   // Render using the current OpenGL demo shader (textures are ignored for now).
+  //   shader.shader.key = "graphics/shaders/terrain";
+  //   shader.depthWrite = true;
 
-    // Scene override: remove the circular "sink" patches (often mistaken for pebbles).
-    shader.parameters.push_back({"dirtSinksEnabled", false});
-  }
+  //   // Scene override: remove the circular "sink" patches (often mistaken for pebbles).
+  //   shader.parameters.push_back({"dirtSinksEnabled", false});
+  // }
 
   // HUD example: flat screen image/bar + world-space label.
   {
