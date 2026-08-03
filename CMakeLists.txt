@@ -29,7 +29,8 @@ add_executable(duppy
   src/ecs/systems/HitDetectionSystem.cpp
   src/ecs/systems/MotionSystem.cpp
   src/ecs/systems/MovementSystem.cpp
-  src/ecs/systems/HudSystem.cpp
+  src/ecs/systems/CombatantHudSystem.cpp
+  src/ecs/systems/PlayerHudSystem.cpp
   src/ecs/systems/PoseSystem.cpp
   src/ecs/systems/RayDetectionSystem.cpp
   src/ecs/systems/SensorSystem.cpp
@@ -51,6 +52,7 @@ add_executable(duppy
   src/ecs/services/IKService.cpp
   src/ecs/services/ChunkStreamingService.cpp
   src/ecs/services/FileChunkSource.cpp
+  src/ecs/services/ImageDrawService.cpp
   src/ecs/services/RaycastConeFactoryService.cpp
   src/ecs/services/SpatialHashGridService.cpp
   src/terrain/PerlinNoise2D.cpp

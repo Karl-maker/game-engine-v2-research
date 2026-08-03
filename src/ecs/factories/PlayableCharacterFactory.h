@@ -45,6 +45,9 @@ struct PlayableCharacterConfig final {
   // Adds a ControllerComponent (player input interface).
   bool hasController = true;
 
+  // Screen HUD setup for the local player.
+  PlayerHudInput hud{};
+
   PlayableCharacterCameraConfig camera{};
 };
 

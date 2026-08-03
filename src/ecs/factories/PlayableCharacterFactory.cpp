@@ -4,6 +4,7 @@
 
 #include "ecs/components/CameraComponent.h"
 #include "ecs/components/ControllerComponent.h"
+#include "ecs/components/PlayerHudComponent.h"
 #include "ecs/components/ThirdPersonCameraComponent.h"
 #include "ecs/components/TransformComponent.h"
 
@@ -14,6 +15,8 @@ EntityId PlayableCharacterFactory::create(EntityRegistry& registry, const Playab
   if (cameraId == kInvalidEntityId && !config.camera.transform.name.empty()) cameraId = registry.createEntity(config.camera.transform.name);
 
   CombatantConfig baseCfg = config.base;
+  // Player uses a screen-space HUD, so disable the combatant (world-space) HUD for the player.
+  baseCfg.hud.enabled = false;
   if (baseCfg.ik.enabled && baseCfg.ik.headLook.enabled) {
     baseCfg.ik.headLook.targetEntity = cameraId;
   }
@@ -56,6 +59,29 @@ EntityId PlayableCharacterFactory::create(EntityRegistry& registry, const Playab
 
     if (const auto* playerTr = registry.tryGet<ecs::TransformComponent>(player)) {
       thirdPerson.yawDeg = playerTr->rotation.y;
+    }
+  }
+
+  if (config.hud.enabled) {
+    const EntityId hudEntity = registry.createEntity("player_hud");
+    if (hudEntity != kInvalidEntityId) {
+      auto& hud = registry.emplace<ecs::PlayerHudComponent>(hudEntity);
+      hud.enabled = true;
+      hud.targetEntity = player;
+      hud.texturePath = config.hud.texturePath;
+      hud.heightPx = config.hud.heightPx;
+      hud.marginLeftPx = config.hud.marginLeftPx;
+      hud.marginBottomPx = config.hud.marginBottomPx;
+      hud.tint = config.hud.tint;
+      hud.flipU = config.hud.flipU;
+      hud.flipV = config.hud.flipV;
+      hud.fillEnabled = config.hud.fillEnabled;
+      hud.fillLayer = config.hud.fillLayer;
+      hud.fillColor = config.hud.fillColor;
+      hud.fillWidthRatio = config.hud.fillWidthRatio;
+      hud.fillHeightRatio = config.hud.fillHeightRatio;
+      hud.fillOffsetPx = config.hud.fillOffsetPx;
+      hud.fillFromRight = config.hud.fillFromRight;
     }
   }
 

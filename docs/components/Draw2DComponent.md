@@ -13,7 +13,7 @@
 ## How it fits
 
 - Systems create/mutate the quads (for example `PlayerHudSystem`).
-- `GraphicsSystem` snapshots them into `FrameSnapshot::overlayQuads`.
+- `GraphicsSystem` snapshots them into `FrameSnapshot::draw2d`.
 - `OpenGlRenderer` draws them in layer order (lower first, higher on top).
 
 ## Anchoring and layers
@@ -40,7 +40,6 @@ base.anchor = ecs::Draw2DComponent::Anchor::BottomLeft;
 base.offsetPx = {24.0f, 24.0f};
 base.sizePx = {256.0f, 96.0f};
 base.textureEnabled = true;
-base.texture = {true, "assets/hud/player-health.svg", 0};
+base.texture = {true, "assets/hud/player-health.png", 0};
 draw.quads.push_back(base);
 ```
-

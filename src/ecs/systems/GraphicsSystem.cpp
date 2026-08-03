@@ -6,9 +6,9 @@
 #include "ecs/components/BillboardComponent.h"
 #include "ecs/components/ColliderComponent.h"
 #include "ecs/components/CombatVolumeComponent.h"
+#include "ecs/components/Draw2DComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/GrassPatchComponent.h"
-#include "ecs/components/HudComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/MeshComponent.h"
 #include "ecs/components/RenderSettingsComponent.h"
@@ -439,7 +439,8 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
   m_frame.skies.clear();
   m_frame.rocks.clear();
   m_frame.grasses.clear();
-  m_frame.hud.clear();
+  m_frame.draw2d.clear();
+  m_frame.billboards.clear();
   m_frame.vfx.clear();
   m_frame.lights.clear();
   m_frame.settings = {};
@@ -966,48 +967,28 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         m_frame.vfx.push_back(std::move(draw));
       });
 
-  // --- HUD widgets ---
-  registry.view<ecs::HudComponent>([&](ecs::EntityId id, const ecs::HudComponent& hud) {
-    if (!hud.enabled) return;
-    for (const auto& widget : hud.widgets) {
-      if (!widget.enabled) continue;
-      FrameSnapshot::HudDraw draw;
+  // --- Screen-space 2D quads ---
+  registry.view<ecs::Draw2DComponent>([&](ecs::EntityId id, const ecs::Draw2DComponent& draw2d) {
+    if (!draw2d.enabled) return;
+    for (const auto& q : draw2d.quads) {
+      if (!q.enabled) continue;
+      FrameSnapshot::Draw2DQuadDraw draw;
       draw.entity = id;
-      draw.name = widget.name;
-      draw.enabled = widget.enabled;
-      draw.space = widget.space;
-      draw.kind = widget.kind;
-      draw.valueSource = widget.valueSource;
-      draw.positionPx = widget.positionPx;
-      draw.sizePx = widget.sizePx;
-      draw.worldOffset = widget.worldOffset;
-      draw.sizeMeters = widget.sizeMeters;
-      draw.billboard = widget.billboard;
-      draw.sourceEntity = widget.sourceEntity;
-      if (const auto* anchorTr = widget.sourceEntity != ecs::kInvalidEntityId ? registry.tryGet<ecs::TransformComponent>(widget.sourceEntity)
-                                                                             : registry.tryGet<ecs::TransformComponent>(id)) {
-        draw.worldPosition = anchorTr->position + widget.worldOffset;
-        draw.hasWorldPosition = true;
-      }
-      draw.value = widget.value;
-      draw.maxValue = widget.maxValue;
-      draw.showValueText = widget.showValueText;
-      draw.label = widget.label;
-      draw.text = widget.text;
-      draw.textScalePx = widget.textScalePx;
-      draw.showBackground = widget.showBackground;
-      draw.showBorder = widget.showBorder;
-      draw.borderThicknessPx = widget.borderThicknessPx;
-      draw.texture = widget.texture;
-      draw.animatedTexture = widget.animatedTexture;
-      draw.textureEnabled = widget.textureEnabled;
-      draw.tint = widget.tint;
-      draw.backgroundColor = widget.backgroundColor;
-      draw.borderColor = widget.borderColor;
-      draw.fillColor = widget.fillColor;
-      draw.fillBackgroundColor = widget.fillBackgroundColor;
-      draw.textColor = widget.textColor;
-      m_frame.hud.push_back(std::move(draw));
+      draw.name = q.name;
+      draw.enabled = q.enabled;
+      draw.layer = q.layer;
+      draw.anchor = q.anchor;
+      draw.offsetPx = q.offsetPx;
+      draw.sizePx = q.sizePx;
+      draw.textureEnabled = q.textureEnabled;
+      draw.texture = q.texture;
+      draw.uv0 = q.uv0;
+      draw.uv1 = q.uv1;
+      draw.colorTL = q.colorTL;
+      draw.colorTR = q.colorTR;
+      draw.colorBR = q.colorBR;
+      draw.colorBL = q.colorBL;
+      m_frame.draw2d.push_back(std::move(draw));
     }
   });
 

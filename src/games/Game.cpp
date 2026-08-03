@@ -13,7 +13,6 @@
 #include "ecs/components/CombatVolumeComponent.h"
 #include "ecs/components/ControllerComponent.h"
 #include "ecs/components/AudioComponent.h"
-#include "ecs/components/HudComponent.h"
 #include "ecs/components/FogVolumeComponent.h"
 #include "ecs/components/IKComponent.h"
 #include "ecs/components/IdentityComponent.h"
@@ -203,7 +202,7 @@ std::string formatSceneCounts(const ecs::systems::GraphicsSystem::FrameSnapshot&
   out << " rocks=" << frame.rocks.size();
   out << " billboards=" << frame.billboards.size();
   out << " vfx=" << frame.vfx.size();
-  out << " hud=" << frame.hud.size();
+  out << " draw2d=" << frame.draw2d.size();
   out << " rays=" << frame.rays.size();
   out << " lines=" << frame.debugLines.size();
   return out.str();
@@ -236,12 +235,13 @@ void Game::onStart() {
     cfg.base.viewable.meshId = "business-man";
     cfg.base.viewable.meshKey = "assets/models/business-man/scene.gltf";
     cfg.base.viewable.meshType = ecs::MeshComponent::MeshType::Skinned;
-    cfg.base.viewable.meshScale = {1.25f, 1.25f, 1.25f};
+    cfg.base.viewable.meshScale = {1.0f, 1.0f, 1.0f};
     cfg.base.viewable.skeletonId = "business-man#skin0";
     cfg.base.viewable.castShadows = true;
     cfg.base.viewable.receiveShadows = true;
     cfg.base.viewable.tags = {"character", "player"};
     cfg.base.viewable.shaderKey = "graphics/shaders/model";
+
 
     cfg.base.physical.hasRigidbody = true;
     cfg.base.physical.mass = 80.0f;
@@ -255,7 +255,7 @@ void Game::onStart() {
 
     cfg.base.stats.walkingSpeed = 1.8f;
     cfg.base.stats.runningSpeed = 7.0f;
-
+    
     cfg.base.skeleton.skeletonData = "assets/models/business-man/scene.gltf";
 
     cfg.base.animation.enabled = true;
@@ -266,6 +266,14 @@ void Game::onStart() {
     cfg.camera.cameraEntity = m_camera;
     cfg.camera.transform.position = {0.0f, 3.0f, -6.0f};
     cfg.camera.transform.rotationDeg = {12.0f, 0.0f, 0.0f};
+
+    cfg.hud.fillColor = {1.0f, 1.0f, 1.0f};
+    cfg.hud.heightPx = 190.0f;
+    cfg.hud.marginBottomPx = 43.0f;
+    cfg.hud.fillHeightRatio = 0.15f;
+    cfg.hud.fillWidthRatio = 0.67f;
+    cfg.hud.fillOffsetPx = {50.0f, -4.0f};
+    cfg.hud.flipU = true;
 
     ecs::services::PlayableCharacterFactory factory;
     m_player = factory.create(m_registry, cfg);
@@ -313,66 +321,6 @@ void Game::onStart() {
   //   // Scene override: remove the circular "sink" patches (often mistaken for pebbles).
   //   shader.parameters.push_back({"dirtSinksEnabled", false});
   // }
-
-  // HUD example: flat screen image/bar + world-space label.
-  {
-    m_hud = m_registry.createEntity("hud");
-    auto& hud = m_registry.emplace<ecs::HudComponent>(m_hud);
-
-    ecs::HudComponent::Widget portrait;
-    portrait.name = "portrait";
-    portrait.space = ecs::HudComponent::Space::Screen;
-    portrait.kind = ecs::HudComponent::Kind::Image;
-    portrait.positionPx = {24.0f, 24.0f};
-    portrait.sizePx = {64.0f, 64.0f};
-    portrait.textureEnabled = true;
-    portrait.texture = {true, "assets/textures/stone/stone_color.jpg", 0};
-    portrait.animatedTexture.enabled = true;
-    portrait.animatedTexture.framesPerSecond = 1.5f;
-    portrait.animatedTexture.frames = {
-        {true, "assets/textures/stone/stone_color.jpg", 0},
-        {true, "assets/textures/ground/ground_color.jpg", 0},
-        {true, "assets/textures/dirt/dirt_color.jpg", 0},
-    };
-    portrait.tint = {1.0f, 1.0f, 1.0f, 1.0f};
-    portrait.showBackground = true;
-    portrait.backgroundColor = {0.08f, 0.08f, 0.08f, 0.55f};
-    hud.widgets.push_back(portrait);
-
-    ecs::HudComponent::Widget lifeBar;
-    lifeBar.name = "life_bar";
-    lifeBar.space = ecs::HudComponent::Space::Screen;
-    lifeBar.kind = ecs::HudComponent::Kind::Bar;
-    lifeBar.positionPx = {96.0f, 28.0f};
-    lifeBar.sizePx = {320.0f, 24.0f};
-    lifeBar.sourceEntity = m_player;
-    lifeBar.valueSource = ecs::HudComponent::ValueSource::StatsHealth;
-    lifeBar.showValueText = true;
-    lifeBar.label = "Life";
-    lifeBar.text = "Life";
-    lifeBar.backgroundColor = {0.10f, 0.10f, 0.10f, 0.80f};
-    lifeBar.fillBackgroundColor = {0.20f, 0.20f, 0.20f, 0.88f};
-    lifeBar.fillColor = {0.82f, 0.16f, 0.18f, 1.0f};
-    hud.widgets.push_back(lifeBar);
-
-    ecs::HudComponent::Widget lifeLabel3d;
-    lifeLabel3d.name = "life_world_label";
-    lifeLabel3d.space = ecs::HudComponent::Space::World;
-    lifeLabel3d.kind = ecs::HudComponent::Kind::Text;
-    lifeLabel3d.worldOffset = {0.0f, 2.25f, 0.0f};
-    lifeLabel3d.sizeMeters = {1.8f, 0.24f};
-    lifeLabel3d.billboard = true;
-    lifeLabel3d.sourceEntity = m_player;
-    lifeLabel3d.valueSource = ecs::HudComponent::ValueSource::StatsHealth;
-    lifeLabel3d.showValueText = true;
-    lifeLabel3d.label = "Life";
-    lifeLabel3d.text = "Life";
-    lifeLabel3d.textScalePx = 18.0f;
-    lifeLabel3d.showBackground = false;
-    lifeLabel3d.showBorder = false;
-    lifeLabel3d.textColor = {1.0f, 0.95f, 0.90f, 1.0f};
-    hud.widgets.push_back(lifeLabel3d);
-  }
 
   // Billboard examples: full camera-facing and yaw-only, both using animated frame sequences.
   // {
@@ -729,7 +677,8 @@ void Game::onTick(const core::TickContext& ctx) {
 
   // --- Environment presets (SkyType -> sky/light/fog) ---
   profile("sky_presets", [&] { m_skyPresets.tick(m_registry); });
-  profile("hud_system", [&] { m_hudSystem.tick(m_registry); });
+  profile("combatant_hud", [&] { m_combatantHudSystem.tick(m_registry); });
+  profile("player_hud", [&] { m_playerHudSystem.tick(m_registry); });
 
   const ecs::systems::GraphicsSystem::FrameSnapshot* framePtr = nullptr;
   profile("graphics_snapshot", [&] { framePtr = &m_graphics.tick(m_registry); });

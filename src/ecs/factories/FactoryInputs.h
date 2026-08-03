@@ -11,6 +11,8 @@
 #include "ecs/EntityId.h"
 #include "render/MaterialParameter.h"
 #include "render/TextureBinding.h"
+#include "render/Color.h"
+#include "math/Vec2.h"
 #include "math/Vec3.h"
 #include "physics/LayerMask.h"
 #include "terrain/NoiseConfig.h"
@@ -118,6 +120,50 @@ struct StatsInput final {
   float walkingSpeed = 10.0f;
   float runningSpeed = 20.0f;
   float swimmingSpeed = 10.0f;
+};
+
+struct CombatantHudInput final {
+  bool enabled = true;
+  std::string texturePath = "assets/hud/combatant-health.png";
+  math::Vec3 worldOffset{0.0f, 2.25f, 0.0f};
+  float heightMeters = 0.22f;
+  render::Color tint{1.0f, 1.0f, 1.0f, 1.0f};
+
+  // Visibility/culling.
+  float maxRenderDistanceMeters = 180.0f;
+
+  // Subtle distance scaling (makes the bar slightly larger when further away).
+  bool distanceScaleEnabled = true;
+  float distanceScaleStartMeters = 8.0f;
+  float distanceScaleEndMeters = 42.0f;
+  float distanceScaleAtEnd = 1.20f;
+
+  // Optional dynamic fill quad drawn in front.
+  bool fillEnabled = true;
+  render::Color fillColor{0.10f, 0.95f, 0.25f, 0.85f};
+  float fillWidthRatio = 0.84f;   // fraction of base width usable for fill
+  float fillHeightRatio = 0.28f;  // fraction of base height usable for fill
+  float fillDepthBiasMeters = 0.015f;
+};
+
+struct PlayerHudInput final {
+  bool enabled = true;
+  std::string texturePath = "assets/hud/player-health.png";
+  float heightPx = 96.0f;
+  float marginLeftPx = 24.0f;
+  float marginBottomPx = 24.0f;
+  render::Color tint{1.0f, 1.0f, 1.0f, 1.0f};
+
+  bool flipU = false;
+  bool flipV = false;
+
+  bool fillEnabled = true;
+  int fillLayer = 1;
+  render::Color fillColor{0.10f, 0.95f, 0.25f, 0.90f};
+  float fillWidthRatio = 0.84f;
+  float fillHeightRatio = 0.28f;
+  math::Vec2 fillOffsetPx{24.0f, 28.0f};
+  bool fillFromRight = false;
 };
 
 struct AnimationLayerInput final {

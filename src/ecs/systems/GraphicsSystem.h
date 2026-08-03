@@ -13,7 +13,7 @@
 #include "ecs/EntityId.h"
 #include "ecs/EntityRegistry.h"
 #include "ecs/components/BillboardComponent.h"
-#include "ecs/components/HudComponent.h"
+#include "ecs/components/Draw2DComponent.h"
 #include "ecs/components/VfxComponent.h"
 #include "math/Vec2.h"
 #include "math/Vec3.h"
@@ -367,39 +367,25 @@ class GraphicsSystem final {
       std::vector<GrassLayerDraw> layers;
     };
 
-    struct HudDraw final {
+    struct Draw2DQuadDraw final {
       EntityId entity = kInvalidEntityId;
       std::string name;
       bool enabled = true;
-      ecs::HudComponent::Space space = ecs::HudComponent::Space::Screen;
-      ecs::HudComponent::Kind kind = ecs::HudComponent::Kind::Panel;
-      ecs::HudComponent::ValueSource valueSource = ecs::HudComponent::ValueSource::Manual;
-      math::Vec2 positionPx{24.0f, 24.0f};
-      math::Vec2 sizePx{220.0f, 28.0f};
-      math::Vec3 worldOffset{0.0f, 2.0f, 0.0f};
-      math::Vec2 sizeMeters{1.0f, 0.25f};
-      bool billboard = true;
-      EntityId sourceEntity = kInvalidEntityId;
-      math::Vec3 worldPosition{};
-      bool hasWorldPosition = false;
-      float value = 0.0f;
-      float maxValue = 100.0f;
-      bool showValueText = false;
-      std::string label;
-      std::string text;
-      float textScalePx = 16.0f;
-      bool showBackground = true;
-      bool showBorder = false;
-      float borderThicknessPx = 2.0f;
-      render::AssetRef texture{};
-      render::AnimatedTexture animatedTexture{};
+      int layer = 0;
+
+      ecs::Draw2DComponent::Anchor anchor = ecs::Draw2DComponent::Anchor::TopLeft;
+      math::Vec2 offsetPx{0.0f, 0.0f};
+      math::Vec2 sizePx{64.0f, 64.0f};
+
       bool textureEnabled = false;
-      render::Color tint{1.0f, 1.0f, 1.0f, 1.0f};
-      render::Color backgroundColor{0.08f, 0.08f, 0.08f, 0.80f};
-      render::Color borderColor{1.0f, 1.0f, 1.0f, 1.0f};
-      render::Color fillColor{0.85f, 0.15f, 0.15f, 1.0f};
-      render::Color fillBackgroundColor{0.18f, 0.18f, 0.18f, 0.85f};
-      render::Color textColor{1.0f, 1.0f, 1.0f, 1.0f};
+      render::AssetRef texture{};
+      math::Vec2 uv0{0.0f, 0.0f};
+      math::Vec2 uv1{1.0f, 1.0f};
+
+      render::Color colorTL{1.0f, 1.0f, 1.0f, 1.0f};
+      render::Color colorTR{1.0f, 1.0f, 1.0f, 1.0f};
+      render::Color colorBR{1.0f, 1.0f, 1.0f, 1.0f};
+      render::Color colorBL{1.0f, 1.0f, 1.0f, 1.0f};
     };
 
     struct BillboardDraw final {
@@ -488,7 +474,7 @@ class GraphicsSystem final {
     std::vector<SkyDraw> skies;
     std::vector<RockDraw> rocks;
     std::vector<GrassDraw> grasses;
-    std::vector<HudDraw> hud;
+    std::vector<Draw2DQuadDraw> draw2d;
     std::vector<BillboardDraw> billboards;
     std::vector<VfxDraw> vfx;
     std::vector<LightDraw> lights;

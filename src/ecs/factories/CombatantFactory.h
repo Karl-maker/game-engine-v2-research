@@ -12,6 +12,8 @@
 namespace ecs::services {
 
 struct CombatantConfig final {
+  CombatantConfig() { playerHud.enabled = false; }
+
   TransformInput transform{.name = "combatant"};
   ViewableInput viewable{};
   PhysicalInput physical{};
@@ -21,6 +23,8 @@ struct CombatantConfig final {
   PoseInput pose{};
   IkInput ik{};
   SensorConeInput sensorCone{};
+  CombatantHudInput hud{};
+  PlayerHudInput playerHud{};
 };
 
 class CombatantFactory final {

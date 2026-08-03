@@ -65,6 +65,24 @@ bool readVec3OrUniform(
   return true;
 }
 
+bool readVec2Value(const data::JsonValue& v, math::Vec2& out) {
+  if (const auto* a = v.tryArray()) {
+    if (a->size() < 2) return false;
+    float x = 0.0f, y = 0.0f;
+    if (!data::readFloat((*a)[0], x) || !data::readFloat((*a)[1], y)) return false;
+    out = {x, y};
+    return true;
+  }
+  if (const auto* o = v.tryObject()) {
+    float x = 0.0f, y = 0.0f;
+    if (const auto* xv = data::getObjectKey(*o, "x")) (void)data::readFloat(*xv, x);
+    if (const auto* yv = data::getObjectKey(*o, "y")) (void)data::readFloat(*yv, y);
+    out = {x, y};
+    return true;
+  }
+  return false;
+}
+
 std::vector<std::string> readStringArrayOrEmpty(const data::JsonValue& v) {
   std::vector<std::string> out;
   const auto* a = v.tryArray();
@@ -572,6 +590,53 @@ GrassInput readGrassInput(const data::JsonValue::Object& obj) {
   return g;
 }
 
+void readCombatantHudInto(const data::JsonValue::Object& obj, CombatantHudInput& hud) {
+  const auto* hv = data::getObjectKey(obj, "combatantHud");
+  if (!hv) hv = data::getObjectKey(obj, "hud");
+  const auto* ho = hv ? hv->tryObject() : nullptr;
+  if (!ho) return;
+
+  hud.enabled = data::getBoolOr(*ho, "enabled", hud.enabled);
+  hud.texturePath = data::getStringOr(*ho, "texturePath", hud.texturePath);
+  if (const auto* v = data::getObjectKey(*ho, "worldOffset")) (void)data::readVec3(*v, hud.worldOffset);
+  hud.heightMeters = data::getFloatOr(*ho, "heightMeters", hud.heightMeters);
+  hud.maxRenderDistanceMeters = data::getFloatOr(*ho, "maxRenderDistanceMeters", hud.maxRenderDistanceMeters);
+  if (const auto* v = data::getObjectKey(*ho, "maxRenderDistance")) (void)data::readFloat(*v, hud.maxRenderDistanceMeters);
+  hud.distanceScaleEnabled = data::getBoolOr(*ho, "distanceScaleEnabled", hud.distanceScaleEnabled);
+  hud.distanceScaleStartMeters = data::getFloatOr(*ho, "distanceScaleStartMeters", hud.distanceScaleStartMeters);
+  hud.distanceScaleEndMeters = data::getFloatOr(*ho, "distanceScaleEndMeters", hud.distanceScaleEndMeters);
+  hud.distanceScaleAtEnd = data::getFloatOr(*ho, "distanceScaleAtEnd", hud.distanceScaleAtEnd);
+  hud.fillEnabled = data::getBoolOr(*ho, "fillEnabled", hud.fillEnabled);
+  hud.fillWidthRatio = data::getFloatOr(*ho, "fillWidthRatio", hud.fillWidthRatio);
+  hud.fillHeightRatio = data::getFloatOr(*ho, "fillHeightRatio", hud.fillHeightRatio);
+  hud.fillDepthBiasMeters = data::getFloatOr(*ho, "fillDepthBiasMeters", hud.fillDepthBiasMeters);
+  if (const auto* v = data::getObjectKey(*ho, "fillColor")) (void)readColorValue(*v, hud.fillColor);
+  if (const auto* v = data::getObjectKey(*ho, "tint")) (void)readColorValue(*v, hud.tint);
+}
+
+void readPlayerHudInto(const data::JsonValue::Object& obj, const char* key, bool allowHudAlias, PlayerHudInput& hud) {
+  const auto* hv = data::getObjectKey(obj, key);
+  if (!hv && allowHudAlias) hv = data::getObjectKey(obj, "hud");
+  const auto* ho = hv ? hv->tryObject() : nullptr;
+  if (!ho) return;
+
+  hud.enabled = data::getBoolOr(*ho, "enabled", hud.enabled);
+  hud.texturePath = data::getStringOr(*ho, "texturePath", hud.texturePath);
+  hud.heightPx = data::getFloatOr(*ho, "heightPx", hud.heightPx);
+  hud.marginLeftPx = data::getFloatOr(*ho, "marginLeftPx", hud.marginLeftPx);
+  hud.marginBottomPx = data::getFloatOr(*ho, "marginBottomPx", hud.marginBottomPx);
+  hud.flipU = data::getBoolOr(*ho, "flipU", hud.flipU);
+  hud.flipV = data::getBoolOr(*ho, "flipV", hud.flipV);
+  hud.fillEnabled = data::getBoolOr(*ho, "fillEnabled", hud.fillEnabled);
+  hud.fillLayer = data::getIntOr(*ho, "fillLayer", hud.fillLayer);
+  hud.fillWidthRatio = data::getFloatOr(*ho, "fillWidthRatio", hud.fillWidthRatio);
+  hud.fillHeightRatio = data::getFloatOr(*ho, "fillHeightRatio", hud.fillHeightRatio);
+  hud.fillFromRight = data::getBoolOr(*ho, "fillFromRight", hud.fillFromRight);
+  if (const auto* v = data::getObjectKey(*ho, "fillOffsetPx")) (void)readVec2Value(*v, hud.fillOffsetPx);
+  if (const auto* v = data::getObjectKey(*ho, "fillColor")) (void)readColorValue(*v, hud.fillColor);
+  if (const auto* v = data::getObjectKey(*ho, "tint")) (void)readColorValue(*v, hud.tint);
+}
+
 PlayableCharacterConfig readPlayableCharacterInput(const data::JsonValue::Object& obj, const FactoryContext& ctx) {
   PlayableCharacterConfig pc{};
 
@@ -585,8 +650,10 @@ PlayableCharacterConfig readPlayableCharacterInput(const data::JsonValue::Object
   pc.base.pose = readPoseInput(obj);
   pc.base.ik = readIkInput(obj);
   pc.base.sensorCone = readSensorConeInput(obj);
+  readCombatantHudInto(obj, pc.base.hud);
 
   pc.hasController = data::getBoolOr(obj, "hasController", pc.hasController);
+  readPlayerHudInto(obj, "playerHud", true, pc.hud);
 
   if (const auto* cv = data::getObjectKey(obj, "camera")) {
     if (const auto* co = cv->tryObject()) {
@@ -624,6 +691,7 @@ PlayableCharacterConfig readPlayableCharacterInput(const data::JsonValue::Object
       pc.base.pose = readPoseInput(*bo);
       pc.base.ik = readIkInput(*bo);
       pc.base.sensorCone = readSensorConeInput(*bo);
+      readCombatantHudInto(*bo, pc.base.hud);
     }
   }
 
@@ -1082,6 +1150,8 @@ class CombatantJsonFactory final : public IEntityFactory {
       cfg.pose = readPoseInput(*obj);
       cfg.ik = readIkInput(*obj);
       cfg.sensorCone = readSensorConeInput(*obj);
+      readCombatantHudInto(*obj, cfg.hud);
+      readPlayerHudInto(*obj, "playerHud", false, cfg.playerHud);
     }
 
     CombatantFactory factory;
