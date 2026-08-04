@@ -5,6 +5,7 @@
 #include "math/Mat4.h"
 #include "math/Vec3.h"
 #include "terrain/PerlinNoise2D.h"
+#include "terrain/ScalarMapCache.h"
 
 #include <algorithm>
 #include <functional>
@@ -38,6 +39,21 @@ struct RockInstance final {
   float scale;
   float rot;
 };
+
+terrain::ScalarMapCache& scalarMapCache() {
+  static terrain::ScalarMapCache cache;
+  return cache;
+}
+
+int mipFromTerrainLodStep(int lodStep, int quality, float mipBias, int maxMip) {
+  lodStep = std::max(1, lodStep);
+  quality = std::clamp(quality, 0, 2);
+  const int qualityBias = (quality == 0) ? 2 : (quality == 1 ? 1 : 0);
+  const float log2Step = std::log2(static_cast<float>(lodStep));
+  const int base = static_cast<int>(std::floor(std::max(0.0f, log2Step)));
+  const int bias = static_cast<int>(std::floor(mipBias));
+  return std::clamp(base + qualityBias + bias, 0, std::max(0, maxMip));
+}
 
 static constexpr const char* kDefaultGrassBillboardTexture =
     "assets/textures/vegitation/grass_patch_02/Material_baseColor.png";
@@ -1294,10 +1310,15 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
 
   const std::uint64_t key = terrainMeshKey(id, lodStep);
   auto it = m_terrainMeshes.find(key);
+  const bool wantHeightMap = t.hasHeightMapTex && !t.heightMapTex.key.empty() && t.heightMapStrength > 0.0001f;
+  const std::string heightMapKey = wantHeightMap ? t.heightMapTex.key : std::string{};
   if (it != m_terrainMeshes.end()) {
     auto& m = it->second;
     if (m.gridWidth == t.gridWidth && m.gridHeight == t.gridHeight && m.cellSizeMeters == t.cellSizeMeters &&
-        m.heightScaleMeters == t.heightScaleMeters && m.noiseSeed == t.noiseSeed && m.lodStep == lodStep) {
+        m.heightScaleMeters == t.heightScaleMeters && m.noiseSeed == t.noiseSeed && m.lodStep == lodStep &&
+        m.useHeightMap == wantHeightMap && m.heightMapKey == heightMapKey && m.heightMapStrength == t.heightMapStrength &&
+        m.heightMapInvert == t.heightMapInvert && m.heightMapMipBias == t.heightMapMipBias &&
+        m.heightMapQuality == t.heightMapQuality && m.mapUvTilingX == t.mapUvTilingX && m.mapUvTilingY == t.mapUvTilingY) {
       return &m;
     }
     destroyTerrainMesh(m);
@@ -1311,6 +1332,14 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
   mesh.heightScaleMeters = t.heightScaleMeters;
   mesh.noiseSeed = t.noiseSeed;
   mesh.lodStep = lodStep;
+  mesh.useHeightMap = wantHeightMap;
+  mesh.heightMapKey = heightMapKey;
+  mesh.heightMapStrength = t.heightMapStrength;
+  mesh.heightMapInvert = t.heightMapInvert;
+  mesh.heightMapMipBias = t.heightMapMipBias;
+  mesh.heightMapQuality = t.heightMapQuality;
+  mesh.mapUvTilingX = t.mapUvTilingX;
+  mesh.mapUvTilingY = t.mapUvTilingY;
 
   const int wCells = std::max(2, t.gridWidth);
   const int hCells = std::max(2, t.gridHeight);
@@ -1328,16 +1357,40 @@ OpenGlRenderer::TerrainMesh* OpenGlRenderer::getOrCreateTerrainMesh(const ecs::s
   const float fullHalfW = (static_cast<float>(wCells) * t.cellSizeMeters) * 0.5f;
   const float fullHalfH = (static_cast<float>(hCells) * t.cellSizeMeters) * 0.5f;
 
+  const terrain::ScalarMapCache::Map* heightMap = nullptr;
+  int heightMapMip = 0;
+  if (wantHeightMap) {
+    heightMap = scalarMapCache().getOrLoadGrayscale(heightMapKey, 2048);
+    if (heightMap && !heightMap->mips.empty()) {
+      heightMapMip = mipFromTerrainLodStep(lodStep, t.heightMapQuality, t.heightMapMipBias,
+                                           static_cast<int>(heightMap->mips.size()) - 1);
+    } else {
+      heightMap = nullptr;
+    }
+  }
+
   std::vector<float> heights;
   heights.resize(static_cast<std::size_t>(vertsW * vertsH));
   for (int z = 0; z < vertsH; ++z) {
     for (int x = 0; x < vertsW; ++x) {
       const int cx = std::min(wCells, x * step);
       const int cz = std::min(hCells, z * step);
-      const float worldX = t.position.x + (static_cast<float>(cx) * t.cellSizeMeters - fullHalfW);
-      const float worldZ = t.position.z + (static_cast<float>(cz) * t.cellSizeMeters - fullHalfH);
-      const float n = noise.sampleFractal(worldX, worldZ, t.noise);
-      heights[static_cast<std::size_t>(z * vertsW + x)] = n * t.heightScaleMeters;
+      const float u = static_cast<float>(x) / static_cast<float>(std::max(1, vertsW - 1));
+      const float v = static_cast<float>(z) / static_cast<float>(std::max(1, vertsH - 1));
+
+      float h01 = 0.0f;
+      if (heightMap) {
+        const float su = u * std::max(0.001f, t.mapUvTilingX);
+        const float sv = v * std::max(0.001f, t.mapUvTilingY);
+        h01 = terrain::ScalarMapCache::sample01(*heightMap, su, sv, heightMapMip);
+        if (t.heightMapInvert) h01 = 1.0f - h01;
+        heights[static_cast<std::size_t>(z * vertsW + x)] = h01 * t.heightScaleMeters * t.heightMapStrength;
+      } else {
+        const float worldX = t.position.x + (static_cast<float>(cx) * t.cellSizeMeters - fullHalfW);
+        const float worldZ = t.position.z + (static_cast<float>(cz) * t.cellSizeMeters - fullHalfH);
+        const float n = noise.sampleFractal(worldX, worldZ, t.noise);
+        heights[static_cast<std::size_t>(z * vertsW + x)] = n * t.heightScaleMeters;
+      }
     }
   }
 
@@ -1518,6 +1571,18 @@ OpenGlRenderer::RockMesh* OpenGlRenderer::getOrCreateRockMesh(
   const terrain::NoiseConfig groundCfg = groundTerrain ? groundTerrain->noise : terrain::NoiseConfig{};
   const float groundHeightScale = groundTerrain ? groundTerrain->heightScaleMeters : 0.0f;
 
+  const bool useGroundHeightMap =
+      groundTerrain && groundTerrain->hasHeightMapTex && !groundTerrain->heightMapTex.key.empty() &&
+      groundTerrain->heightMapStrength > 0.0001f && groundTerrain->heightScaleMeters > 0.0f;
+  const terrain::ScalarMapCache::Map* groundHeightMap =
+      useGroundHeightMap ? scalarMapCache().getOrLoadGrayscale(groundTerrain->heightMapTex.key, 2048) : nullptr;
+  const float terrainSizeX =
+      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridWidth)) * groundTerrain->cellSizeMeters) : 1.0f;
+  const float terrainSizeZ =
+      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridHeight)) * groundTerrain->cellSizeMeters) : 1.0f;
+  const float terrainMinX = groundTerrain ? (groundTerrain->position.x - terrainSizeX * 0.5f) : 0.0f;
+  const float terrainMinZ = groundTerrain ? (groundTerrain->position.z - terrainSizeZ * 0.5f) : 0.0f;
+
   auto rand01 = [&](std::uint32_t n) {
     n ^= n >> 16;
     n *= 0x7feb352dU;
@@ -1588,7 +1653,15 @@ OpenGlRenderer::RockMesh* OpenGlRenderer::getOrCreateRockMesh(
     inst.pz = z;
 
     float groundY = groundTerrain ? groundTerrain->position.y : r.position.y;
-    if (groundHeightScale != 0.0f) {
+    if (groundTerrain && groundHeightMap && terrainSizeX > 0.0001f && terrainSizeZ > 0.0001f) {
+      const float u = (worldX - terrainMinX) / terrainSizeX;
+      const float v = (worldZ - terrainMinZ) / terrainSizeZ;
+      const float su = u * std::max(0.001f, groundTerrain->mapUvTilingX);
+      const float sv = v * std::max(0.001f, groundTerrain->mapUvTilingY);
+      float h01 = terrain::ScalarMapCache::sample01(*groundHeightMap, su, sv, 0);
+      if (groundTerrain->heightMapInvert) h01 = 1.0f - h01;
+      groundY += h01 * groundTerrain->heightScaleMeters * groundTerrain->heightMapStrength;
+    } else if (groundHeightScale != 0.0f) {
       groundY += heightNoise.sampleFractal(worldX, worldZ, groundCfg) * groundHeightScale;
     }
     inst.py = groundY - r.position.y - 0.01f;
@@ -1668,7 +1741,8 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
            m.islandNoiseStrength != g.islandNoiseStrength ||
            m.densityMaskKey != (useDensityMask ? g.densityMaskTex.key : std::string{}) ||
            m.densityMaskStrength != g.densityMaskStrength || m.densityMaskTiling != g.densityMaskTiling ||
-           m.densityMaskReady != densityMaskReady;
+           m.densityMaskReady != densityMaskReady || m.densityMaskInvert != g.densityMaskInvert ||
+           m.densityMaskScaleStrength != g.densityMaskScaleStrength || m.densityMaskScalePower != g.densityMaskScalePower;
   };
 
   if (it != m_grassMeshes.end() && !needsRebuild(it->second)) return &it->second;
@@ -1711,6 +1785,9 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   mesh.densityMaskStrength = g.densityMaskStrength;
   mesh.densityMaskTiling = g.densityMaskTiling;
   mesh.densityMaskReady = densityMaskReady;
+  mesh.densityMaskInvert = g.densityMaskInvert;
+  mesh.densityMaskScaleStrength = g.densityMaskScaleStrength;
+  mesh.densityMaskScalePower = g.densityMaskScalePower;
 
   struct GrassVert {
     float px, py, pz;
@@ -1971,9 +2048,33 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   const terrain::NoiseConfig groundCfg = groundTerrain ? groundTerrain->noise : terrain::NoiseConfig{};
   const float groundHeightScale = groundTerrain ? groundTerrain->heightScaleMeters : 0.0f;
 
+  const bool useGroundHeightMap =
+      groundTerrain && groundTerrain->hasHeightMapTex && !groundTerrain->heightMapTex.key.empty() &&
+      groundTerrain->heightMapStrength > 0.0001f && groundTerrain->heightScaleMeters > 0.0f;
+  const terrain::ScalarMapCache::Map* groundHeightMap =
+      useGroundHeightMap ? scalarMapCache().getOrLoadGrayscale(groundTerrain->heightMapTex.key, 2048) : nullptr;
+  const float terrainSizeX =
+      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridWidth)) * groundTerrain->cellSizeMeters) : 1.0f;
+  const float terrainSizeZ =
+      groundTerrain ? (static_cast<float>(std::max(2, groundTerrain->gridHeight)) * groundTerrain->cellSizeMeters) : 1.0f;
+  const float terrainMinX = groundTerrain ? (groundTerrain->position.x - terrainSizeX * 0.5f) : 0.0f;
+  const float terrainMinZ = groundTerrain ? (groundTerrain->position.z - terrainSizeZ * 0.5f) : 0.0f;
+
   auto sampleGroundY = [&](float worldX, float worldZ) -> float {
     float groundY = groundTerrain ? groundTerrain->position.y : g.position.y;
-    if (!groundTerrain || groundHeightScale == 0.0f) return groundY;
+    if (!groundTerrain) return groundY;
+
+    if (groundHeightMap && terrainSizeX > 0.0001f && terrainSizeZ > 0.0001f) {
+      const float u = (worldX - terrainMinX) / terrainSizeX;
+      const float v = (worldZ - terrainMinZ) / terrainSizeZ;
+      const float su = u * std::max(0.001f, groundTerrain->mapUvTilingX);
+      const float sv = v * std::max(0.001f, groundTerrain->mapUvTilingY);
+      float h01 = terrain::ScalarMapCache::sample01(*groundHeightMap, su, sv, 0);
+      if (groundTerrain->heightMapInvert) h01 = 1.0f - h01;
+      return groundY + h01 * groundTerrain->heightScaleMeters * groundTerrain->heightMapStrength;
+    }
+
+    if (groundHeightScale == 0.0f) return groundY;
     groundY += heightNoise.sampleFractal(worldX, worldZ, groundCfg) * groundHeightScale;
     return groundY;
   };
@@ -2118,13 +2219,15 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
     float t =
         std::clamp((clusterMask * clusterBlend + noiseMask * (1.0f - clusterBlend)) * densityMask * islandMask, 0.0f, 1.0f);
 
+    float densityMaskTexSample = 0.0f;
     if (useDensityMask && densityMaskReady) {
       const float invAx = 1.0f / std::max(0.001f, g.area.x);
       const float invAz = 1.0f / std::max(0.001f, g.area.z);
       const float u = (x * invAx + 0.5f) * std::max(0.001f, g.densityMaskTiling);
       const float v = (z * invAz + 0.5f) * std::max(0.001f, g.densityMaskTiling);
-      const float mask = m_textures.sampleGreenMask(g.densityMaskTex.key, u, v).value_or(0.0f);
-      t = std::clamp(t * (1.0f + std::max(0.0f, g.densityMaskStrength) * mask), 0.0f, 1.0f);
+      densityMaskTexSample = m_textures.sampleGreenMask(g.densityMaskTex.key, u, v).value_or(0.0f);
+      if (g.densityMaskInvert) densityMaskTexSample = 1.0f - densityMaskTexSample;
+      t = std::clamp(t * (1.0f + std::max(0.0f, g.densityMaskStrength) * densityMaskTexSample), 0.0f, 1.0f);
     }
 
     if (rand01(seed ^ (idx * 1013904223u)) > t) continue;
@@ -2142,6 +2245,13 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
     inst.scale = layer.minScale + (layer.maxScale - layer.minScale) * std::pow(rScale, 1.8f);
     inst.rot = rRot * twoPi;
     inst.var = rVar;
+
+    // Optional density-mask-driven size modulation (used for "taller/thicker" regions).
+    if (useDensityMask && densityMaskReady && g.densityMaskScaleStrength != 0.0f) {
+      const float p = std::max(0.01f, g.densityMaskScalePower);
+      const float m = std::pow(std::clamp(densityMaskTexSample, 0.0f, 1.0f), p);
+      inst.scale *= (1.0f + g.densityMaskScaleStrength * m);
+    }
 
     const int cx = std::clamp(static_cast<int>((x + halfW) / chunkSize), 0, chunkCountX - 1);
     const int cz = std::clamp(static_cast<int>((z + halfD) / chunkSize), 0, chunkCountZ - 1);
@@ -2942,6 +3052,86 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         if (loc >= 0) glUniform1i(loc, 9);
       }
     }
+
+    // Terrain tile maps (optional; aligned to terrain UVs).
+    const GLint locLodStep = glGetUniformLocation(program->programId, "u_TerrainLodStep");
+    if (locLodStep >= 0) glUniform1i(locLodStep, lodStep);
+    const GLint locMapUv = glGetUniformLocation(program->programId, "u_MapUvTiling");
+    if (locMapUv >= 0) glUniform2f(locMapUv, t.mapUvTilingX, t.mapUvTilingY);
+    const GLint locMapBias = glGetUniformLocation(program->programId, "u_MapMipBias");
+    if (locMapBias >= 0) glUniform1f(locMapBias, t.mapMipBias);
+    const GLint locMapScale = glGetUniformLocation(program->programId, "u_MapMipScale");
+    if (locMapScale >= 0) glUniform1f(locMapScale, t.mapMipScale);
+    const GLint locMapMax = glGetUniformLocation(program->programId, "u_MapMipMax");
+    if (locMapMax >= 0) glUniform1f(locMapMax, t.mapMipMax);
+
+    const GLint locSplatStrength = glGetUniformLocation(program->programId, "u_SplatStrength");
+    if (locSplatStrength >= 0) glUniform1f(locSplatStrength, t.splatStrength);
+    const GLint locSplatChannel = glGetUniformLocation(program->programId, "u_SplatChannel");
+    if (locSplatChannel >= 0) glUniform1i(locSplatChannel, t.splatChannel);
+    const GLint locTerrainNormStrength = glGetUniformLocation(program->programId, "u_TerrainNormalMapStrength");
+    if (locTerrainNormStrength >= 0) glUniform1f(locTerrainNormStrength, t.terrainNormalMapStrength);
+    const GLint locTerrainRoughStrength = glGetUniformLocation(program->programId, "u_TerrainRoughnessMapStrength");
+    if (locTerrainRoughStrength >= 0) glUniform1f(locTerrainRoughStrength, t.terrainRoughnessMapStrength);
+    const GLint locTerrainRoughInv = glGetUniformLocation(program->programId, "u_TerrainRoughnessInvert");
+    if (locTerrainRoughInv >= 0) glUniform1i(locTerrainRoughInv, t.terrainRoughnessInvert ? 1 : 0);
+    const GLint locTerrainSurfaceStrength = glGetUniformLocation(program->programId, "u_TerrainSurfaceStrength");
+    if (locTerrainSurfaceStrength >= 0) glUniform1f(locTerrainSurfaceStrength, t.terrainSurfaceStrength);
+
+    const GLuint heightMapId = (t.hasHeightMapTex) ? m_textures.requestTexture(t.heightMapTex.key, false) : 0;
+    const GLuint terrainNormMapId = (t.hasTerrainNormalMapTex) ? m_textures.requestTexture(t.terrainNormalMapTex.key, false) : 0;
+    const GLuint terrainRoughMapId = (t.hasTerrainRoughnessMapTex) ? m_textures.requestTexture(t.terrainRoughnessMapTex.key, false) : 0;
+    const GLuint terrainSurfaceMapId = (t.hasTerrainSurfaceMapTex) ? m_textures.requestTexture(t.terrainSurfaceMapTex.key, false) : 0;
+    const GLuint splatMapId = (t.hasSplatMapTex) ? m_textures.requestTexture(t.splatMapTex.key, false) : 0;
+
+    const bool useHeightMap = heightMapId != 0;
+    const bool useTerrainNormMap = terrainNormMapId != 0;
+    const bool useTerrainRoughMap = terrainRoughMapId != 0;
+    const bool useTerrainSurfaceMap = terrainSurfaceMapId != 0;
+    const bool useSplatMap = splatMapId != 0;
+
+    const GLint locUseHeightMap = glGetUniformLocation(program->programId, "u_UseHeightMap");
+    if (locUseHeightMap >= 0) glUniform1i(locUseHeightMap, useHeightMap ? 1 : 0);
+    const GLint locUseTerrainNormMap = glGetUniformLocation(program->programId, "u_UseTerrainNormalMap");
+    if (locUseTerrainNormMap >= 0) glUniform1i(locUseTerrainNormMap, useTerrainNormMap ? 1 : 0);
+    const GLint locUseTerrainRoughMap = glGetUniformLocation(program->programId, "u_UseTerrainRoughnessMap");
+    if (locUseTerrainRoughMap >= 0) glUniform1i(locUseTerrainRoughMap, useTerrainRoughMap ? 1 : 0);
+    const GLint locUseTerrainSurfaceMap = glGetUniformLocation(program->programId, "u_UseTerrainSurfaceMap");
+    if (locUseTerrainSurfaceMap >= 0) glUniform1i(locUseTerrainSurfaceMap, useTerrainSurfaceMap ? 1 : 0);
+    const GLint locUseSplatMap = glGetUniformLocation(program->programId, "u_UseSplatMap");
+    if (locUseSplatMap >= 0) glUniform1i(locUseSplatMap, useSplatMap ? 1 : 0);
+
+    if (useHeightMap) {
+      glActiveTexture(GL_TEXTURE10);
+      glBindTexture(GL_TEXTURE_2D, heightMapId);
+      const GLint loc = glGetUniformLocation(program->programId, "u_HeightMapTex");
+      if (loc >= 0) glUniform1i(loc, 10);
+    }
+    if (useTerrainNormMap) {
+      glActiveTexture(GL_TEXTURE11);
+      glBindTexture(GL_TEXTURE_2D, terrainNormMapId);
+      const GLint loc = glGetUniformLocation(program->programId, "u_TerrainNormalMapTex");
+      if (loc >= 0) glUniform1i(loc, 11);
+    }
+    if (useTerrainRoughMap) {
+      glActiveTexture(GL_TEXTURE12);
+      glBindTexture(GL_TEXTURE_2D, terrainRoughMapId);
+      const GLint loc = glGetUniformLocation(program->programId, "u_TerrainRoughnessMapTex");
+      if (loc >= 0) glUniform1i(loc, 12);
+    }
+    if (useTerrainSurfaceMap) {
+      glActiveTexture(GL_TEXTURE13);
+      glBindTexture(GL_TEXTURE_2D, terrainSurfaceMapId);
+      const GLint loc = glGetUniformLocation(program->programId, "u_TerrainSurfaceMapTex");
+      if (loc >= 0) glUniform1i(loc, 13);
+    }
+    if (useSplatMap) {
+      glActiveTexture(GL_TEXTURE14);
+      glBindTexture(GL_TEXTURE_2D, splatMapId);
+      const GLint loc = glGetUniformLocation(program->programId, "u_SplatMapTex");
+      if (loc >= 0) glUniform1i(loc, 14);
+    }
+
     glActiveTexture(GL_TEXTURE0);
 
     const GLint locLc = glGetUniformLocation(program->programId, "u_LightCount");

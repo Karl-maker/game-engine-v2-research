@@ -229,7 +229,7 @@ void Game::onStart() {
   {
     ecs::services::PlayableCharacterConfig cfg{};
     cfg.base.transform.name = "business_man";
-    cfg.base.transform.position = {0.0f, 0.0f, 0.0f};
+    cfg.base.transform.position = {0.0f, 50.0f, 0.0f};
     cfg.base.transform.rotationDeg = {0.0f, 0.0f, 0.0f};
 
     cfg.base.viewable.meshId = "business-man";

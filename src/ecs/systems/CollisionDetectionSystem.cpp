@@ -4,10 +4,12 @@
 
 #include "ecs/components/ColliderComponent.h"
 #include "ecs/components/MotionComponent.h"
+#include "ecs/components/ShaderComponent.h"
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "ecs/events/CollisionEvents.h"
 #include "terrain/PerlinNoise2D.h"
+#include "terrain/ScalarMapCache.h"
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +18,11 @@
 namespace {
 
 using Aabb = ecs::services::SpatialHashGridService::Aabb;
+
+terrain::ScalarMapCache& scalarMapCache() {
+  static terrain::ScalarMapCache cache;
+  return cache;
+}
 
 bool layersCollide(physics::LayerMask a, physics::LayerMask b) {
   if (a == physics::kAllLayers || b == physics::kAllLayers) return true;
@@ -88,8 +95,31 @@ ecs::events::CollisionDetectionEvent makeAabbContact(ecs::EntityId aId,
 float sampleTerrainHeight(ecs::EntityId terrainId,
                           const ecs::TerrainComponent& terrain,
                           const ecs::TransformComponent& terrainTr,
-                          const math::Vec3& world) {
+                          const math::Vec3& world,
+                          const ecs::ShaderComponent* shaderOpt,
+                          const terrain::ScalarMapCache::Map* heightMap,
+                          float mapUvTilingX,
+                          float mapUvTilingY,
+                          float heightMapStrength,
+                          bool heightMapInvert) {
   (void)terrainId;
+
+  if (shaderOpt && heightMap && terrain.heightScaleMeters > 0.0f && heightMapStrength > 0.0001f) {
+    const float sizeX = static_cast<float>(std::max(2, terrain.gridWidth)) * terrain.cellSizeMeters;
+    const float sizeZ = static_cast<float>(std::max(2, terrain.gridHeight)) * terrain.cellSizeMeters;
+    if (sizeX > 0.0001f && sizeZ > 0.0001f) {
+      const float minX = terrainTr.position.x - sizeX * 0.5f;
+      const float minZ = terrainTr.position.z - sizeZ * 0.5f;
+      const float u = (world.x - minX) / sizeX;
+      const float v = (world.z - minZ) / sizeZ;
+      const float su = u * std::max(0.001f, mapUvTilingX);
+      const float sv = v * std::max(0.001f, mapUvTilingY);
+      float h01 = terrain::ScalarMapCache::sample01(*heightMap, su, sv, 0);
+      if (heightMapInvert) h01 = 1.0f - h01;
+      return terrainTr.position.y + h01 * terrain.heightScaleMeters * heightMapStrength;
+    }
+  }
+
   terrain::PerlinNoise2D noise(terrain.noiseSeed);
   return terrainTr.position.y + noise.sampleFractal(world.x, world.z, terrain.noise) * terrain.heightScaleMeters;
 }
@@ -140,6 +170,37 @@ void CollisionDetectionSystem::tick(EntityRegistry& registry, ecs::services::Eve
 
   registry.view<ecs::TerrainComponent, ecs::TransformComponent>(
       [&](ecs::EntityId terrainId, const ecs::TerrainComponent& terrain, const ecs::TransformComponent& terrainTr) {
+        const ecs::ShaderComponent* shaderOpt = registry.tryGet<ecs::ShaderComponent>(terrainId);
+        std::string heightMapPath;
+        float mapUvTilingX = 1.0f;
+        float mapUvTilingY = 1.0f;
+        float heightMapStrength = 1.0f;
+        bool heightMapInvert = false;
+
+        if (shaderOpt) {
+          for (const auto& t : shaderOpt->textures) {
+            if (t.slot == "height_map" && t.texture.enabled && !t.texture.key.empty()) {
+              heightMapPath = t.texture.key;
+              break;
+            }
+          }
+          for (const auto& p : shaderOpt->parameters) {
+            if (p.name == "mapUvTiling") {
+              if (const auto* v = std::get_if<math::Vec2>(&p.value)) {
+                mapUvTilingX = v->x;
+                mapUvTilingY = v->y;
+              }
+            } else if (p.name == "heightMapStrength") {
+              if (const auto* v = std::get_if<float>(&p.value)) heightMapStrength = *v;
+            } else if (p.name == "heightMapInvert") {
+              if (const auto* v = std::get_if<bool>(&p.value)) heightMapInvert = *v;
+            }
+          }
+        }
+
+        const terrain::ScalarMapCache::Map* heightMap =
+            (!heightMapPath.empty()) ? scalarMapCache().getOrLoadGrayscale(heightMapPath, 2048) : nullptr;
+
         const float halfW = static_cast<float>(terrain.gridWidth) * terrain.cellSizeMeters * 0.5f;
         const float halfD = static_cast<float>(terrain.gridHeight) * terrain.cellSizeMeters * 0.5f;
         const Aabb terrainBounds{{terrainTr.position.x - halfW, terrainTr.position.y - terrain.heightScaleMeters, terrainTr.position.z - halfD},
@@ -152,7 +213,16 @@ void CollisionDetectionSystem::tick(EntityRegistry& registry, ecs::services::Eve
           const auto& body = bodyIt->second;
           const auto* motion = registry.tryGet<ecs::MotionComponent>(id);
           if (!motion) continue;
-          const float ground = sampleTerrainHeight(terrainId, terrain, terrainTr, body.transform.position);
+          const float ground = sampleTerrainHeight(terrainId,
+                                                   terrain,
+                                                   terrainTr,
+                                                   body.transform.position,
+                                                   shaderOpt,
+                                                   heightMap,
+                                                   mapUvTilingX,
+                                                   mapUvTilingY,
+                                                   heightMapStrength,
+                                                   heightMapInvert);
           const float bottom = body.aabb.min.y;
           if (bottom >= ground) continue;
 

@@ -345,6 +345,13 @@ void extractKnownTextures(const ecs::ShaderComponent& shader, GraphicsSystem::Te
   tryBind("ao", out.aoTex, out.hasAoTex);
   tryBind("ambient_occlusion", out.aoTex, out.hasAoTex);
   tryBind("displacement", out.displacementTex, out.hasDisplacementTex);
+
+  // Per-terrain "tile maps" (aligned to terrain UVs).
+  tryBind("height_map", out.heightMapTex, out.hasHeightMapTex);
+  tryBind("terrain_normal_map", out.terrainNormalMapTex, out.hasTerrainNormalMapTex);
+  tryBind("terrain_roughness_map", out.terrainRoughnessMapTex, out.hasTerrainRoughnessMapTex);
+  tryBind("terrain_surface_map", out.terrainSurfaceMapTex, out.hasTerrainSurfaceMapTex);
+  tryBind("splat_map", out.splatMapTex, out.hasSplatMapTex);
 }
 
 void extractRockLayerTextures(const ecs::ShaderComponent& shader, GraphicsSystem::TerrainDraw& out) {
@@ -568,6 +575,22 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(resolvedShader, "aoStrength", draw.aoStrength);
         (void)readFloatParam(resolvedShader, "displacementStrength", draw.displacementStrength);
         (void)readBoolParam(resolvedShader, "displacementInvert", draw.displacementInvert);
+
+        // Tile map controls (optional; used for height/normal/roughness/surface/splat maps).
+        (void)readVec2Param(resolvedShader, "mapUvTiling", draw.mapUvTilingX, draw.mapUvTilingY);
+        (void)readFloatParam(resolvedShader, "heightMapStrength", draw.heightMapStrength);
+        (void)readBoolParam(resolvedShader, "heightMapInvert", draw.heightMapInvert);
+        (void)readFloatParam(resolvedShader, "heightMapMipBias", draw.heightMapMipBias);
+        (void)readIntParam(resolvedShader, "heightMapQuality", draw.heightMapQuality);
+        (void)readFloatParam(resolvedShader, "terrainNormalMapStrength", draw.terrainNormalMapStrength);
+        (void)readFloatParam(resolvedShader, "terrainRoughnessMapStrength", draw.terrainRoughnessMapStrength);
+        (void)readBoolParam(resolvedShader, "terrainRoughnessInvert", draw.terrainRoughnessInvert);
+        (void)readFloatParam(resolvedShader, "terrainSurfaceStrength", draw.terrainSurfaceStrength);
+        (void)readFloatParam(resolvedShader, "splatStrength", draw.splatStrength);
+        (void)readIntParam(resolvedShader, "splatChannel", draw.splatChannel);
+        (void)readFloatParam(resolvedShader, "mapMipBias", draw.mapMipBias);
+        (void)readFloatParam(resolvedShader, "mapMipScale", draw.mapMipScale);
+        (void)readFloatParam(resolvedShader, "mapMipMax", draw.mapMipMax);
 
         // Tessellation controls (if present on the material).
         (void)readFloatParam(resolvedShader, "tessNear", draw.tessNear);
@@ -894,6 +917,9 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(resolvedShader, "grassAlbedoUvScale", draw.albedoUvScale);
         (void)readFloatParam(resolvedShader, "densityMaskStrength", draw.densityMaskStrength);
         (void)readFloatParam(resolvedShader, "densityMaskTiling", draw.densityMaskTiling);
+        (void)readBoolParam(resolvedShader, "densityMaskInvert", draw.densityMaskInvert);
+        (void)readFloatParam(resolvedShader, "densityMaskScaleStrength", draw.densityMaskScaleStrength);
+        (void)readFloatParam(resolvedShader, "densityMaskScalePower", draw.densityMaskScalePower);
 
         draw.layers.reserve(grass.layers.size());
         for (const auto& l : grass.layers) {

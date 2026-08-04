@@ -92,6 +92,16 @@ class OpenGlRenderer final {
     float heightScaleMeters = 1.0f;
     std::uint32_t noiseSeed = 1337;
     int lodStep = 1;  // 1=full res, 2=half, 4=quarter, ...
+
+    // Optional CPU-driven height sampling from a terrain-aligned height map.
+    std::string heightMapKey;
+    bool useHeightMap = false;
+    float heightMapStrength = 1.0f;
+    bool heightMapInvert = false;
+    float heightMapMipBias = 0.0f;
+    int heightMapQuality = 2;  // 0=Low,1=Medium,2=High
+    float mapUvTilingX = 1.0f;
+    float mapUvTilingY = 1.0f;
   };
 
   struct TerrainLodState final {
@@ -172,6 +182,9 @@ class OpenGlRenderer final {
     float densityMaskStrength = 0.0f;
     float densityMaskTiling = 1.0f;
     bool densityMaskReady = false;
+    bool densityMaskInvert = false;
+    float densityMaskScaleStrength = 0.0f;
+    float densityMaskScalePower = 1.0f;
 
     float chunkSizeMeters = 6.0f;
     std::vector<Chunk> chunks;

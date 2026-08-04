@@ -49,6 +49,17 @@ uniform bool u_UseRockNormal;
 uniform float u_RockNormalStrength;
 uniform float u_RockNormalDerivedDisplacementStrength;
 
+// Terrain tile maps (aligned to terrain UVs, optional).
+uniform int u_TerrainLodStep = 1;
+uniform vec2 u_MapUvTiling = vec2(1.0, 1.0);
+uniform float u_MapMipBias = 0.0;
+uniform float u_MapMipScale = 1.0;
+uniform float u_MapMipMax = 8.0;
+uniform sampler2D u_SplatMapTex;
+uniform bool u_UseSplatMap = false;
+uniform float u_SplatStrength = 1.0;
+uniform int u_SplatChannel = 0;
+
 float saturate(float x) { return clamp(x, 0.0, 1.0); }
 
 float hash12(vec2 p) {
@@ -80,6 +91,12 @@ float fbm(vec2 p) {
   return sum;
 }
 
+float terrainMapLod() {
+  float step = max(1.0, float(u_TerrainLodStep));
+  float lod = log2(step) * max(0.0, u_MapMipScale) + u_MapMipBias;
+  return clamp(lod, 0.0, max(0.0, u_MapMipMax));
+}
+
 void main() {
   vec3 b = gl_TessCoord;
 
@@ -90,6 +107,8 @@ void main() {
   N = normalize(N);
 
   vec2 uvTiled = uv * u_UvTiling;
+  vec2 mapUv = uv * u_MapUvTiling;
+  float mapLod = terrainMapLod();
   float baseDisp = 0.0;
   if (u_UseDisplacement) {
     float h = texture(u_DisplacementTex, uvTiled).r;
@@ -119,6 +138,14 @@ void main() {
     float mask = saturate((n - 0.45) * 2.2);
     mask = saturate(mask + slope * 0.65);
     mask *= saturate(u_RockBlendStrength);
+
+    // Optional splat-map override for the layer mask (keeps tess displacement consistent with fragment blend).
+    if (u_UseSplatMap) {
+      vec4 s = textureLod(u_SplatMapTex, mapUv, mapLod);
+      float ch = (u_SplatChannel == 0) ? s.r : (u_SplatChannel == 1) ? s.g : (u_SplatChannel == 2) ? s.b : s.a;
+      mask = mix(mask, ch, saturate(u_SplatStrength));
+      mask = saturate(mask);
+    }
 
     vec2 uv2 = uv * u_RockUvTiling + (warp * 0.08);
     float rockDisp = 0.0;

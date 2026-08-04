@@ -152,6 +152,48 @@ class GraphicsSystem final {
     float rockDisplacementStrength = 0.8f;
     float rockBlendStrength = 0.65f;
     float rockNoiseScale = 0.06f;
+
+    // --- Terrain "tile maps" (optional, per-terrain-UV) ---
+    // These are intended to be large, non-tiling maps (e.g. 4k/8k) aligned to the terrain UVs.
+    // Typical use:
+    // - height_map: CPU mesh height sampling + optional shader use
+    // - terrain_normal_map: large-scale normal detail
+    // - terrain_roughness_map: large-scale roughness variation
+    // - terrain_surface_map: grayscale detail (micro variation)
+    // - splat_map: RGBA mask for material blending (channel mapping is shader-defined)
+    render::AssetRef heightMapTex{};
+    bool hasHeightMapTex = false;
+    render::AssetRef terrainNormalMapTex{};
+    bool hasTerrainNormalMapTex = false;
+    render::AssetRef terrainRoughnessMapTex{};
+    bool hasTerrainRoughnessMapTex = false;
+    render::AssetRef terrainSurfaceMapTex{};
+    bool hasTerrainSurfaceMapTex = false;
+    render::AssetRef splatMapTex{};
+    bool hasSplatMapTex = false;
+
+    // Tile-map UV controls.
+    float mapUvTilingX = 1.0f;
+    float mapUvTilingY = 1.0f;
+
+    // Height map controls (CPU mesh + optional shader usage).
+    float heightMapStrength = 1.0f;
+    bool heightMapInvert = false;
+    float heightMapMipBias = 0.0f;
+    int heightMapQuality = 2;  // 0=Low,1=Medium,2=High
+
+    // Terrain normal/roughness/surface controls.
+    float terrainNormalMapStrength = 1.0f;
+    float terrainRoughnessMapStrength = 1.0f;
+    bool terrainRoughnessInvert = false;
+    float terrainSurfaceStrength = 0.0f;
+
+    // Splat map controls (channel selection + strength).
+    float splatStrength = 1.0f;  // 0=procedural, 1=splat override
+    int splatChannel = 0;        // 0=R,1=G,2=B,3=A
+    float mapMipBias = 0.0f;     // shader-only mip bias for tile maps
+    float mapMipScale = 1.0f;    // shader-only mip scale vs terrain lod step
+    float mapMipMax = 8.0f;      // shader-only mip clamp
   };
 
   struct LightDraw final {
@@ -372,6 +414,9 @@ class GraphicsSystem final {
       bool hasDensityMaskTex = false;
       float densityMaskStrength = 0.0f;
       float densityMaskTiling = 1.0f;
+      bool densityMaskInvert = false;
+      float densityMaskScaleStrength = 0.0f;
+      float densityMaskScalePower = 1.0f;
 
       std::vector<GrassLayerDraw> layers;
     };

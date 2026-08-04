@@ -56,6 +56,7 @@ add_executable(duppy
   src/ecs/services/RaycastConeFactoryService.cpp
   src/ecs/services/SpatialHashGridService.cpp
   src/terrain/PerlinNoise2D.cpp
+  src/terrain/ScalarMapCache.cpp
   src/core/ConsoleInputService.cpp
   src/core/ControlService.cpp
   src/core/GameLoopService.cpp
@@ -83,6 +84,11 @@ endif()
 find_package(Threads REQUIRED)
 target_link_libraries(duppy PRIVATE Threads::Threads)
 
+if(APPLE)
+  # Used by terrain/graphics image decoding helpers.
+  target_link_libraries(duppy PRIVATE "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation")
+endif()
+
 # --- OpenGL demo renderer (optional) ---
 option(DUPPY_ENABLE_OPENGL "Enable GLFW/OpenGL rendering for the gameplay demo" ON)
 if(DUPPY_ENABLE_OPENGL)
@@ -106,7 +112,6 @@ if(DUPPY_ENABLE_OPENGL)
 
     if(APPLE)
       target_link_libraries(duppy PRIVATE "-framework OpenGL")
-      target_link_libraries(duppy PRIVATE "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation")
     else()
       find_package(OpenGL REQUIRED)
       target_link_libraries(duppy PRIVATE OpenGL::GL)
