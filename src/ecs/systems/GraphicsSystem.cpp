@@ -372,6 +372,51 @@ void extractRockLayerTextures(const ecs::ShaderComponent& shader, GraphicsSystem
   tryBind("rock_displacement", out.rockDisplacementTex, out.hasRockDisplacementTex);
 }
 
+bool applySplatChannelRockOverrides(
+    const ecs::ShaderComponent& shader,
+    int splatChannel,
+    GraphicsSystem::TerrainDraw& out) {
+  const char channel =
+      (splatChannel == 0) ? 'r' : (splatChannel == 1) ? 'g' : (splatChannel == 2) ? 'b' : (splatChannel == 3) ? 'a' : '\0';
+  if (channel == '\0') return false;
+
+  const std::string prefix = std::string("splat_") + channel + "_";
+  bool any = false;
+
+  auto tryBind = [&](const std::string& slot, render::AssetRef& dst, bool& has) {
+    for (const auto& t : shader.textures) {
+      if (t.slot == slot && t.texture.enabled && !t.texture.key.empty()) {
+        dst = t.texture;
+        has = true;
+        any = true;
+        return;
+      }
+    }
+  };
+
+  tryBind(prefix + "rock_albedo", out.rockAlbedoTex, out.hasRockAlbedoTex);
+  tryBind(prefix + "rock_normalgl", out.rockNormalTex, out.hasRockNormalTex);
+  tryBind(prefix + "rock_roughness", out.rockRoughnessTex, out.hasRockRoughnessTex);
+  tryBind(prefix + "rock_ao", out.rockAoTex, out.hasRockAoTex);
+  tryBind(prefix + "rock_displacement", out.rockDisplacementTex, out.hasRockDisplacementTex);
+
+  bool channelRockEnabled = out.rockLayerEnabled;
+  if (readBoolParam(shader, (prefix + "rockLayerEnabled").c_str(), channelRockEnabled)) {
+    out.rockLayerEnabled = channelRockEnabled;
+    any = true;
+  } else if (any) {
+    out.rockLayerEnabled = true;
+  }
+
+  (void)readVec2Param(shader, (prefix + "rockUvTiling").c_str(), out.rockUvTilingX, out.rockUvTilingY);
+  (void)readFloatParam(shader, (prefix + "rockNormalScale").c_str(), out.rockNormalStrength);
+  (void)readFloatParam(shader, (prefix + "rockDisplacementStrength").c_str(), out.rockDisplacementStrength);
+  (void)readFloatParam(shader, (prefix + "rockBlendStrength").c_str(), out.rockBlendStrength);
+  (void)readFloatParam(shader, (prefix + "rockNoiseScale").c_str(), out.rockNoiseScale);
+
+  return any;
+}
+
 void extractGrassTextures(const ecs::ShaderComponent& shader, GraphicsSystem::FrameSnapshot::GrassDraw& out) {
   auto tryBind = [&](const char* slot, render::AssetRef& dst, bool& has) {
     for (const auto& t : shader.textures) {
@@ -564,10 +609,6 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(resolvedShader, "metallic", draw.metallic);
         (void)readFloatParam(resolvedShader, "specularIntensity", draw.specularIntensity);
         (void)readFloatParam(resolvedShader, "dirtColorNoiseStrength", draw.dirtColorNoiseStrength);
-        (void)readBoolParam(resolvedShader, "dirtSinksEnabled", draw.dirtSinksEnabled);
-        (void)readFloatParam(resolvedShader, "dirtSinkStrength", draw.dirtSinkStrength);
-        (void)readFloatParam(resolvedShader, "dirtSinkScale", draw.dirtSinkScale);
-        (void)readFloatParam(resolvedShader, "dirtSinkDensity", draw.dirtSinkDensity);
 
         extractKnownTextures(resolvedShader, draw);
         (void)readVec2Param(resolvedShader, "uvTiling", draw.uvTilingX, draw.uvTilingY);
@@ -607,6 +648,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(resolvedShader, "rockDisplacementStrength", draw.rockDisplacementStrength);
         (void)readFloatParam(resolvedShader, "rockBlendStrength", draw.rockBlendStrength);
         (void)readFloatParam(resolvedShader, "rockNoiseScale", draw.rockNoiseScale);
+        (void)applySplatChannelRockOverrides(resolvedShader, draw.splatChannel, draw);
         m_frame.terrains.push_back(std::move(draw));
       });
 

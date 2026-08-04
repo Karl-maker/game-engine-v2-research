@@ -92,8 +92,6 @@ EntityId TerrainFactory::create(EntityRegistry& registry, const TerrainConfig& c
 
     // Keep previous TerrainFactory defaults unless an explicit material is provided.
     if (!config.material) {
-      shader.parameters.push_back({"dirtSinksEnabled", false});
-      shader.parameters.push_back({"pebblesEnabled", false});
       shader.parameters.push_back({"roughness", 1.0f});
       shader.parameters.push_back({"metallic", 0.0f});
       shader.parameters.push_back({"specularIntensity", 0.05f});

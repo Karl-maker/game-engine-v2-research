@@ -2839,10 +2839,6 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     const GLint locCam = glGetUniformLocation(program->programId, "u_CameraPos");
     const GLint locTime = glGetUniformLocation(program->programId, "u_Time");
     const GLint locColorNoise = glGetUniformLocation(program->programId, "u_DirtColorNoiseStrength");
-    const GLint locSinkOn = glGetUniformLocation(program->programId, "u_DirtSinksEnabled");
-    const GLint locSinkStrength = glGetUniformLocation(program->programId, "u_DirtSinkStrength");
-    const GLint locSinkScale = glGetUniformLocation(program->programId, "u_DirtSinkScale");
-    const GLint locSinkDensity = glGetUniformLocation(program->programId, "u_DirtSinkDensity");
     if (locModel >= 0) {
       const math::Mat4 model = math::translate(t.position);
       glUniformMatrix4fv(locModel, 1, GL_FALSE, model.m);
@@ -2853,10 +2849,6 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locCamFwd >= 0) glUniform3f(locCamFwd, frame.camera.forward.x, frame.camera.forward.y, frame.camera.forward.z);
     if (locTime >= 0) glUniform1f(locTime, timeSeconds);
     if (locColorNoise >= 0) glUniform1f(locColorNoise, t.dirtColorNoiseStrength);
-    if (locSinkOn >= 0) glUniform1i(locSinkOn, t.dirtSinksEnabled ? 1 : 0);
-    if (locSinkStrength >= 0) glUniform1f(locSinkStrength, t.dirtSinkStrength);
-    if (locSinkScale >= 0) glUniform1f(locSinkScale, t.dirtSinkScale);
-    if (locSinkDensity >= 0) glUniform1f(locSinkDensity, t.dirtSinkDensity);
 
     // Fog uniforms.
     const GLint locFogOn = glGetUniformLocation(program->programId, "u_FogEnabled");

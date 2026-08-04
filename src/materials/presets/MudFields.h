@@ -64,15 +64,6 @@ inline ecs::ShaderComponent MudFields() {
   s.parameters.push_back({"rockBlendStrength", 0.10f});
   s.parameters.push_back({"rockNoiseScale", 0.075f});
 
-  // Allow subtle sinks for puddle-like variation.
-  s.parameters.push_back({"dirtSinksEnabled", true});
-  s.parameters.push_back({"dirtSinkStrength", 0.78f});
-  s.parameters.push_back({"dirtSinkScale", 1.55f});
-  s.parameters.push_back({"dirtSinkDensity", 0.34f});
-
-  // Disable pebbles by default (textures provide detail).
-  s.parameters.push_back({"pebblesEnabled", false});
-
   return s;
 }
 

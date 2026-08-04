@@ -30,10 +30,6 @@ inline ecs::ShaderComponent Dirt() {
   s.parameters.push_back({"metallic", 0.0f});
   s.parameters.push_back({"specularIntensity", 1.0f});
   s.parameters.push_back({"dirtColorNoiseStrength", 0.45f});
-  s.parameters.push_back({"dirtSinksEnabled", true});
-  s.parameters.push_back({"dirtSinkStrength", 0.10f});
-  s.parameters.push_back({"dirtSinkScale", 1.55f});
-  s.parameters.push_back({"dirtSinkDensity", 0.33f});
   s.parameters.push_back({"normalScale", 1.0f});
   s.parameters.push_back({"aoStrength", 1.0f});
   s.parameters.push_back({"uvTiling", math::Vec2{1.0f, 1.0f}});

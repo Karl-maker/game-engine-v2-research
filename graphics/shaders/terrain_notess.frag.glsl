@@ -23,12 +23,6 @@ uniform float u_Metallic;
 uniform float u_SpecularIntensity;
 uniform float u_DirtColorNoiseStrength;
 
-// Dirt sinks (small depressions)
-uniform int u_DirtSinksEnabled;
-uniform float u_DirtSinkStrength;
-uniform float u_DirtSinkScale;
-uniform float u_DirtSinkDensity;
-
 // Far grass tint (cheap distant "field" look)
 uniform int u_GrassTintEnabled;
 uniform vec3 u_GrassTintColor;
@@ -143,42 +137,6 @@ float fbm(vec2 p) {
     amp *= 0.5;
   }
   return sum;
-}
-
-// Small "sink" masks on the ground plane.
-// Returns:
-// - sinkMask: 0..1 (where 1 is deepest)
-// - sinkEdge: 0..1 (edge band)
-vec2 dirtSinks(vec2 worldXZ, float scale, float density) {
-  vec2 p = worldXZ * scale;
-  vec2 cell = floor(p);
-  vec2 f = fract(p);
-
-  float best = 10.0;
-  float bestId = 0.0;
-  for (int j = -1; j <= 1; ++j) {
-    for (int i = -1; i <= 1; ++i) {
-      vec2 c = cell + vec2(float(i), float(j));
-      float id = hash12(c + 19.7);
-      vec2 center = vec2(hash12(c + 2.1), hash12(c + 9.2));
-      vec2 d = (vec2(float(i), float(j)) + center) - f;
-      float dist = dot(d, d);
-      if (dist < best) {
-        best = dist;
-        bestId = id;
-      }
-    }
-  }
-
-  float present = step(1.0 - density, bestId);
-  float r = mix(0.10, 0.28, bestId);
-  float d = sqrt(best);
-
-  float mask = present * (1.0 - smoothstep(r * 0.7, r, d));
-  // Sharper core with gentle edge.
-  float sink = pow(saturate(mask), 1.35);
-  float edge = present * smoothstep(r * 0.45, r * 0.92, d);
-  return vec2(sink, edge);
 }
 
 vec3 perturbNormal(vec3 worldPos, vec3 N, float strength) {
@@ -424,25 +382,6 @@ void main() {
     roughness = mix(roughness, rockRough, mask);
     ao = mix(ao, rockAo, mask);
     N = normalize(mix(N, rockN, mask));
-  }
-
-  if (u_DirtSinksEnabled != 0) {
-    vec2 s = dirtSinks(v_WorldPos.xz + vec2(13.7, -4.2), u_DirtSinkScale, u_DirtSinkDensity);
-    float sink = s.x;
-    float edge = s.y;
-
-    // Darker in sinks, a little darker at edges.
-    albedo *= 1.0 - sink * (0.22 * u_DirtSinkStrength) - edge * (0.08 * u_DirtSinkStrength);
-    // Sinks are smoother (compacted/wet).
-    roughness = clamp(roughness - sink * (0.25 * u_DirtSinkStrength), 0.04, 1.0);
-
-    // Push normal slightly to create a shallow depression feel.
-    float eps = 0.35;
-    float sx = dirtSinks(v_WorldPos.xz + vec2(eps, 0.0) + vec2(13.7, -4.2), u_DirtSinkScale, u_DirtSinkDensity).x;
-    float sz = dirtSinks(v_WorldPos.xz + vec2(0.0, eps) + vec2(13.7, -4.2), u_DirtSinkScale, u_DirtSinkDensity).x;
-    vec2 grad = vec2(sx - sink, sz - sink) / eps;
-    vec3 sinkN = normalize(vec3(grad.x * u_DirtSinkStrength, 1.0, grad.y * u_DirtSinkStrength));
-    N = normalize(mix(N, sinkN, sink * 0.85));
   }
 
   vec3 color = shadePbrish(albedo, N, V, roughness, metallic);

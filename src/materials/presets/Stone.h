@@ -43,15 +43,6 @@ inline ecs::ShaderComponent Stone() {
   // Base displacement influence (shading/bump only).
   s.parameters.push_back({"displacementStrength", 0.42f});
 
-  // Keep sinks subtle with textures.
-  s.parameters.push_back({"dirtSinksEnabled", true});
-  s.parameters.push_back({"dirtSinkStrength", 0.06f});
-  s.parameters.push_back({"dirtSinkScale", 1.4f});
-  s.parameters.push_back({"dirtSinkDensity", 0.25f});
-
-  // Disable pebbles by default for this preset (textures provide detail).
-  s.parameters.push_back({"pebblesEnabled", false});
-
   return s;
 }
 

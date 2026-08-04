@@ -319,8 +319,6 @@ void Game::onStart() {
   //   shader.shader.key = "graphics/shaders/terrain";
   //   shader.depthWrite = true;
 
-  //   // Scene override: remove the circular "sink" patches (often mistaken for pebbles).
-  //   shader.parameters.push_back({"dirtSinksEnabled", false});
   // }
 
   // Billboard examples: full camera-facing and yaw-only, both using animated frame sequences.

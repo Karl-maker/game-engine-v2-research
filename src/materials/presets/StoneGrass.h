@@ -36,9 +36,6 @@ inline ecs::ShaderComponent StoneGrass() {
   s.parameters.push_back({"rockBlendStrength", 1.0f});
   s.parameters.push_back({"rockNoiseScale", 0.1f});
 
-  // Use true 3D rock instances instead of the old pebble shader layer.
-  s.parameters.push_back({"pebblesEnabled", false});
-
   return s;
 }
 

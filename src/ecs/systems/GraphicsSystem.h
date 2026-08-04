@@ -99,10 +99,6 @@ class GraphicsSystem final {
     float metallic = 0.0f;
     float specularIntensity = 1.0f;
     float dirtColorNoiseStrength = 0.35f;
-    bool dirtSinksEnabled = false;
-    float dirtSinkStrength = 0.12f;
-    float dirtSinkScale = 1.25f;
-    float dirtSinkDensity = 0.35f;
 
     // Texture channels (optional).
     render::AssetRef albedoTex{};

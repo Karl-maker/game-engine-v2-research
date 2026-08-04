@@ -10,7 +10,6 @@
 #include "materials/presets/HighQualityDirtRockGrassLayer.h"
 #include "materials/presets/MudFields.h"
 #include "materials/presets/Mulch.h"
-#include "materials/presets/PebblyDirt.h"
 #include "materials/presets/Sand.h"
 #include "materials/presets/Sky.h"
 #include "materials/presets/Stone.h"

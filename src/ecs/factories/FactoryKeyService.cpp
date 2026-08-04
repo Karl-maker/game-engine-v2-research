@@ -146,7 +146,6 @@ std::optional<ecs::ShaderComponent> resolveTerrainMaterialPreset(const std::stri
   if (preset == "HighQualityDirtRockGrassLayer") return materials::presets::HighQualityDirtRockGrassLayer();
   if (preset == "MudFields") return materials::presets::MudFields();
   if (preset == "Mulch") return materials::presets::Mulch();
-  if (preset == "PebblyDirt") return materials::presets::PebblyDirt();
   if (preset == "Sand") return materials::presets::Sand();
   if (preset == "Stone") return materials::presets::Stone();
   if (preset == "StoneGrass") return materials::presets::StoneGrass();
@@ -197,6 +196,111 @@ std::optional<ecs::ShaderComponent> readTerrainMaterial(const data::JsonValue& v
   shader->receiveShadows = data::getBoolOr(*obj, "receiveShadows", shader->receiveShadows);
 
   return shader;
+}
+
+void upsertTextureBindingsBySlot(
+    std::vector<render::TextureBinding>& dst,
+    const std::vector<render::TextureBinding>& overrides) {
+  // Texture extraction prefers the first matching slot, so ensure overrides go first.
+  for (auto it = overrides.rbegin(); it != overrides.rend(); ++it) {
+    const render::TextureBinding& o = *it;
+    dst.erase(std::remove_if(dst.begin(), dst.end(), [&](const render::TextureBinding& t) { return t.slot == o.slot; }), dst.end());
+    dst.insert(dst.begin(), o);
+  }
+}
+
+void upsertMaterialParametersByName(
+    std::vector<render::MaterialParameter>& dst,
+    const std::vector<render::MaterialParameter>& overrides) {
+  // Parameter extraction walks the full list, so later parameters win.
+  for (const auto& o : overrides) {
+    dst.erase(std::remove_if(dst.begin(), dst.end(), [&](const render::MaterialParameter& p) { return p.name == o.name; }), dst.end());
+    dst.push_back(o);
+  }
+}
+
+std::optional<ecs::ShaderComponent> readTerrainMaterialMerged(const data::JsonValue& v) {
+  const auto* obj = v.tryObject();
+  if (!obj) return std::nullopt;
+
+  ecs::ShaderComponent shader{};
+  if (const auto* presetV = data::getObjectKey(*obj, "preset")) {
+    std::string preset;
+    if (data::readString(*presetV, preset)) {
+      if (auto base = resolveTerrainMaterialPreset(preset)) shader = std::move(*base);
+    }
+  }
+
+  if (const auto* tx = data::getObjectKey(*obj, "textures")) {
+    upsertTextureBindingsBySlot(shader.textures, readTextureBindings(*tx));
+  }
+  if (const auto* pv = data::getObjectKey(*obj, "parameters")) {
+    upsertMaterialParametersByName(shader.parameters, readMaterialParameters(*pv));
+  }
+
+  return shader;
+}
+
+const render::TextureBinding* findEnabledTextureSlot(
+    const ecs::ShaderComponent& shader,
+    std::initializer_list<const char*> slots) {
+  for (const auto& s : slots) {
+    for (const auto& t : shader.textures) {
+      if (t.slot != s) continue;
+      if (!t.texture.enabled || t.texture.key.empty()) continue;
+      return &t;
+    }
+  }
+  return nullptr;
+}
+
+const render::MaterialParameter* findMaterialParam(
+    const ecs::ShaderComponent& shader,
+    const char* name) {
+  for (const auto& p : shader.parameters) {
+    if (p.name == name) return &p;
+  }
+  return nullptr;
+}
+
+void appendSplatMaterialChannelOverrides(
+    const ecs::ShaderComponent& material,
+    char channel,
+    ViewableInput& out) {
+  const std::string prefix = std::string("splat_") + channel + "_";
+
+  auto pushTex = [&](const char* suffix, const render::TextureBinding* src) {
+    if (!src) return;
+    render::TextureBinding t = *src;
+    t.slot = prefix + suffix;
+    out.textures.push_back(std::move(t));
+  };
+
+  // Map a material's base texture set onto the terrain shader's rock layer for the selected splat channel.
+  pushTex("rock_albedo", findEnabledTextureSlot(material, {"albedo"}));
+  pushTex("rock_normalgl", findEnabledTextureSlot(material, {"normalgl", "normal"}));
+  pushTex("rock_roughness", findEnabledTextureSlot(material, {"roughness"}));
+  pushTex("rock_ao", findEnabledTextureSlot(material, {"ao", "ambient_occlusion"}));
+  pushTex("rock_displacement", findEnabledTextureSlot(material, {"displacement"}));
+
+  // Channel-specific rock-layer parameters.
+  out.parameters.push_back({prefix + "rockLayerEnabled", true});
+
+  if (const auto* p = findMaterialParam(material, "uvTiling")) {
+    if (const auto* v = std::get_if<math::Vec2>(&p->value)) out.parameters.push_back({prefix + "rockUvTiling", *v});
+  }
+  if (const auto* p = findMaterialParam(material, "normalScale")) {
+    if (const auto* v = std::get_if<float>(&p->value)) out.parameters.push_back({prefix + "rockNormalScale", *v});
+  }
+  if (const auto* p = findMaterialParam(material, "displacementStrength")) {
+    if (const auto* v = std::get_if<float>(&p->value)) out.parameters.push_back({prefix + "rockDisplacementStrength", *v});
+  }
+  if (const auto* p = findMaterialParam(material, "rockBlendStrength")) {
+    if (const auto* v = std::get_if<float>(&p->value)) out.parameters.push_back({prefix + "rockBlendStrength", *v});
+  }
+  if (const auto* p = findMaterialParam(material, "rockNoiseScale")) {
+    if (const auto* v = std::get_if<float>(&p->value)) out.parameters.push_back({prefix + "rockNoiseScale", *v});
+  }
 }
 
 render::TextureBinding readTextureBinding(const data::JsonValue::Object& obj) {
@@ -449,6 +553,27 @@ TerrainConfig readTerrainInput(const data::JsonValue::Object& obj, const Factory
   if (const auto* tx = data::getObjectKey(obj, "textures")) t.viewable.textures = readTextureBindings(*tx);
   if (const auto* pv = data::getObjectKey(obj, "parameters")) t.viewable.parameters = readMaterialParameters(*pv);
   if (const auto* lv = data::getObjectKey(obj, "lodBreakpoints")) t.viewable.lodBreakpoints = readShaderBreakpoints(*lv);
+  if (const auto* smv = data::getObjectKey(obj, "splatMaterials")) {
+    if (const auto* smo = smv->tryObject()) {
+      auto applyChannel = [&](const char* key, char channel) {
+        if (const auto* cv = data::getObjectKey(*smo, key)) {
+          if (auto mat = readTerrainMaterialMerged(*cv)) {
+            appendSplatMaterialChannelOverrides(*mat, channel, t.viewable);
+          }
+        }
+      };
+
+      applyChannel("r", 'r');
+      applyChannel("g", 'g');
+      applyChannel("b", 'b');
+      applyChannel("a", 'a');
+      // Allow uppercase keys too.
+      applyChannel("R", 'r');
+      applyChannel("G", 'g');
+      applyChannel("B", 'b');
+      applyChannel("A", 'a');
+    }
+  }
   t.viewable.visible = data::getBoolOr(obj, "visible", t.viewable.visible);
   t.viewable.castShadows = data::getBoolOr(obj, "castShadows", t.viewable.castShadows);
   t.viewable.receiveShadows = data::getBoolOr(obj, "receiveShadows", t.viewable.receiveShadows);

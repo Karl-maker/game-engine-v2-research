@@ -282,7 +282,6 @@ Common presets:
 - `HighQualityDirtRockLayer`
 - `HighQualityDirtRockGrassLayer`
 - `Mulch`
-- `PebblyDirt`
 - `Sand`
 - `Stone`
 - `StoneGrass`
@@ -313,6 +312,12 @@ ecs::services::TerrainConfig cfg;
 cfg.material = materials::presets::HighQualityDirtRockGrassLayer();
 cfg.shaderKey = "graphics/shaders/terrain";
 ```
+
+### Terrain splat materials
+
+Chunk configs can bind a `splat_map` (RGBA mask) and select which channel drives the terrain shader's rock-layer mask via `splatChannel` (0=R,1=G,2=B,3=A).
+
+Instead of wiring rock textures by hand, you can provide `splatMaterials` and choose a material preset per channel; the active `splatChannel` decides which preset is used for the rock layer.
 
 ## HUD / UI
 
