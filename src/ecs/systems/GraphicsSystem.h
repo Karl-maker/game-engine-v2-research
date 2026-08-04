@@ -95,6 +95,7 @@ class GraphicsSystem final {
     float baseColorG = 0.55f;
     float baseColorB = 0.45f;
     float roughness = 1.0f;
+    bool roughnessInvert = false;
     float metallic = 0.0f;
     float specularIntensity = 1.0f;
     float dirtColorNoiseStrength = 0.35f;
@@ -123,6 +124,7 @@ class GraphicsSystem final {
 
     // Displacement influence (shading/bump only).
     float displacementStrength = 0.25f;
+    bool displacementInvert = false;
 
     // Tessellation controls (used when the shader supports tessellation).
     // These map directly to the terrain tessellation shader uniforms.
@@ -363,6 +365,13 @@ class GraphicsSystem final {
       // `grass_tex0..grass_tex5` (or a single `grass_albedo`/`albedo` as a fallback).
       // When present, renderers may choose between them per-instance for variation.
       std::vector<render::AssetRef> grassTextures;
+
+      // Optional CPU-sampled density mask. Renderers may use the green channel
+      // to boost instance density in "green" areas.
+      render::AssetRef densityMaskTex{};
+      bool hasDensityMaskTex = false;
+      float densityMaskStrength = 0.0f;
+      float densityMaskTiling = 1.0f;
 
       std::vector<GrassLayerDraw> layers;
     };

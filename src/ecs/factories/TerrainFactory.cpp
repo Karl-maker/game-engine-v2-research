@@ -84,14 +84,22 @@ EntityId TerrainFactory::create(EntityRegistry& registry, const TerrainConfig& c
   }
 
   if (config.hasShader) {
-    auto& shader = registry.emplace<ecs::ShaderComponent>(id, materials::presets::HighQualityDirtRockLayer());
-    shader.shader.key = "graphics/shaders/terrain";
-    shader.depthWrite = true;
-    shader.parameters.push_back({"dirtSinksEnabled", false});
-    shader.parameters.push_back({"pebblesEnabled", false});
-    shader.parameters.push_back({"roughness", 1.0f});
-    shader.parameters.push_back({"metallic", 0.0f});
-    shader.parameters.push_back({"specularIntensity", 0.05f});
+    ecs::ShaderComponent base = config.material ? *config.material : materials::presets::HighQualityDirtRockLayer();
+    base.shader.key = config.shaderKey;
+    base.depthWrite = true;
+
+    auto& shader = registry.emplace<ecs::ShaderComponent>(id, std::move(base));
+
+    // Keep previous TerrainFactory defaults unless an explicit material is provided.
+    if (!config.material) {
+      shader.parameters.push_back({"dirtSinksEnabled", false});
+      shader.parameters.push_back({"pebblesEnabled", false});
+      shader.parameters.push_back({"roughness", 1.0f});
+      shader.parameters.push_back({"metallic", 0.0f});
+      shader.parameters.push_back({"specularIntensity", 0.05f});
+    }
+
+    appendViewableOverrides(config.viewable, shader);
   }
 
   return id;

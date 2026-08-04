@@ -1645,6 +1645,10 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
 
   const float density = std::max(0.0f, g.densityMultiplier) * std::max(0.0f, layer.density);
 
+  const bool useDensityMask = g.hasDensityMaskTex && g.densityMaskStrength > 0.0f && !g.densityMaskTex.key.empty();
+  if (useDensityMask) m_textures.requestGreenMask(g.densityMaskTex.key);
+  const bool densityMaskReady = useDensityMask ? m_textures.hasGreenMaskReady(g.densityMaskTex.key) : false;
+
   auto needsRebuild = [&](const GrassMesh& m) {
     return m.seed != g.seed || m.area.x != g.area.x || m.area.z != g.area.z || m.density != density || m.minScale != layer.minScale ||
            m.maxScale != layer.maxScale || m.bladeSpacing != layer.bladeSpacing || m.minSlopeDeg != layer.minSlopeDeg ||
@@ -1661,7 +1665,10 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
            m.islandNoise.seed != g.islandNoise.seed || m.islandNoiseOffset.x != g.islandNoiseOffset.x ||
            m.islandNoiseOffset.z != g.islandNoiseOffset.z || m.islandNoiseThreshold != g.islandNoiseThreshold ||
            m.islandNoiseSoftness != g.islandNoiseSoftness || m.islandNoiseContrast != g.islandNoiseContrast ||
-           m.islandNoiseStrength != g.islandNoiseStrength;
+           m.islandNoiseStrength != g.islandNoiseStrength ||
+           m.densityMaskKey != (useDensityMask ? g.densityMaskTex.key : std::string{}) ||
+           m.densityMaskStrength != g.densityMaskStrength || m.densityMaskTiling != g.densityMaskTiling ||
+           m.densityMaskReady != densityMaskReady;
   };
 
   if (it != m_grassMeshes.end() && !needsRebuild(it->second)) return &it->second;
@@ -1700,6 +1707,10 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
   mesh.islandNoiseContrast = g.islandNoiseContrast;
   mesh.islandNoiseStrength = g.islandNoiseStrength;
   mesh.species = layer.species;
+  mesh.densityMaskKey = useDensityMask ? g.densityMaskTex.key : std::string{};
+  mesh.densityMaskStrength = g.densityMaskStrength;
+  mesh.densityMaskTiling = g.densityMaskTiling;
+  mesh.densityMaskReady = densityMaskReady;
 
   struct GrassVert {
     float px, py, pz;
@@ -2104,8 +2115,18 @@ OpenGlRenderer::GrassMesh* OpenGlRenderer::getOrCreateGrassMesh(
 
     const float ns = std::clamp(layer.noiseStrength, 0.0f, 1.0f);
     const float noiseMask = (ns <= 0.0001f) ? 1.0f : std::clamp((n - (1.0f - ns)) / ns, 0.0f, 1.0f);
-    const float t =
+    float t =
         std::clamp((clusterMask * clusterBlend + noiseMask * (1.0f - clusterBlend)) * densityMask * islandMask, 0.0f, 1.0f);
+
+    if (useDensityMask && densityMaskReady) {
+      const float invAx = 1.0f / std::max(0.001f, g.area.x);
+      const float invAz = 1.0f / std::max(0.001f, g.area.z);
+      const float u = (x * invAx + 0.5f) * std::max(0.001f, g.densityMaskTiling);
+      const float v = (z * invAz + 0.5f) * std::max(0.001f, g.densityMaskTiling);
+      const float mask = m_textures.sampleGreenMask(g.densityMaskTex.key, u, v).value_or(0.0f);
+      t = std::clamp(t * (1.0f + std::max(0.0f, g.densityMaskStrength) * mask), 0.0f, 1.0f);
+    }
+
     if (rand01(seed ^ (idx * 1013904223u)) > t) continue;
 
     const float groundY = sampleGroundY(worldX, worldZ);
@@ -2778,6 +2799,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locBase >= 0) glUniform4f(locBase, t.baseColorR, t.baseColorG, t.baseColorB, 1.0f);
     const GLint locRough = glGetUniformLocation(program->programId, "u_Roughness");
     if (locRough >= 0) glUniform1f(locRough, t.roughness);
+    const GLint locRoughInv = glGetUniformLocation(program->programId, "u_RoughnessInvert");
+    if (locRoughInv >= 0) glUniform1i(locRoughInv, t.roughnessInvert ? 1 : 0);
     const GLint locMet = glGetUniformLocation(program->programId, "u_Metallic");
     if (locMet >= 0) glUniform1f(locMet, t.metallic);
     const GLint locSpec = glGetUniformLocation(program->programId, "u_SpecularIntensity");
@@ -2791,6 +2814,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locAoStrength >= 0) glUniform1f(locAoStrength, t.aoStrength);
     const GLint locDispStrength = glGetUniformLocation(program->programId, "u_DisplacementStrength");
     if (locDispStrength >= 0) glUniform1f(locDispStrength, t.displacementStrength);
+    const GLint locDispInv = glGetUniformLocation(program->programId, "u_DisplacementInvert");
+    if (locDispInv >= 0) glUniform1i(locDispInv, t.displacementInvert ? 1 : 0);
 
     // Textures (async loaded).
     const GLuint albedoId = (t.hasAlbedoTex) ? m_textures.requestTexture(t.albedoTex.key, true) : 0;

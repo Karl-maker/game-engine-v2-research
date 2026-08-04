@@ -144,6 +144,7 @@ std::optional<ecs::ShaderComponent> resolveTerrainMaterialPreset(const std::stri
   if (preset == "HighQualityDirt") return materials::presets::HighQualityDirt();
   if (preset == "HighQualityDirtRockLayer") return materials::presets::HighQualityDirtRockLayer();
   if (preset == "HighQualityDirtRockGrassLayer") return materials::presets::HighQualityDirtRockGrassLayer();
+  if (preset == "MudFields") return materials::presets::MudFields();
   if (preset == "Mulch") return materials::presets::Mulch();
   if (preset == "PebblyDirt") return materials::presets::PebblyDirt();
   if (preset == "Sand") return materials::presets::Sand();

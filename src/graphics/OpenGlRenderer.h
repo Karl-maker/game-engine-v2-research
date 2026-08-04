@@ -168,6 +168,11 @@ class OpenGlRenderer final {
     float islandNoiseStrength = 1.0f;
     std::string species;
 
+    std::string densityMaskKey;
+    float densityMaskStrength = 0.0f;
+    float densityMaskTiling = 1.0f;
+    bool densityMaskReady = false;
+
     float chunkSizeMeters = 6.0f;
     std::vector<Chunk> chunks;
   };

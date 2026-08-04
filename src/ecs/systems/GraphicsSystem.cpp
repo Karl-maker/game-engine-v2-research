@@ -394,6 +394,8 @@ void extractGrassTextures(const ecs::ShaderComponent& shader, GraphicsSystem::Fr
   if (out.grassTextures.empty() && out.hasAlbedoTex) {
     out.grassTextures.push_back(out.albedoTex);
   }
+
+  tryBind("density_mask", out.densityMaskTex, out.hasDensityMaskTex);
 }
 
 void extractMeshTextures(const ecs::ShaderComponent& shader, GraphicsSystem::MeshDraw& out) {
@@ -551,6 +553,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
 
         (void)readBaseColorParam(resolvedShader, draw.baseColorR, draw.baseColorG, draw.baseColorB);
         (void)readFloatParam(resolvedShader, "roughness", draw.roughness);
+        (void)readBoolParam(resolvedShader, "roughnessInvert", draw.roughnessInvert);
         (void)readFloatParam(resolvedShader, "metallic", draw.metallic);
         (void)readFloatParam(resolvedShader, "specularIntensity", draw.specularIntensity);
         (void)readFloatParam(resolvedShader, "dirtColorNoiseStrength", draw.dirtColorNoiseStrength);
@@ -564,6 +567,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(resolvedShader, "normalScale", draw.normalStrength);
         (void)readFloatParam(resolvedShader, "aoStrength", draw.aoStrength);
         (void)readFloatParam(resolvedShader, "displacementStrength", draw.displacementStrength);
+        (void)readBoolParam(resolvedShader, "displacementInvert", draw.displacementInvert);
 
         // Tessellation controls (if present on the material).
         (void)readFloatParam(resolvedShader, "tessNear", draw.tessNear);
@@ -888,6 +892,8 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
 
         extractGrassTextures(resolvedShader, draw);
         (void)readFloatParam(resolvedShader, "grassAlbedoUvScale", draw.albedoUvScale);
+        (void)readFloatParam(resolvedShader, "densityMaskStrength", draw.densityMaskStrength);
+        (void)readFloatParam(resolvedShader, "densityMaskTiling", draw.densityMaskTiling);
 
         draw.layers.reserve(grass.layers.size());
         for (const auto& l : grass.layers) {

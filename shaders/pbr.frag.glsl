@@ -45,12 +45,14 @@ uniform bool u_UseNormal = false;
 uniform float u_NormalStrength;
 uniform sampler2D u_RoughnessTex;
 uniform bool u_UseRoughness = false;
+uniform int u_RoughnessInvert = 0;
 uniform sampler2D u_AOTex;
 uniform bool u_UseAO = false;
 uniform float u_AOStrength;
 uniform sampler2D u_DisplacementTex;
 uniform bool u_UseDisplacement = false;
 uniform float u_DisplacementStrength;
+uniform int u_DisplacementInvert = 0;
 
 uniform vec2 u_UvTiling;
 
@@ -315,6 +317,7 @@ void main() {
 
   if (u_UseRoughness) {
     float rTex = texture(u_RoughnessTex, uv).r;
+    if (u_RoughnessInvert != 0) rTex = 1.0 - rTex;
     roughness = clamp(roughness * rTex, 0.04, 1.0);
   }
 
@@ -326,6 +329,7 @@ void main() {
   if (u_UseDisplacement) {
     // Minimal displacement influence (shading-only; no vertex displacement).
     float h = texture(u_DisplacementTex, uv).r;
+    if (u_DisplacementInvert != 0) h = 1.0 - h;
     albedo *= 0.92 + (h - 0.5) * (0.26 * u_DisplacementStrength);
     N = applyHeightBump(N, u_DisplacementTex, uv, 0.95 * u_DisplacementStrength);
   }

@@ -26,6 +26,13 @@ class TextureService final {
     bool ready = false;
   };
 
+  struct GreenMask final {
+    int width = 0;
+    int height = 0;
+    bool ready = false;
+    std::vector<std::uint8_t> green;  // size = width*height, 0..255
+  };
+
   TextureService();
   ~TextureService();
 
@@ -38,6 +45,9 @@ class TextureService final {
   // Returns cached GL texture id if ready, else 0. Also schedules load if needed.
   std::uint32_t requestTexture(const std::string& path, bool srgb);
 
+  // Schedules a CPU-side downsampled green-channel mask build for the texture.
+  void requestGreenMask(const std::string& path);
+
   // Upload decoded textures to GPU. Must be called on the OpenGL context thread.
   void flushUploads(std::size_t maxUploadsPerFrame = 4);
 
@@ -46,10 +56,17 @@ class TextureService final {
 
   std::optional<TextureInfo> getInfo(const std::string& path) const;
 
+  bool hasGreenMaskReady(const std::string& path) const;
+  std::optional<float> sampleGreenMask(const std::string& path, float u, float v) const;
+
  private:
   struct PendingDecode final {
     std::string path;
     bool srgb = false;
+  };
+
+  struct PendingMaskDecode final {
+    std::string path;
   };
 
   struct PendingUpload final {
@@ -64,6 +81,9 @@ class TextureService final {
     enum class State { Unloaded, Queued, Decoding, Ready, Failed };
     State state = State::Unloaded;
     TextureInfo info{};
+    GreenMask greenMask{};
+    bool greenMaskQueued = false;
+    bool wantGreenMask = false;
   };
 
   void workerMain();
@@ -72,6 +92,7 @@ class TextureService final {
   mutable std::mutex m_mutex;
   std::unordered_map<std::string, Entry> m_entries;
   std::vector<PendingDecode> m_decodeQueue;
+  std::vector<PendingMaskDecode> m_maskDecodeQueue;
   std::vector<PendingUpload> m_uploadQueue;
 
   std::thread m_worker;

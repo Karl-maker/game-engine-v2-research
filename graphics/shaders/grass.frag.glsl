@@ -185,9 +185,9 @@ void main() {
     float safeSunIntensity = max(u_SunIntensity, 0.75);
     color *= lambert * safeSunColor * safeSunIntensity;
 
+    // Distance haze: bias toward darker silhouettes at distance (avoid "lightening" LOD look).
     float haze = smoothstep(6.0, 28.0, v_ViewDist) * saturate(u_CarpetHaze);
-    vec3 hazeColor = vec3(0.67, 0.72, 0.34) * u_SpeciesTint;
-    color = mix(color, hazeColor, haze * 0.34);
+    color *= 1.0 - haze * 0.22;
 
     color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
     o_Color = vec4(color, 1.0);
@@ -304,8 +304,8 @@ void main() {
   vec3 light = u_SunColor * u_SunIntensity;
   color *= (0.34 + 0.66 * wrap) * light;
 
-  vec3 hazeColor = vec3(0.54, 0.66, 0.24) * u_SpeciesTint;
-  color = mix(color, hazeColor, camHaze * 0.48);
+  // Distance haze: bias toward darker silhouettes at distance (avoid "lightening" LOD look).
+  color *= 1.0 - camHaze * 0.26;
 
   color = pow(color, vec3(1.0 / 2.2));
   o_Color = vec4(color, 1.0);

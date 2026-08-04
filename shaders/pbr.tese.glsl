@@ -26,6 +26,7 @@ uniform vec2 u_UvTiling;
 uniform sampler2D u_DisplacementTex;
 uniform bool u_UseDisplacement;
 uniform float u_DisplacementStrength;
+uniform int u_DisplacementInvert;
 
 uniform sampler2D u_NormalTex;
 uniform bool u_UseNormal;
@@ -102,7 +103,9 @@ void main() {
   vec2 uvTiled = uv * u_UvTiling;
   float baseDisp = 0.0;
   if (u_UseDisplacement) {
-    baseDisp = (texture(u_DisplacementTex, uvTiled).r - 0.5) * u_DisplacementStrength;
+    float h = texture(u_DisplacementTex, uvTiled).r;
+    if (u_DisplacementInvert != 0) h = 1.0 - h;
+    baseDisp = (h - 0.5) * u_DisplacementStrength;
   }
 
   // Add displacement derived from normal-map detail (acts like micro-height).
