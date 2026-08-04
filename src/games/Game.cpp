@@ -264,7 +264,8 @@ void Game::onStart() {
     cfg.base.sensorCone.enabled = true;
 
     cfg.camera.cameraEntity = m_camera;
-    cfg.camera.transform.position = {0.0f, 3.0f, -6.0f};
+    cfg.camera.transform.position = {0.0f, 1.0f, -6.0f};
+    cfg.camera.height = 0.1f;
     cfg.camera.transform.rotationDeg = {12.0f, 0.0f, 0.0f};
 
     cfg.hud.fillColor = {1.0f, 1.0f, 1.0f};

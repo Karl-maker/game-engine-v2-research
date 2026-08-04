@@ -9,6 +9,7 @@
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "ecs/components/RigidbodyComponent.h"
+#include "ecs/components/MotionComponent.h"
 
 #include <algorithm>
 
@@ -39,6 +40,15 @@ EntityId PhysicalObjectFactory::create(
     collider.offset = config.physical.colliderOffset;
     collider.isTrigger = config.physical.colliderIsTrigger;
     collider.collisionLayer = config.physical.collisionLayer;
+  }
+
+  // Ensure collidable dynamic objects participate in collision resolution.
+  if (config.physical.hasCollider && config.physical.hasRigidbody && !config.physical.kinematic) {
+    if (!registry.tryGet<ecs::MotionComponent>(id)) {
+      auto& motion = registry.emplace<ecs::MotionComponent>(id);
+      motion.mode = ecs::MotionComponent::Mode::Walking;
+      motion.isGrounded = false;
+    }
   }
 
   // @TODO - Add Combat Volume for basic objects

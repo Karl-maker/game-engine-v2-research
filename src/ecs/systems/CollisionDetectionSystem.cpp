@@ -17,6 +17,17 @@ namespace {
 
 using Aabb = ecs::services::SpatialHashGridService::Aabb;
 
+bool layersCollide(physics::LayerMask a, physics::LayerMask b) {
+  if (a == physics::kAllLayers || b == physics::kAllLayers) return true;
+  if ((a & b) != 0u) return true;
+  // Default matrix: world <-> character should collide.
+  const bool aWorld = (a & physics::kLayerWorld) != 0u;
+  const bool aChar = (a & physics::kLayerCharacter) != 0u;
+  const bool bWorld = (b & physics::kLayerWorld) != 0u;
+  const bool bChar = (b & physics::kLayerCharacter) != 0u;
+  return (aWorld && bChar) || (aChar && bWorld);
+}
+
 Aabb colliderAabb(const ecs::TransformComponent& tr, const ecs::ColliderComponent& c) {
   const math::Vec3 center = tr.position + c.offset;
   math::Vec3 half{};
@@ -98,11 +109,11 @@ void CollisionDetectionSystem::tick(EntityRegistry& registry, ecs::services::Eve
   std::unordered_map<ecs::EntityId, Body> bodies;
   m_grid.clear();
 
-  registry.view<ecs::ColliderComponent, ecs::TransformComponent, ecs::MotionComponent>(
+  // Include static colliders too (they may not have MotionComponent).
+  registry.view<ecs::ColliderComponent, ecs::TransformComponent>(
       [&](ecs::EntityId id,
           const ecs::ColliderComponent& collider,
-          const ecs::TransformComponent& tr,
-          const ecs::MotionComponent&) {
+          const ecs::TransformComponent& tr) {
         if (collider.isTrigger) return;
         if (collider.shape == ecs::ColliderComponent::Shape::Terrain) return;
         Body body;
@@ -120,7 +131,9 @@ void CollisionDetectionSystem::tick(EntityRegistry& registry, ecs::services::Eve
     if (aIt == bodies.end() || bIt == bodies.end()) continue;
     const auto& a = aIt->second;
     const auto& b = bIt->second;
-    if ((a.collider.collisionLayer & b.collider.collisionLayer) == 0u) continue;
+    // Skip purely static pairs (no MotionComponent on either side).
+    if (!registry.tryGet<ecs::MotionComponent>(a.id) && !registry.tryGet<ecs::MotionComponent>(b.id)) continue;
+    if (!layersCollide(a.collider.collisionLayer, b.collider.collisionLayer)) continue;
     if (!intersects(a.aabb, b.aabb)) continue;
     events.emit<ecs::events::CollisionDetectionEvent>(makeAabbContact(a.id, b.id, a.aabb, b.aabb, timeSeconds));
   }
