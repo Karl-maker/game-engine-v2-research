@@ -6,6 +6,7 @@
 // Small helpers for reading typed values from JsonValue objects.
 
 #include "data/Json.h"
+#include "math/Vec2.h"
 #include "math/Vec3.h"
 
 #include <algorithm>
@@ -79,6 +80,26 @@ inline bool readVec3(const JsonValue& v, math::Vec3& out) {
   return false;
 }
 
+inline bool readVec2(const JsonValue& v, math::Vec2& out) {
+  if (const auto* a = v.tryArray()) {
+    if (a->size() < 2) return false;
+    float x = 0.0f, y = 0.0f;
+    if (!readFloat((*a)[0], x) || !readFloat((*a)[1], y)) return false;
+    out = {x, y};
+    return true;
+  }
+  if (const auto* o = v.tryObject()) {
+    float x = 0.0f, y = 0.0f;
+    const JsonValue* jx = getObjectKey(*o, "x");
+    const JsonValue* jy = getObjectKey(*o, "y");
+    if (!jx || !jy) return false;
+    if (!readFloat(*jx, x) || !readFloat(*jy, y)) return false;
+    out = {x, y};
+    return true;
+  }
+  return false;
+}
+
 inline float getFloatOr(const JsonValue::Object& obj, const char* key, float fallback) {
   if (const auto* v = getObjectKey(obj, key)) {
     float f = fallback;
@@ -112,4 +133,3 @@ inline std::string getStringOr(const JsonValue::Object& obj, const char* key, st
 }
 
 }  // namespace data
-

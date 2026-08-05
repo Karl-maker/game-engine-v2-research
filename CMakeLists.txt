@@ -62,6 +62,7 @@ add_executable(duppy
   src/core/GameLoopService.cpp
   src/core/SteadyTimeSource.cpp
   src/core/ThreadService.cpp
+  src/games/WorldConfig.cpp
   src/games/Game.cpp
   src/games/Tooling.cpp
 )

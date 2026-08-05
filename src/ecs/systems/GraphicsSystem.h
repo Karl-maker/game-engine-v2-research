@@ -323,14 +323,22 @@ class GraphicsSystem final {
 
     struct FogDraw final {
       EntityId entity = kInvalidEntityId;
-      math::Vec3 center{};
-      math::Vec3 sizeMeters{100.0f, 50.0f, 100.0f};
+      math::Vec3 anchor{};
       render::Color color{0.70f, 0.78f, 0.92f, 1.0f};
-      float density = 0.012f;
-      float startDistance = 18.0f;
-      float endDistance = 220.0f;
-      float heightFalloff = 0.06f;
-      float baseHeightOffset = 0.0f;
+      float density = 0.028f;
+      float startDistance = 6.0f;
+      float endDistance = 110.0f;
+      float maxOpacity = 0.92f;
+      float distanceExponent = 1.35f;
+      float heightFalloff = 0.085f;
+      float baseHeightOffset = -4.0f;
+      float horizonStrength = 0.26f;
+      float noiseScale = 0.028f;
+      float noiseStrength = 0.42f;
+      float detailNoiseScale = 0.095f;
+      float detailNoiseStrength = 0.18f;
+      math::Vec2 windDirection{1.0f, 0.35f};
+      float windSpeed = 0.75f;
     };
 
     struct SkyDraw final {

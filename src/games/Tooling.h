@@ -19,6 +19,7 @@
 #include "ecs/services/FileChunkSource.h"
 #include "ecs/systems/GraphicsSystem.h"
 #include "ecs/systems/SkeletonAssetSyncSystem.h"
+#include "ecs/systems/SkyPresetSystem.h"
 #include "graphics/OpenGlRenderer.h"
 #include "math/Vec3.h"
 
@@ -62,6 +63,7 @@ class Tooling final : public core::IGame {
   ecs::EntityId m_sky = ecs::kInvalidEntityId;
   ecs::EntityId m_fog = ecs::kInvalidEntityId;
   ecs::systems::SkeletonAssetSyncSystem m_skeletonAssetSyncSystem;
+  ecs::systems::SkyPresetSystem m_skyPresetSystem;
 
   std::string m_debugOverlayText;
 };

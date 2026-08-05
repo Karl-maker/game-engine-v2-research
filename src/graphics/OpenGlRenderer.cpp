@@ -46,6 +46,49 @@ terrain::ScalarMapCache& scalarMapCache() {
   return cache;
 }
 
+static void applyFogUniforms(GLuint programId,
+                             const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog,
+                             float timeSeconds) {
+  const GLint locFogOn = glGetUniformLocation(programId, "u_FogEnabled");
+  if (locFogOn >= 0) glUniform1i(locFogOn, fog ? 1 : 0);
+  if (!fog) return;
+
+  const GLint locFogCol = glGetUniformLocation(programId, "u_FogColor");
+  if (locFogCol >= 0) glUniform3f(locFogCol, fog->color.r, fog->color.g, fog->color.b);
+  const GLint locFogDen = glGetUniformLocation(programId, "u_FogDensity");
+  if (locFogDen >= 0) glUniform1f(locFogDen, fog->density);
+  const GLint locFogStart = glGetUniformLocation(programId, "u_FogStart");
+  if (locFogStart >= 0) glUniform1f(locFogStart, fog->startDistance);
+  const GLint locFogEnd = glGetUniformLocation(programId, "u_FogEnd");
+  if (locFogEnd >= 0) glUniform1f(locFogEnd, fog->endDistance);
+  const GLint locFogMax = glGetUniformLocation(programId, "u_FogMaxOpacity");
+  if (locFogMax >= 0) glUniform1f(locFogMax, fog->maxOpacity);
+  const GLint locFogExp = glGetUniformLocation(programId, "u_FogDistanceExponent");
+  if (locFogExp >= 0) glUniform1f(locFogExp, fog->distanceExponent);
+  const GLint locFogHf = glGetUniformLocation(programId, "u_FogHeightFalloff");
+  if (locFogHf >= 0) glUniform1f(locFogHf, fog->heightFalloff);
+  const GLint locFogBase = glGetUniformLocation(programId, "u_FogBaseHeight");
+  if (locFogBase >= 0) glUniform1f(locFogBase, fog->anchor.y + fog->baseHeightOffset);
+  const GLint locFogHoriz = glGetUniformLocation(programId, "u_FogHorizonStrength");
+  if (locFogHoriz >= 0) glUniform1f(locFogHoriz, fog->horizonStrength);
+  const GLint locFogNoiseScale = glGetUniformLocation(programId, "u_FogNoiseScale");
+  if (locFogNoiseScale >= 0) glUniform1f(locFogNoiseScale, fog->noiseScale);
+  const GLint locFogNoiseStrength = glGetUniformLocation(programId, "u_FogNoiseStrength");
+  if (locFogNoiseStrength >= 0) glUniform1f(locFogNoiseStrength, fog->noiseStrength);
+  const GLint locFogDetailScale = glGetUniformLocation(programId, "u_FogDetailNoiseScale");
+  if (locFogDetailScale >= 0) glUniform1f(locFogDetailScale, fog->detailNoiseScale);
+  const GLint locFogDetailStrength = glGetUniformLocation(programId, "u_FogDetailNoiseStrength");
+  if (locFogDetailStrength >= 0) glUniform1f(locFogDetailStrength, fog->detailNoiseStrength);
+  const GLint locFogWindDir = glGetUniformLocation(programId, "u_FogWindDirection");
+  if (locFogWindDir >= 0) glUniform2f(locFogWindDir, fog->windDirection.x, fog->windDirection.y);
+  const GLint locFogWindSpeed = glGetUniformLocation(programId, "u_FogWindSpeed");
+  if (locFogWindSpeed >= 0) glUniform1f(locFogWindSpeed, fog->windSpeed);
+  const GLint locFogTime = glGetUniformLocation(programId, "u_FogTime");
+  if (locFogTime >= 0) glUniform1f(locFogTime, timeSeconds);
+  const GLint locFogNoiseOffset = glGetUniformLocation(programId, "u_FogNoiseOffset");
+  if (locFogNoiseOffset >= 0) glUniform2f(locFogNoiseOffset, fog->anchor.x, fog->anchor.z);
+}
+
 int mipFromTerrainLodStep(int lodStep, int quality, float mipBias, int maxMip) {
   lodStep = std::max(1, lodStep);
   quality = std::clamp(quality, 0, 2);
@@ -2800,27 +2843,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       const GLint locSeed = glGetUniformLocation(program->programId, "u_StarsSeed");
       if (locSeed >= 0) glUniform1ui(locSeed, sky.starsSeed);
 
-      const GLint locFogOn = glGetUniformLocation(program->programId, "u_FogEnabled");
-      if (locFogOn >= 0) glUniform1i(locFogOn, fog ? 1 : 0);
-      if (fog) {
-        const math::Vec3 half = fog->sizeMeters * 0.5f;
-        const GLint locFogCenter = glGetUniformLocation(program->programId, "u_FogCenter");
-        if (locFogCenter >= 0) glUniform3f(locFogCenter, fog->center.x, fog->center.y, fog->center.z);
-        const GLint locFogHalf = glGetUniformLocation(program->programId, "u_FogHalfSize");
-        if (locFogHalf >= 0) glUniform3f(locFogHalf, half.x, half.y, half.z);
-        const GLint locFogCol = glGetUniformLocation(program->programId, "u_FogColor");
-        if (locFogCol >= 0) glUniform3f(locFogCol, fog->color.r, fog->color.g, fog->color.b);
-        const GLint locFogDen = glGetUniformLocation(program->programId, "u_FogDensity");
-        if (locFogDen >= 0) glUniform1f(locFogDen, fog->density);
-        const GLint locFogStart = glGetUniformLocation(program->programId, "u_FogStart");
-        if (locFogStart >= 0) glUniform1f(locFogStart, fog->startDistance);
-        const GLint locFogEnd = glGetUniformLocation(program->programId, "u_FogEnd");
-        if (locFogEnd >= 0) glUniform1f(locFogEnd, fog->endDistance);
-        const GLint locFogHf = glGetUniformLocation(program->programId, "u_FogHeightFalloff");
-        if (locFogHf >= 0) glUniform1f(locFogHf, fog->heightFalloff);
-        const GLint locFogBase = glGetUniformLocation(program->programId, "u_FogBaseHeight");
-        if (locFogBase >= 0) glUniform1f(locFogBase, fog->baseHeightOffset);
-      }
+      applyFogUniforms(program->programId, fog, timeSeconds);
 
       glBindVertexArray(m_skyVao);
       glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -2918,27 +2941,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       if (locTime >= 0) glUniform1f(locTime, timeSeconds);
       if (locColorNoise >= 0) glUniform1f(locColorNoise, t.dirtColorNoiseStrength);
 
-      const GLint locFogOn = glGetUniformLocation(program->programId, "u_FogEnabled");
-      if (locFogOn >= 0) glUniform1i(locFogOn, fog ? 1 : 0);
-      if (fog) {
-        const math::Vec3 half = fog->sizeMeters * 0.5f;
-        const GLint locFogCenter = glGetUniformLocation(program->programId, "u_FogCenter");
-        if (locFogCenter >= 0) glUniform3f(locFogCenter, fog->center.x, fog->center.y, fog->center.z);
-        const GLint locFogHalf = glGetUniformLocation(program->programId, "u_FogHalfSize");
-        if (locFogHalf >= 0) glUniform3f(locFogHalf, half.x, half.y, half.z);
-        const GLint locFogCol = glGetUniformLocation(program->programId, "u_FogColor");
-        if (locFogCol >= 0) glUniform3f(locFogCol, fog->color.r, fog->color.g, fog->color.b);
-        const GLint locFogDen = glGetUniformLocation(program->programId, "u_FogDensity");
-        if (locFogDen >= 0) glUniform1f(locFogDen, fog->density);
-        const GLint locFogStart = glGetUniformLocation(program->programId, "u_FogStart");
-        if (locFogStart >= 0) glUniform1f(locFogStart, fog->startDistance);
-        const GLint locFogEnd = glGetUniformLocation(program->programId, "u_FogEnd");
-        if (locFogEnd >= 0) glUniform1f(locFogEnd, fog->endDistance);
-        const GLint locFogHf = glGetUniformLocation(program->programId, "u_FogHeightFalloff");
-        if (locFogHf >= 0) glUniform1f(locFogHf, fog->heightFalloff);
-        const GLint locFogBase = glGetUniformLocation(program->programId, "u_FogBaseHeight");
-        if (locFogBase >= 0) glUniform1f(locFogBase, fog->baseHeightOffset);
-      }
+      applyFogUniforms(program->programId, fog, timeSeconds);
 
       const GLint locShadowOn = glGetUniformLocation(program->programId, "u_ShadowEnabled");
       if (locShadowOn >= 0) glUniform1i(locShadowOn, (shadowOn && t.receiveShadows) ? 1 : 0);
@@ -3375,6 +3378,9 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       if (locSunCol >= 0) glUniform3f(locSunCol, sunCol.x, sunCol.y, sunCol.z);
       const GLint locSunInt = glGetUniformLocation(program->programId, "u_SunIntensity");
       if (locSunInt >= 0) glUniform1f(locSunInt, sunIntensity);
+      const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog =
+          frame.fogVolumes.empty() ? nullptr : &frame.fogVolumes[0];
+      applyFogUniforms(program->programId, fog, timeSeconds);
       const GLint locOrigin = glGetUniformLocation(program->programId, "u_InstanceOrigin");
       if (locOrigin >= 0) glUniform3f(locOrigin, gr.position.x, gr.position.y, gr.position.z);
 
@@ -3635,6 +3641,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locSunCol >= 0) glUniform3f(locSunCol, sunCol.x, sunCol.y, sunCol.z);
     const GLint locSunInt = glGetUniformLocation(program->programId, "u_SunIntensity");
     if (locSunInt >= 0) glUniform1f(locSunInt, sunIntensity);
+    const float timeSeconds = static_cast<float>(glfwGetTime());
+    const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog =
+        frame.fogVolumes.empty() ? nullptr : &frame.fogVolumes[0];
+    applyFogUniforms(program->programId, fog, timeSeconds);
 
     const GLint locShadowOn = glGetUniformLocation(program->programId, "u_ShadowEnabled");
     if (locShadowOn >= 0) glUniform1i(locShadowOn, (shadowOn && m.receiveShadows) ? 1 : 0);
@@ -3888,6 +3898,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     if (locSunCol >= 0) glUniform3f(locSunCol, sunCol.x, sunCol.y, sunCol.z);
     const GLint locSunI = glGetUniformLocation(program->programId, "u_SunIntensity");
     if (locSunI >= 0) glUniform1f(locSunI, sunIntensity);
+    const float timeSeconds = static_cast<float>(glfwGetTime());
+    const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog =
+        frame.fogVolumes.empty() ? nullptr : &frame.fogVolumes[0];
+    applyFogUniforms(program->programId, fog, timeSeconds);
 
     // Shadow uniforms (optional).
     const GLint locShadowOn = glGetUniformLocation(program->programId, "u_ShadowEnabled");

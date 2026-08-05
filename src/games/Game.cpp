@@ -1,4 +1,5 @@
 #include "games/Game.h"
+#include "games/WorldConfig.h"
 
 // Author: Karl-Johan Bailey
 
@@ -225,56 +226,13 @@ void Game::onStart() {
 
   m_meshAssets.start();
 
+  PersistentWorldConfig persistentConfig{};
+  (void)loadPersistentWorldConfig(m_config.chunkConfigPath, persistentConfig);
+
   m_camera = m_registry.createEntity("camera");
   {
-    ecs::services::PlayableCharacterConfig cfg{};
-    cfg.base.transform.name = "business_man";
-    cfg.base.transform.position = {0.0f, 50.0f, 0.0f};
-    cfg.base.transform.rotationDeg = {0.0f, 0.0f, 0.0f};
-
-    cfg.base.viewable.meshId = "business-man";
-    cfg.base.viewable.meshKey = "assets/models/business-man/scene.gltf";
-    cfg.base.viewable.meshType = ecs::MeshComponent::MeshType::Skinned;
-    cfg.base.viewable.meshScale = {1.0f, 1.0f, 1.0f};
-    cfg.base.viewable.skeletonId = "business-man#skin0";
-    cfg.base.viewable.castShadows = true;
-    cfg.base.viewable.receiveShadows = true;
-    cfg.base.viewable.tags = {"character", "player"};
-    cfg.base.viewable.shaderKey = "graphics/shaders/model";
-
-
-    cfg.base.physical.hasRigidbody = true;
-    cfg.base.physical.mass = 80.0f;
-    cfg.base.physical.useGravity = true;
-    cfg.base.physical.kinematic = false;
-    cfg.base.physical.hasCollider = true;
-    cfg.base.physical.colliderShape = ecs::ColliderComponent::Shape::Capsule;
-    cfg.base.physical.colliderSize = {0.38f, 1.85f, 0.38f};
-    cfg.base.physical.colliderOffset = {0.0f, 0.925f, 0.0f};
-    cfg.base.physical.collisionLayer = physics::kLayerCharacter;
-
-    cfg.base.stats.walkingSpeed = 1.8f;
-    cfg.base.stats.runningSpeed = 7.0f;
-    
-    cfg.base.skeleton.skeletonData = "assets/models/business-man/scene.gltf";
-
-    cfg.base.animation.enabled = true;
-    cfg.base.pose.enabled = true;
-    cfg.base.ik.enabled = true;
-    cfg.base.sensorCone.enabled = true;
-
+    ecs::services::PlayableCharacterConfig cfg = persistentConfig.player;
     cfg.camera.cameraEntity = m_camera;
-    cfg.camera.transform.position = {0.0f, 1.0f, -6.0f};
-    cfg.camera.height = 0.1f;
-    cfg.camera.transform.rotationDeg = {12.0f, 0.0f, 0.0f};
-
-    cfg.hud.fillColor = {1.0f, 1.0f, 1.0f};
-    cfg.hud.heightPx = 190.0f;
-    cfg.hud.marginBottomPx = 43.0f;
-    cfg.hud.fillHeightRatio = 0.15f;
-    cfg.hud.fillWidthRatio = 0.67f;
-    cfg.hud.fillOffsetPx = {50.0f, -4.0f};
-    cfg.hud.flipU = true;
 
     ecs::services::PlayableCharacterFactory factory;
     m_player = factory.create(m_registry, cfg);
@@ -439,51 +397,21 @@ void Game::onStart() {
     skyEntity = m_registry.createEntity("sky");
     m_registry.emplace<ecs::TransformComponent>(skyEntity);
 
-    auto& skyc = m_registry.emplace<ecs::SkyComponent>(skyEntity);
-    skyc.skyType = ecs::SkyComponent::SkyType::Day;
-    skyc.useSkyTypePreset = true;
+    auto& skyc = m_registry.emplace<ecs::SkyComponent>(skyEntity, persistentConfig.sky);
     skyc.linkedDirectionalLightEntity = m_light;
-    skyc.cloudType = ecs::SkyComponent::CloudType::Scattered;
-    skyc.quality = ecs::SkyComponent::Quality::High;
-    skyc.cloudCoverage = 0.78f;
-    skyc.cloudDensity = 0.85f;
-    skyc.cloudScale = 1.0f;
-    skyc.cloudSpeed = 0.020f;
-    skyc.cloudWindDirection = {1.0f, 0.35f};
-    skyc.cloudTimeScale = 1.0f;
-    skyc.cloudTurbulence = 0.45f;
-    skyc.cloudLightAbsorption = 0.55f;
-    skyc.cloudHeightMeters = 220.0f;
-    skyc.starsSeed = 4242u;
-    skyc.starsIntensity = 2.1f;
-    skyc.starsDensity = 0.70f;
-    skyc.starsSize = 1.05f;
-    skyc.starsTwinkleStrength = 0.22f;
-    skyc.starsTwinkleSpeed = 0.55f;
 
     auto& sh = m_registry.emplace<ecs::ShaderComponent>(skyEntity, materials::presets::RealisticSkyClouds());
     sh.shader.key = "graphics/shaders/sky";
   }
 
-  // Fog/mist volume (hide terrain edge).
+  // Global ground mist.
   ecs::EntityId fogEntity = ecs::kInvalidEntityId;
   {
     fogEntity = m_registry.createEntity("mist");
     auto& tr = m_registry.emplace<ecs::TransformComponent>(fogEntity);
-    tr.position = {0.0f, 6.0f, 0.0f};
+    tr.position = persistentConfig.fogAnchor;
 
-    const float w = 96.0f * 1.0f;
-    const float d = 96.0f * 1.0f;
-    auto& f = m_registry.emplace<ecs::FogVolumeComponent>(fogEntity);
-    f.sizeMeters = {w * 1.25f, 80.0f, d * 1.25f};
-    // Placeholder values; SkyPresetSystem will drive these when linked from SkyComponent.
-    // f.color = {0.55f, 0.62f, 0.72f, 1.0f};
-    f.density = 5000000.0f;
-    f.startDistance = 0.01f;
-    f.endDistance = 160.0f;
-    f.heightFalloff = 0.045f;
-    f.baseHeightOffset = -4.0f;
-    f.enabled = true;
+    m_registry.emplace<ecs::FogVolumeComponent>(fogEntity, persistentConfig.fog);
   }
 
   if (skyEntity != ecs::kInvalidEntityId && fogEntity != ecs::kInvalidEntityId) {

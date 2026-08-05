@@ -1,5 +1,6 @@
 #version 410 core
 
+#include "fog.glsl"
 #include "shadow.glsl"
 
 in vec3 v_WorldPos;
@@ -110,6 +111,7 @@ void main() {
   vec3 specColor = mix(vec3(0.04), base, metallic) * spec;
   vec3 direct = (diffuse * ndl + specColor) * u_SunColor * u_SunIntensity * lit;
   vec3 color = ambient + direct + emissive;
+  color = mix(color, u_FogColor, fogFactorAt(u_CameraPos, v_WorldPos));
 
   color = color / (color + vec3(1.0));
   color = pow(color, vec3(1.0 / 2.2));

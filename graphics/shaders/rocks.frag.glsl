@@ -2,6 +2,8 @@
 
 #version 410 core
 
+#include "fog.glsl"
+
 in vec3 v_WorldPos;
 in vec3 v_WorldNormal;
 
@@ -31,9 +33,9 @@ void main() {
 
   vec3 light = u_SunColor * u_SunIntensity;
   vec3 color = base * (0.20 + 0.80 * ndl) * light + spec * light;
+  color = mix(color, u_FogColor, fogFactorAt(u_CameraPos, v_WorldPos));
 
   color = color / (color + vec3(1.0));
   color = pow(color, vec3(1.0 / 2.2));
   o_Color = vec4(color, 1.0);
 }
-

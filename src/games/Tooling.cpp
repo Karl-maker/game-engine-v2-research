@@ -1,6 +1,7 @@
 // Author: Karl-Johan Bailey
 
 #include "games/Tooling.h"
+#include "games/WorldConfig.h"
 
 #include "core/TickContext.h"
 
@@ -14,6 +15,7 @@
 #include "data/JsonUtil.h"
 #include "ecs/factories/FactoryKeyService.h"
 #include "ecs/services/FileChunkSource.h"
+#include "materials/presets/RealisticSkyClouds.h"
 
 #include <algorithm>
 #include <cmath>
@@ -180,45 +182,29 @@ void Tooling::onStart() {
     light.castShadows = true;
   }
 
+  PersistentWorldConfig persistentConfig{};
+  (void)loadPersistentWorldConfig(m_config.chunkConfigPath, persistentConfig);
+
   m_sky = m_registry.createEntity("sky");
   m_registry.emplace<ecs::TransformComponent>(m_sky);
   {
-    auto& sky = m_registry.emplace<ecs::SkyComponent>(m_sky);
-    sky.skyType = ecs::SkyComponent::SkyType::Day;
-    sky.useSkyTypePreset = true;
+    auto& sky = m_registry.emplace<ecs::SkyComponent>(m_sky, persistentConfig.sky);
     sky.linkedDirectionalLightEntity = m_light;
-    sky.cloudType = ecs::SkyComponent::CloudType::Scattered;
-    sky.quality = ecs::SkyComponent::Quality::High;
-    sky.cloudCoverage = 0.72f;
-    sky.cloudDensity = 0.6f;
-    sky.cloudScale = 1.0f;
-    sky.cloudSpeed = 0.020f;
-    sky.cloudWindDirection = {1.0f, 0.35f};
-    sky.cloudTimeScale = 1.0f;
-    sky.cloudTurbulence = 0.40f;
-    sky.cloudLightAbsorption = 0.50f;
-    sky.cloudHeightMeters = 220.0f;
-    sky.starsSeed = 4242u;
-    sky.starsIntensity = 2.0f;
-    sky.starsDensity = 0.65f;
-    sky.starsSize = 1.0f;
-    sky.starsTwinkleStrength = 0.20f;
-    sky.starsTwinkleSpeed = 0.55f;
+    auto& sh = m_registry.emplace<ecs::ShaderComponent>(m_sky, materials::presets::RealisticSkyClouds());
+    sh.shader.key = "graphics/shaders/sky";
   }
 
   m_fog = m_registry.createEntity("mist");
   {
     auto& tr = m_registry.emplace<ecs::TransformComponent>(m_fog);
-    tr.position = {0.0f, 6.0f, 0.0f};
-    auto& fog = m_registry.emplace<ecs::FogVolumeComponent>(m_fog);
-    fog.sizeMeters = {120.0f, 80.0f, 120.0f};
-    fog.density = 5000000.0f;
-    fog.startDistance = 0.01f;
-    fog.endDistance = 160.0f;
-    fog.heightFalloff = 0.045f;
-    fog.baseHeightOffset = -4.0f;
-    fog.enabled = true;
+    tr.position = persistentConfig.fogAnchor;
+    m_registry.emplace<ecs::FogVolumeComponent>(m_fog, persistentConfig.fog);
   }
+
+  if (m_sky != ecs::kInvalidEntityId && m_fog != ecs::kInvalidEntityId) {
+    m_registry.get<ecs::SkyComponent>(m_sky).linkedFogVolumeEntity = m_fog;
+  }
+  m_skyPresetSystem.tick(m_registry);
 
   ecs::services::registerFactoriesFromEcsFactoriesDir(m_factoryRegistry);
   applyToolingConfigToRuntime();
@@ -312,6 +298,7 @@ void Tooling::onTick(const core::TickContext& ctx) {
   }
 
   m_skeletonAssetSyncSystem.tick(m_registry, m_meshAssets);
+  m_skyPresetSystem.tick(m_registry);
 
   const auto& frame = m_graphics.tick(m_registry);
   std::ostringstream overlay;

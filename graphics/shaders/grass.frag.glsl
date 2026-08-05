@@ -4,6 +4,8 @@
 
 #version 410 core
 
+#include "fog.glsl"
+
 in vec2 v_Uv;
 in vec3 v_WorldPos;
 in float v_Var;
@@ -188,6 +190,7 @@ void main() {
     // Distance haze: bias toward darker silhouettes at distance (avoid "lightening" LOD look).
     float haze = smoothstep(6.0, 28.0, v_ViewDist) * saturate(u_CarpetHaze);
     color *= 1.0 - haze * 0.22;
+    color = mix(color, u_FogColor, fogFactorAt(u_CameraPos, v_WorldPos));
 
     color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
     o_Color = vec4(color, 1.0);
@@ -306,6 +309,7 @@ void main() {
 
   // Distance haze: bias toward darker silhouettes at distance (avoid "lightening" LOD look).
   color *= 1.0 - camHaze * 0.26;
+  color = mix(color, u_FogColor, fogFactorAt(u_CameraPos, v_WorldPos));
 
   color = pow(color, vec3(1.0 / 2.2));
   o_Color = vec4(color, 1.0);

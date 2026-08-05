@@ -864,14 +864,22 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         if (!m_frame.fogVolumes.empty()) return;
         FrameSnapshot::FogDraw draw;
         draw.entity = id;
-        draw.center = tr.position;
-        draw.sizeMeters = fog.sizeMeters;
+        draw.anchor = tr.position;
         draw.color = fog.color;
         draw.density = fog.density;
         draw.startDistance = fog.startDistance;
         draw.endDistance = fog.endDistance;
+        draw.maxOpacity = fog.maxOpacity;
+        draw.distanceExponent = fog.distanceExponent;
         draw.heightFalloff = fog.heightFalloff;
         draw.baseHeightOffset = fog.baseHeightOffset;
+        draw.horizonStrength = fog.horizonStrength;
+        draw.noiseScale = fog.noiseScale;
+        draw.noiseStrength = fog.noiseStrength;
+        draw.detailNoiseScale = fog.detailNoiseScale;
+        draw.detailNoiseStrength = fog.detailNoiseStrength;
+        draw.windDirection = fog.windDirection;
+        draw.windSpeed = fog.windSpeed;
         m_frame.fogVolumes.push_back(std::move(draw));
       });
 
