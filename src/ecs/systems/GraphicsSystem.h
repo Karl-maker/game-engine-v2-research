@@ -167,6 +167,10 @@ class GraphicsSystem final {
     bool hasTerrainSurfaceMapTex = false;
     render::AssetRef splatMapTex{};
     bool hasSplatMapTex = false;
+    render::AssetRef foamNormalTex{};
+    bool hasFoamNormalTex = false;
+    render::AssetRef rippleMaskTex{};
+    bool hasRippleMaskTex = false;
 
     // Tile-map UV controls.
     float mapUvTilingX = 1.0f;
@@ -183,6 +187,35 @@ class GraphicsSystem final {
     float terrainRoughnessMapStrength = 1.0f;
     bool terrainRoughnessInvert = false;
     float terrainSurfaceStrength = 0.0f;
+
+    // Water controls (used by the simple ocean shader).
+    float shallowColorR = 0.18f;
+    float shallowColorG = 0.46f;
+    float shallowColorB = 0.52f;
+    float foamColorR = 0.92f;
+    float foamColorG = 0.96f;
+    float foamColorB = 0.98f;
+    float waterAlpha = 0.72f;
+    float clarity = 0.72f;
+    float shoreFadeDistance = 6.0f;
+    float shoreFoamDepth = 1.15f;
+    float shoreFoamStrength = 0.22f;
+    float shoreTerrainBaseY = 0.0f;
+    float shoreTerrainHeightScale = 0.0f;
+    float waveHeight = 0.0f;
+    float waveScale = 0.085f;
+    float waveSpeed = 0.28f;
+    float waveDirectionX = 1.0f;
+    float waveDirectionY = 0.2f;
+    float secondaryWaveHeight = 0.0f;
+    float secondaryWaveScale = 0.16f;
+    float secondaryWaveSpeed = 0.18f;
+    float secondaryWaveDirectionX = -0.35f;
+    float secondaryWaveDirectionY = 1.0f;
+    float rippleTiling = 0.12f;
+    float rippleStrength = 0.10f;
+    float foamTiling = 0.085f;
+    float foamStrength = 0.12f;
 
     // Splat map controls (channel selection + strength).
     float splatStrength = 1.0f;  // 0=procedural, 1=splat override

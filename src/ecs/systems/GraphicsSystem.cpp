@@ -352,6 +352,8 @@ void extractKnownTextures(const ecs::ShaderComponent& shader, GraphicsSystem::Te
   tryBind("terrain_roughness_map", out.terrainRoughnessMapTex, out.hasTerrainRoughnessMapTex);
   tryBind("terrain_surface_map", out.terrainSurfaceMapTex, out.hasTerrainSurfaceMapTex);
   tryBind("splat_map", out.splatMapTex, out.hasSplatMapTex);
+  tryBind("foam_normal", out.foamNormalTex, out.hasFoamNormalTex);
+  tryBind("ripple_mask", out.rippleMaskTex, out.hasRippleMaskTex);
 }
 
 void extractRockLayerTextures(const ecs::ShaderComponent& shader, GraphicsSystem::TerrainDraw& out) {
@@ -627,6 +629,28 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(resolvedShader, "terrainRoughnessMapStrength", draw.terrainRoughnessMapStrength);
         (void)readBoolParam(resolvedShader, "terrainRoughnessInvert", draw.terrainRoughnessInvert);
         (void)readFloatParam(resolvedShader, "terrainSurfaceStrength", draw.terrainSurfaceStrength);
+        (void)readColorParam(resolvedShader, "shallowColor", draw.shallowColorR, draw.shallowColorG, draw.shallowColorB);
+        (void)readColorParam(resolvedShader, "foamColor", draw.foamColorR, draw.foamColorG, draw.foamColorB);
+        (void)readFloatParam(resolvedShader, "waterAlpha", draw.waterAlpha);
+        (void)readFloatParam(resolvedShader, "clarity", draw.clarity);
+        (void)readFloatParam(resolvedShader, "shoreFadeDistance", draw.shoreFadeDistance);
+        (void)readFloatParam(resolvedShader, "shoreFoamDepth", draw.shoreFoamDepth);
+        (void)readFloatParam(resolvedShader, "shoreFoamStrength", draw.shoreFoamStrength);
+        (void)readFloatParam(resolvedShader, "shoreTerrainBaseY", draw.shoreTerrainBaseY);
+        (void)readFloatParam(resolvedShader, "shoreTerrainHeightScale", draw.shoreTerrainHeightScale);
+        (void)readFloatParam(resolvedShader, "waveHeight", draw.waveHeight);
+        (void)readFloatParam(resolvedShader, "waveScale", draw.waveScale);
+        (void)readFloatParam(resolvedShader, "waveSpeed", draw.waveSpeed);
+        (void)readVec2Param(resolvedShader, "waveDirection", draw.waveDirectionX, draw.waveDirectionY);
+        (void)readFloatParam(resolvedShader, "secondaryWaveHeight", draw.secondaryWaveHeight);
+        (void)readFloatParam(resolvedShader, "secondaryWaveScale", draw.secondaryWaveScale);
+        (void)readFloatParam(resolvedShader, "secondaryWaveSpeed", draw.secondaryWaveSpeed);
+        (void)readVec2Param(
+            resolvedShader, "secondaryWaveDirection", draw.secondaryWaveDirectionX, draw.secondaryWaveDirectionY);
+        (void)readFloatParam(resolvedShader, "rippleTiling", draw.rippleTiling);
+        (void)readFloatParam(resolvedShader, "rippleStrength", draw.rippleStrength);
+        (void)readFloatParam(resolvedShader, "foamTiling", draw.foamTiling);
+        (void)readFloatParam(resolvedShader, "foamStrength", draw.foamStrength);
         (void)readFloatParam(resolvedShader, "splatStrength", draw.splatStrength);
         (void)readIntParam(resolvedShader, "splatChannel", draw.splatChannel);
         (void)readFloatParam(resolvedShader, "mapMipBias", draw.mapMipBias);

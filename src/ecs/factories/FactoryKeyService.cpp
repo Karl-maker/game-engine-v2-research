@@ -128,6 +128,42 @@ ecs::VfxComponent::Quality parseVfxQuality(std::string value) {
   return ecs::VfxComponent::Quality::High;
 }
 
+render::RenderMode parseRenderMode(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "masked" || value == "cutout") return render::RenderMode::Masked;
+  if (value == "transparent" || value == "translucent" || value == "alpha") return render::RenderMode::Transparent;
+  if (value == "additive" || value == "add") return render::RenderMode::Additive;
+  return render::RenderMode::Opaque;
+}
+
+render::CullMode parseCullMode(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "front") return render::CullMode::Front;
+  if (value == "none" || value == "off" || value == "disabled" || value == "double") return render::CullMode::None;
+  return render::CullMode::Back;
+}
+
+render::DepthTest parseDepthTest(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "disabled" || value == "off" || value == "none") return render::DepthTest::Disabled;
+  if (value == "less") return render::DepthTest::Less;
+  if (value == "equal") return render::DepthTest::Equal;
+  if (value == "greater") return render::DepthTest::Greater;
+  if (value == "always") return render::DepthTest::Always;
+  return render::DepthTest::LessEqual;
+}
+
+render::BlendMode parseBlendMode(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "alpha" || value == "transparent" || value == "translucent") return render::BlendMode::Alpha;
+  if (value == "premultiplied" || value == "premultipliedalpha" || value == "premultiplied_alpha") {
+    return render::BlendMode::PremultipliedAlpha;
+  }
+  if (value == "additive" || value == "add") return render::BlendMode::Additive;
+  if (value == "multiply" || value == "mul") return render::BlendMode::Multiply;
+  return render::BlendMode::Disabled;
+}
+
 std::vector<render::TextureBinding> readTextureBindings(const data::JsonValue& v);
 std::vector<render::MaterialParameter> readMaterialParameters(const data::JsonValue& v);
 std::vector<ShaderBreakpointInput> readShaderBreakpoints(const data::JsonValue& v);
@@ -192,6 +228,24 @@ std::optional<ecs::ShaderComponent> readTerrainMaterial(const data::JsonValue& v
       shader->lodBreakpoints.push_back(std::move(out));
     }
   }
+  if (const auto* v = data::getObjectKey(*obj, "renderMode")) {
+    std::string s;
+    if (data::readString(*v, s)) shader->renderMode = parseRenderMode(std::move(s));
+  }
+  if (const auto* v = data::getObjectKey(*obj, "cullMode")) {
+    std::string s;
+    if (data::readString(*v, s)) shader->cullMode = parseCullMode(std::move(s));
+  }
+  if (const auto* v = data::getObjectKey(*obj, "depthTest")) {
+    std::string s;
+    if (data::readString(*v, s)) shader->depthTest = parseDepthTest(std::move(s));
+  }
+  if (const auto* v = data::getObjectKey(*obj, "blendMode")) {
+    std::string s;
+    if (data::readString(*v, s)) shader->blendMode = parseBlendMode(std::move(s));
+  }
+  shader->depthWrite = data::getBoolOr(*obj, "depthWrite", shader->depthWrite);
+  shader->doubleSided = data::getBoolOr(*obj, "doubleSided", shader->doubleSided);
   shader->castShadows = data::getBoolOr(*obj, "castShadows", shader->castShadows);
   shader->receiveShadows = data::getBoolOr(*obj, "receiveShadows", shader->receiveShadows);
 

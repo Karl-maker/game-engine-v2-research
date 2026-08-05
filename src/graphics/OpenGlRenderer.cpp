@@ -4,6 +4,7 @@
 
 #include "math/Mat4.h"
 #include "math/Vec3.h"
+#include "render/RenderState.h"
 #include "terrain/PerlinNoise2D.h"
 #include "terrain/ScalarMapCache.h"
 
@@ -2347,6 +2348,71 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   };
 
   const auto clampf = [](float v, float lo, float hi) -> float { return (v < lo) ? lo : (v > hi) ? hi : v; };
+  const auto applyDepthTestState = [](render::DepthTest depthTest) {
+    switch (depthTest) {
+      case render::DepthTest::Disabled:
+        glDisable(GL_DEPTH_TEST);
+        return;
+      case render::DepthTest::Less:
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        return;
+      case render::DepthTest::Equal:
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_EQUAL);
+        return;
+      case render::DepthTest::Greater:
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_GREATER);
+        return;
+      case render::DepthTest::Always:
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_ALWAYS);
+        return;
+      case render::DepthTest::LessEqual:
+      default:
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        return;
+    }
+  };
+  const auto applyCullState = [](render::CullMode cullMode, bool doubleSided) {
+    if (doubleSided || cullMode == render::CullMode::None) {
+      glDisable(GL_CULL_FACE);
+      return;
+    }
+    glEnable(GL_CULL_FACE);
+    glCullFace(cullMode == render::CullMode::Front ? GL_FRONT : GL_BACK);
+  };
+  const auto applyBlendState = [](render::BlendMode blendMode, render::RenderMode renderMode) {
+    if (blendMode == render::BlendMode::Disabled) {
+      if (renderMode == render::RenderMode::Transparent) blendMode = render::BlendMode::Alpha;
+      else if (renderMode == render::RenderMode::Additive) blendMode = render::BlendMode::Additive;
+    }
+
+    switch (blendMode) {
+      case render::BlendMode::Alpha:
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        return;
+      case render::BlendMode::PremultipliedAlpha:
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        return;
+      case render::BlendMode::Additive:
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        return;
+      case render::BlendMode::Multiply:
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_DST_COLOR, GL_ZERO);
+        return;
+      case render::BlendMode::Disabled:
+      default:
+        glDisable(GL_BLEND);
+        return;
+    }
+  };
   recordPass("setup", passStart);
 
   // --- Terrain LOD state update (shared by shadow + main passes) ---
@@ -2794,394 +2860,457 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   glDisable(GL_BLEND);
   glCullFace(GL_BACK);
 
-  passStart = glfwGetTime();
-  for (const auto& t : frame.terrains) {
-    auto it = m_terrainLodState.find(static_cast<std::uint32_t>(t.entity));
-    const TerrainLodState st = (it != m_terrainLodState.end()) ? it->second : TerrainLodState{};
-    const float sizeX = static_cast<float>(std::max(2, t.gridWidth)) * t.cellSizeMeters;
-    const float sizeZ = static_cast<float>(std::max(2, t.gridHeight)) * t.cellSizeMeters;
-    const float halfX = 0.5f * sizeX;
-    const float halfZ = 0.5f * sizeZ;
-    const float nearestX = clampf(camPos.x, t.position.x - halfX, t.position.x + halfX);
-    const float nearestZ = clampf(camPos.z, t.position.z - halfZ, t.position.z + halfZ);
-    const float mainDist = std::sqrt((nearestX - camPos.x) * (nearestX - camPos.x) + (nearestZ - camPos.z) * (nearestZ - camPos.z));
-    if (mainDist > t.lodMaxRenderDistance) continue;
+  const auto drawTerrains = [&](bool transparentPass) {
+    for (const auto& t : frame.terrains) {
+      const render::BlendMode blendMode = static_cast<render::BlendMode>(t.blendMode);
+      const render::RenderMode renderMode = static_cast<render::RenderMode>(t.renderMode);
+      const bool isTransparent = (blendMode != render::BlendMode::Disabled) ||
+                                 renderMode == render::RenderMode::Transparent ||
+                                 renderMode == render::RenderMode::Additive;
+      if (isTransparent != transparentPass) continue;
 
-    std::string shaderKey = t.shader.key;
-    if (!st.wantTess) shaderKey += "_notess";
+      auto it = m_terrainLodState.find(static_cast<std::uint32_t>(t.entity));
+      const TerrainLodState st = (it != m_terrainLodState.end()) ? it->second : TerrainLodState{};
+      const float sizeX = static_cast<float>(std::max(2, t.gridWidth)) * t.cellSizeMeters;
+      const float sizeZ = static_cast<float>(std::max(2, t.gridHeight)) * t.cellSizeMeters;
+      const float halfX = 0.5f * sizeX;
+      const float halfZ = 0.5f * sizeZ;
+      const float nearestX = clampf(camPos.x, t.position.x - halfX, t.position.x + halfX);
+      const float nearestZ = clampf(camPos.z, t.position.z - halfZ, t.position.z + halfZ);
+      const float mainDist =
+          std::sqrt((nearestX - camPos.x) * (nearestX - camPos.x) + (nearestZ - camPos.z) * (nearestZ - camPos.z));
+      if (mainDist > t.lodMaxRenderDistance) continue;
 
-    const ShaderService::Program* program = m_shaders.getOrCreate(shaderKey);
-    if (!program || !program->programId) continue;
+      std::string shaderKey = t.shader.key;
+      if (!st.wantTess) shaderKey += "_notess";
 
-    const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog =
-        frame.fogVolumes.empty() ? nullptr : &frame.fogVolumes[0];
+      const ShaderService::Program* program = m_shaders.getOrCreate(shaderKey);
+      if (!program || !program->programId) continue;
 
-    const int lodStep = std::max(1, st.lodStep);
+      const ecs::systems::GraphicsSystem::FrameSnapshot::FogDraw* fog =
+          frame.fogVolumes.empty() ? nullptr : &frame.fogVolumes[0];
 
-    TerrainMesh* mesh = getOrCreateTerrainMesh(t, lodStep);
-    if (!mesh || !mesh->vao) continue;
+      const int lodStep = std::max(1, st.lodStep);
+      TerrainMesh* mesh = getOrCreateTerrainMesh(t, lodStep);
+      if (!mesh || !mesh->vao) continue;
 
-    glUseProgram(program->programId);
+      glUseProgram(program->programId);
 
-    const float timeSeconds = static_cast<float>(glfwGetTime());
+      const float timeSeconds = static_cast<float>(glfwGetTime());
+      applyCullState(static_cast<render::CullMode>(t.cullMode), t.doubleSided);
+      applyDepthTestState(static_cast<render::DepthTest>(t.depthTest));
+      applyBlendState(blendMode, renderMode);
+      glDepthMask(t.depthWrite ? GL_TRUE : GL_FALSE);
 
-    // State from ShaderComponent snapshot.
-    if (t.doubleSided) {
-      glDisable(GL_CULL_FACE);
-    } else {
-      glEnable(GL_CULL_FACE);
-    }
+      const GLint locModel = glGetUniformLocation(program->programId, "u_Model");
+      const GLint locViewProj = glGetUniformLocation(program->programId, "u_ViewProj");
+      const GLint locCam = glGetUniformLocation(program->programId, "u_CameraPos");
+      const GLint locTime = glGetUniformLocation(program->programId, "u_Time");
+      const GLint locColorNoise = glGetUniformLocation(program->programId, "u_DirtColorNoiseStrength");
+      if (locModel >= 0) {
+        const math::Mat4 model = math::translate(t.position);
+        glUniformMatrix4fv(locModel, 1, GL_FALSE, model.m);
+      }
+      if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
+      if (locCam >= 0) glUniform3f(locCam, frame.camera.position.x, frame.camera.position.y, frame.camera.position.z);
+      const GLint locCamFwd = glGetUniformLocation(program->programId, "u_CameraForward");
+      if (locCamFwd >= 0) glUniform3f(locCamFwd, frame.camera.forward.x, frame.camera.forward.y, frame.camera.forward.z);
+      if (locTime >= 0) glUniform1f(locTime, timeSeconds);
+      if (locColorNoise >= 0) glUniform1f(locColorNoise, t.dirtColorNoiseStrength);
 
-    glDepthMask(t.depthWrite ? GL_TRUE : GL_FALSE);
+      const GLint locFogOn = glGetUniformLocation(program->programId, "u_FogEnabled");
+      if (locFogOn >= 0) glUniform1i(locFogOn, fog ? 1 : 0);
+      if (fog) {
+        const math::Vec3 half = fog->sizeMeters * 0.5f;
+        const GLint locFogCenter = glGetUniformLocation(program->programId, "u_FogCenter");
+        if (locFogCenter >= 0) glUniform3f(locFogCenter, fog->center.x, fog->center.y, fog->center.z);
+        const GLint locFogHalf = glGetUniformLocation(program->programId, "u_FogHalfSize");
+        if (locFogHalf >= 0) glUniform3f(locFogHalf, half.x, half.y, half.z);
+        const GLint locFogCol = glGetUniformLocation(program->programId, "u_FogColor");
+        if (locFogCol >= 0) glUniform3f(locFogCol, fog->color.r, fog->color.g, fog->color.b);
+        const GLint locFogDen = glGetUniformLocation(program->programId, "u_FogDensity");
+        if (locFogDen >= 0) glUniform1f(locFogDen, fog->density);
+        const GLint locFogStart = glGetUniformLocation(program->programId, "u_FogStart");
+        if (locFogStart >= 0) glUniform1f(locFogStart, fog->startDistance);
+        const GLint locFogEnd = glGetUniformLocation(program->programId, "u_FogEnd");
+        if (locFogEnd >= 0) glUniform1f(locFogEnd, fog->endDistance);
+        const GLint locFogHf = glGetUniformLocation(program->programId, "u_FogHeightFalloff");
+        if (locFogHf >= 0) glUniform1f(locFogHf, fog->heightFalloff);
+        const GLint locFogBase = glGetUniformLocation(program->programId, "u_FogBaseHeight");
+        if (locFogBase >= 0) glUniform1f(locFogBase, fog->baseHeightOffset);
+      }
 
-    const GLint locModel = glGetUniformLocation(program->programId, "u_Model");
-    const GLint locViewProj = glGetUniformLocation(program->programId, "u_ViewProj");
-    const GLint locCam = glGetUniformLocation(program->programId, "u_CameraPos");
-    const GLint locTime = glGetUniformLocation(program->programId, "u_Time");
-    const GLint locColorNoise = glGetUniformLocation(program->programId, "u_DirtColorNoiseStrength");
-    if (locModel >= 0) {
-      const math::Mat4 model = math::translate(t.position);
-      glUniformMatrix4fv(locModel, 1, GL_FALSE, model.m);
-    }
-    if (locViewProj >= 0) glUniformMatrix4fv(locViewProj, 1, GL_FALSE, viewProj.m);
-    if (locCam >= 0) glUniform3f(locCam, frame.camera.position.x, frame.camera.position.y, frame.camera.position.z);
-    const GLint locCamFwd = glGetUniformLocation(program->programId, "u_CameraForward");
-    if (locCamFwd >= 0) glUniform3f(locCamFwd, frame.camera.forward.x, frame.camera.forward.y, frame.camera.forward.z);
-    if (locTime >= 0) glUniform1f(locTime, timeSeconds);
-    if (locColorNoise >= 0) glUniform1f(locColorNoise, t.dirtColorNoiseStrength);
+      const GLint locShadowOn = glGetUniformLocation(program->programId, "u_ShadowEnabled");
+      if (locShadowOn >= 0) glUniform1i(locShadowOn, (shadowOn && t.receiveShadows) ? 1 : 0);
+      if (shadowOn && t.receiveShadows) {
+        const GLint locLvp = glGetUniformLocation(program->programId, "u_LightViewProj");
+        if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
+        const GLint locBias = glGetUniformLocation(program->programId, "u_ShadowBias");
+        if (locBias >= 0) glUniform1f(locBias, shadowBias);
+        const GLint locStrength = glGetUniformLocation(program->programId, "u_ShadowStrength");
+        if (locStrength >= 0) glUniform1f(locStrength, shadowStrength);
+        const GLint locTexel = glGetUniformLocation(program->programId, "u_ShadowTexelSize");
+        if (locTexel >= 0) glUniform2f(locTexel, shadowTexelX, shadowTexelY);
+        glActiveTexture(GL_TEXTURE15);
+        glBindTexture(GL_TEXTURE_2D, m_shadowDepthTex);
+        const GLint locMap = glGetUniformLocation(program->programId, "u_ShadowMap");
+        if (locMap >= 0) glUniform1i(locMap, 15);
+      }
 
-    // Fog uniforms.
-    const GLint locFogOn = glGetUniformLocation(program->programId, "u_FogEnabled");
-    if (locFogOn >= 0) glUniform1i(locFogOn, fog ? 1 : 0);
-    if (fog) {
-      const math::Vec3 half = fog->sizeMeters * 0.5f;
-      const GLint locFogCenter = glGetUniformLocation(program->programId, "u_FogCenter");
-      if (locFogCenter >= 0) glUniform3f(locFogCenter, fog->center.x, fog->center.y, fog->center.z);
-      const GLint locFogHalf = glGetUniformLocation(program->programId, "u_FogHalfSize");
-      if (locFogHalf >= 0) glUniform3f(locFogHalf, half.x, half.y, half.z);
-      const GLint locFogCol = glGetUniformLocation(program->programId, "u_FogColor");
-      if (locFogCol >= 0) glUniform3f(locFogCol, fog->color.r, fog->color.g, fog->color.b);
-      const GLint locFogDen = glGetUniformLocation(program->programId, "u_FogDensity");
-      if (locFogDen >= 0) glUniform1f(locFogDen, fog->density);
-      const GLint locFogStart = glGetUniformLocation(program->programId, "u_FogStart");
-      if (locFogStart >= 0) glUniform1f(locFogStart, fog->startDistance);
-      const GLint locFogEnd = glGetUniformLocation(program->programId, "u_FogEnd");
-      if (locFogEnd >= 0) glUniform1f(locFogEnd, fog->endDistance);
-      const GLint locFogHf = glGetUniformLocation(program->programId, "u_FogHeightFalloff");
-      if (locFogHf >= 0) glUniform1f(locFogHf, fog->heightFalloff);
-      const GLint locFogBase = glGetUniformLocation(program->programId, "u_FogBaseHeight");
-      if (locFogBase >= 0) glUniform1f(locFogBase, fog->baseHeightOffset);
-    }
+      const GLint locGtOn = glGetUniformLocation(program->programId, "u_GrassTintEnabled");
+      if (locGtOn >= 0) glUniform1i(locGtOn, 0);
 
-    // Shadow uniforms (single directional shadow map, optional).
-    const GLint locShadowOn = glGetUniformLocation(program->programId, "u_ShadowEnabled");
-    if (locShadowOn >= 0) glUniform1i(locShadowOn, shadowOn ? 1 : 0);
-    if (shadowOn) {
-      const GLint locLvp = glGetUniformLocation(program->programId, "u_LightViewProj");
-      if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
-      const GLint locBias = glGetUniformLocation(program->programId, "u_ShadowBias");
-      if (locBias >= 0) glUniform1f(locBias, shadowBias);
-      const GLint locStrength = glGetUniformLocation(program->programId, "u_ShadowStrength");
-      if (locStrength >= 0) glUniform1f(locStrength, shadowStrength);
-      const GLint locTexel = glGetUniformLocation(program->programId, "u_ShadowTexelSize");
-      if (locTexel >= 0) glUniform2f(locTexel, shadowTexelX, shadowTexelY);
+      const GLint locBase = glGetUniformLocation(program->programId, "u_BaseColor");
+      if (locBase >= 0) glUniform4f(locBase, t.baseColorR, t.baseColorG, t.baseColorB, 1.0f);
+      const GLint locRough = glGetUniformLocation(program->programId, "u_Roughness");
+      if (locRough >= 0) glUniform1f(locRough, t.roughness);
+      const GLint locRoughInv = glGetUniformLocation(program->programId, "u_RoughnessInvert");
+      if (locRoughInv >= 0) glUniform1i(locRoughInv, t.roughnessInvert ? 1 : 0);
+      const GLint locMet = glGetUniformLocation(program->programId, "u_Metallic");
+      if (locMet >= 0) glUniform1f(locMet, t.metallic);
+      const GLint locSpec = glGetUniformLocation(program->programId, "u_SpecularIntensity");
+      if (locSpec >= 0) glUniform1f(locSpec, t.specularIntensity);
 
-      glActiveTexture(GL_TEXTURE15);
-      glBindTexture(GL_TEXTURE_2D, m_shadowDepthTex);
-      const GLint locMap = glGetUniformLocation(program->programId, "u_ShadowMap");
-      if (locMap >= 0) glUniform1i(locMap, 15);
-      glActiveTexture(GL_TEXTURE0);
-    }
+      const GLint locUv = glGetUniformLocation(program->programId, "u_UvTiling");
+      if (locUv >= 0) glUniform2f(locUv, t.uvTilingX, t.uvTilingY);
+      const GLint locNormStrength = glGetUniformLocation(program->programId, "u_NormalStrength");
+      if (locNormStrength >= 0) glUniform1f(locNormStrength, t.normalStrength);
+      const GLint locAoStrength = glGetUniformLocation(program->programId, "u_AOStrength");
+      if (locAoStrength >= 0) glUniform1f(locAoStrength, t.aoStrength);
+      const GLint locDispStrength = glGetUniformLocation(program->programId, "u_DisplacementStrength");
+      if (locDispStrength >= 0) glUniform1f(locDispStrength, t.displacementStrength);
+      const GLint locDispInv = glGetUniformLocation(program->programId, "u_DisplacementInvert");
+      if (locDispInv >= 0) glUniform1i(locDispInv, t.displacementInvert ? 1 : 0);
 
-    // Far grass tint (disabled for now).
-    const GLint locGtOn = glGetUniformLocation(program->programId, "u_GrassTintEnabled");
-    if (locGtOn >= 0) glUniform1i(locGtOn, 0);
+      const GLuint albedoId = (t.hasAlbedoTex) ? m_textures.requestTexture(t.albedoTex.key, true) : 0;
+      const GLuint normalId = (t.hasNormalTex) ? m_textures.requestTexture(t.normalTex.key, false) : 0;
+      const GLuint roughId = (t.hasRoughnessTex) ? m_textures.requestTexture(t.roughnessTex.key, false) : 0;
+      const GLuint aoId = (t.hasAoTex) ? m_textures.requestTexture(t.aoTex.key, false) : 0;
+      const GLuint dispId = (t.hasDisplacementTex) ? m_textures.requestTexture(t.displacementTex.key, false) : 0;
+      const bool useAlbedo = albedoId != 0;
+      const bool useNormal = normalId != 0;
+      const bool useRough = roughId != 0;
+      const bool useAo = aoId != 0;
+      const bool useDisp = dispId != 0;
 
-    const GLint locBase = glGetUniformLocation(program->programId, "u_BaseColor");
-    if (locBase >= 0) glUniform4f(locBase, t.baseColorR, t.baseColorG, t.baseColorB, 1.0f);
-    const GLint locRough = glGetUniformLocation(program->programId, "u_Roughness");
-    if (locRough >= 0) glUniform1f(locRough, t.roughness);
-    const GLint locRoughInv = glGetUniformLocation(program->programId, "u_RoughnessInvert");
-    if (locRoughInv >= 0) glUniform1i(locRoughInv, t.roughnessInvert ? 1 : 0);
-    const GLint locMet = glGetUniformLocation(program->programId, "u_Metallic");
-    if (locMet >= 0) glUniform1f(locMet, t.metallic);
-    const GLint locSpec = glGetUniformLocation(program->programId, "u_SpecularIntensity");
-    if (locSpec >= 0) glUniform1f(locSpec, t.specularIntensity);
+      const GLint locUseAlbedo = glGetUniformLocation(program->programId, "u_UseAlbedo");
+      if (locUseAlbedo >= 0) glUniform1i(locUseAlbedo, useAlbedo ? 1 : 0);
+      const GLint locUseNormal = glGetUniformLocation(program->programId, "u_UseNormal");
+      if (locUseNormal >= 0) glUniform1i(locUseNormal, useNormal ? 1 : 0);
+      const GLint locUseRough = glGetUniformLocation(program->programId, "u_UseRoughness");
+      if (locUseRough >= 0) glUniform1i(locUseRough, useRough ? 1 : 0);
+      const GLint locUseAo = glGetUniformLocation(program->programId, "u_UseAO");
+      if (locUseAo >= 0) glUniform1i(locUseAo, useAo ? 1 : 0);
+      const GLint locUseDisp = glGetUniformLocation(program->programId, "u_UseDisplacement");
+      if (locUseDisp >= 0) glUniform1i(locUseDisp, useDisp ? 1 : 0);
 
-    const GLint locUv = glGetUniformLocation(program->programId, "u_UvTiling");
-    if (locUv >= 0) glUniform2f(locUv, t.uvTilingX, t.uvTilingY);
-    const GLint locNormStrength = glGetUniformLocation(program->programId, "u_NormalStrength");
-    if (locNormStrength >= 0) glUniform1f(locNormStrength, t.normalStrength);
-    const GLint locAoStrength = glGetUniformLocation(program->programId, "u_AOStrength");
-    if (locAoStrength >= 0) glUniform1f(locAoStrength, t.aoStrength);
-    const GLint locDispStrength = glGetUniformLocation(program->programId, "u_DisplacementStrength");
-    if (locDispStrength >= 0) glUniform1f(locDispStrength, t.displacementStrength);
-    const GLint locDispInv = glGetUniformLocation(program->programId, "u_DisplacementInvert");
-    if (locDispInv >= 0) glUniform1i(locDispInv, t.displacementInvert ? 1 : 0);
+      if (useAlbedo) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, albedoId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_Albedo");
+        if (loc >= 0) glUniform1i(loc, 0);
+      }
+      if (useNormal) {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, normalId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_NormalTex");
+        if (loc >= 0) glUniform1i(loc, 1);
+      }
+      if (useRough) {
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, roughId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_RoughnessTex");
+        if (loc >= 0) glUniform1i(loc, 2);
+      }
+      if (useAo) {
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, aoId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_AOTex");
+        if (loc >= 0) glUniform1i(loc, 3);
+      }
+      if (useDisp) {
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, dispId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_DisplacementTex");
+        if (loc >= 0) glUniform1i(loc, 4);
+      }
 
-    // Textures (async loaded).
-    const GLuint albedoId = (t.hasAlbedoTex) ? m_textures.requestTexture(t.albedoTex.key, true) : 0;
-    const GLuint normalId = (t.hasNormalTex) ? m_textures.requestTexture(t.normalTex.key, false) : 0;
-    const GLuint roughId = (t.hasRoughnessTex) ? m_textures.requestTexture(t.roughnessTex.key, false) : 0;
-    const GLuint aoId = (t.hasAoTex) ? m_textures.requestTexture(t.aoTex.key, false) : 0;
-    const GLuint dispId = (t.hasDisplacementTex) ? m_textures.requestTexture(t.displacementTex.key, false) : 0;
+      const bool rockEnabled = t.rockLayerEnabled;
+      const GLuint rockAlbedoId = (rockEnabled && t.hasRockAlbedoTex) ? m_textures.requestTexture(t.rockAlbedoTex.key, true) : 0;
+      const GLuint rockNormalId = (rockEnabled && t.hasRockNormalTex) ? m_textures.requestTexture(t.rockNormalTex.key, false) : 0;
+      const GLuint rockRoughId = (rockEnabled && t.hasRockRoughnessTex) ? m_textures.requestTexture(t.rockRoughnessTex.key, false) : 0;
+      const GLuint rockAoId = (rockEnabled && t.hasRockAoTex) ? m_textures.requestTexture(t.rockAoTex.key, false) : 0;
+      const GLuint rockDispId = (rockEnabled && t.hasRockDisplacementTex) ? m_textures.requestTexture(t.rockDisplacementTex.key, false) : 0;
 
-    const bool useAlbedo = albedoId != 0;
-    const bool useNormal = normalId != 0;
-    const bool useRough = roughId != 0;
-    const bool useAo = aoId != 0;
-    const bool useDisp = dispId != 0;
+      const GLint locRockOn = glGetUniformLocation(program->programId, "u_RockLayerEnabled");
+      if (locRockOn >= 0) glUniform1i(locRockOn, rockEnabled ? 1 : 0);
+      if (rockEnabled) {
+        const GLint locRockUv = glGetUniformLocation(program->programId, "u_RockUvTiling");
+        if (locRockUv >= 0) glUniform2f(locRockUv, t.rockUvTilingX, t.rockUvTilingY);
+        const GLint locRockNorm = glGetUniformLocation(program->programId, "u_RockNormalStrength");
+        if (locRockNorm >= 0) glUniform1f(locRockNorm, t.rockNormalStrength);
+        const GLint locRockDisp = glGetUniformLocation(program->programId, "u_RockDisplacementStrength");
+        if (locRockDisp >= 0) glUniform1f(locRockDisp, t.rockDisplacementStrength);
+        const GLint locRockBlend = glGetUniformLocation(program->programId, "u_RockBlendStrength");
+        if (locRockBlend >= 0) glUniform1f(locRockBlend, t.rockBlendStrength);
+        const GLint locRockNoise = glGetUniformLocation(program->programId, "u_RockNoiseScale");
+        if (locRockNoise >= 0) glUniform1f(locRockNoise, t.rockNoiseScale);
 
-    const GLint locUseAlbedo = glGetUniformLocation(program->programId, "u_UseAlbedo");
-    if (locUseAlbedo >= 0) glUniform1i(locUseAlbedo, useAlbedo ? 1 : 0);
-    const GLint locUseNormal = glGetUniformLocation(program->programId, "u_UseNormal");
-    if (locUseNormal >= 0) glUniform1i(locUseNormal, useNormal ? 1 : 0);
-    const GLint locUseRough = glGetUniformLocation(program->programId, "u_UseRoughness");
-    if (locUseRough >= 0) glUniform1i(locUseRough, useRough ? 1 : 0);
-    const GLint locUseAo = glGetUniformLocation(program->programId, "u_UseAO");
-    if (locUseAo >= 0) glUniform1i(locUseAo, useAo ? 1 : 0);
-    const GLint locUseDisp = glGetUniformLocation(program->programId, "u_UseDisplacement");
-    if (locUseDisp >= 0) glUniform1i(locUseDisp, useDisp ? 1 : 0);
+        const bool useRockAlbedo = rockAlbedoId != 0;
+        const bool useRockNormal = rockNormalId != 0;
+        const bool useRockRough = rockRoughId != 0;
+        const bool useRockAo = rockAoId != 0;
+        const bool useRockDisp = rockDispId != 0;
 
-    if (useAlbedo) {
-      glActiveTexture(GL_TEXTURE0);
-      glBindTexture(GL_TEXTURE_2D, albedoId);
-      const GLint loc = glGetUniformLocation(program->programId, "u_Albedo");
-      if (loc >= 0) glUniform1i(loc, 0);
-    }
-    if (useNormal) {
-      glActiveTexture(GL_TEXTURE1);
-      glBindTexture(GL_TEXTURE_2D, normalId);
-      const GLint loc = glGetUniformLocation(program->programId, "u_NormalTex");
-      if (loc >= 0) glUniform1i(loc, 1);
-    }
-    if (useRough) {
-      glActiveTexture(GL_TEXTURE2);
-      glBindTexture(GL_TEXTURE_2D, roughId);
-      const GLint loc = glGetUniformLocation(program->programId, "u_RoughnessTex");
-      if (loc >= 0) glUniform1i(loc, 2);
-    }
-    if (useAo) {
-      glActiveTexture(GL_TEXTURE3);
-      glBindTexture(GL_TEXTURE_2D, aoId);
-      const GLint loc = glGetUniformLocation(program->programId, "u_AOTex");
-      if (loc >= 0) glUniform1i(loc, 3);
-    }
-    if (useDisp) {
-      glActiveTexture(GL_TEXTURE4);
-      glBindTexture(GL_TEXTURE_2D, dispId);
-      const GLint loc = glGetUniformLocation(program->programId, "u_DisplacementTex");
-      if (loc >= 0) glUniform1i(loc, 4);
-    }
+        const GLint l0 = glGetUniformLocation(program->programId, "u_UseRockAlbedo");
+        if (l0 >= 0) glUniform1i(l0, useRockAlbedo ? 1 : 0);
+        const GLint l1 = glGetUniformLocation(program->programId, "u_UseRockNormal");
+        if (l1 >= 0) glUniform1i(l1, useRockNormal ? 1 : 0);
+        const GLint l2 = glGetUniformLocation(program->programId, "u_UseRockRoughness");
+        if (l2 >= 0) glUniform1i(l2, useRockRough ? 1 : 0);
+        const GLint l3 = glGetUniformLocation(program->programId, "u_UseRockAO");
+        if (l3 >= 0) glUniform1i(l3, useRockAo ? 1 : 0);
+        const GLint l4 = glGetUniformLocation(program->programId, "u_UseRockDisplacement");
+        if (l4 >= 0) glUniform1i(l4, useRockDisp ? 1 : 0);
 
-    // Rock layer (optional)
-    const bool rockEnabled = t.rockLayerEnabled;
-    const GLuint rockAlbedoId = (rockEnabled && t.hasRockAlbedoTex) ? m_textures.requestTexture(t.rockAlbedoTex.key, true) : 0;
-    const GLuint rockNormalId = (rockEnabled && t.hasRockNormalTex) ? m_textures.requestTexture(t.rockNormalTex.key, false) : 0;
-    const GLuint rockRoughId = (rockEnabled && t.hasRockRoughnessTex) ? m_textures.requestTexture(t.rockRoughnessTex.key, false) : 0;
-    const GLuint rockAoId = (rockEnabled && t.hasRockAoTex) ? m_textures.requestTexture(t.rockAoTex.key, false) : 0;
-    const GLuint rockDispId = (rockEnabled && t.hasRockDisplacementTex) ? m_textures.requestTexture(t.rockDisplacementTex.key, false) : 0;
+        if (useRockAlbedo) {
+          glActiveTexture(GL_TEXTURE5);
+          glBindTexture(GL_TEXTURE_2D, rockAlbedoId);
+          const GLint loc = glGetUniformLocation(program->programId, "u_RockAlbedo");
+          if (loc >= 0) glUniform1i(loc, 5);
+        }
+        if (useRockNormal) {
+          glActiveTexture(GL_TEXTURE6);
+          glBindTexture(GL_TEXTURE_2D, rockNormalId);
+          const GLint loc = glGetUniformLocation(program->programId, "u_RockNormalTex");
+          if (loc >= 0) glUniform1i(loc, 6);
+        }
+        if (useRockRough) {
+          glActiveTexture(GL_TEXTURE7);
+          glBindTexture(GL_TEXTURE_2D, rockRoughId);
+          const GLint loc = glGetUniformLocation(program->programId, "u_RockRoughnessTex");
+          if (loc >= 0) glUniform1i(loc, 7);
+        }
+        if (useRockAo) {
+          glActiveTexture(GL_TEXTURE8);
+          glBindTexture(GL_TEXTURE_2D, rockAoId);
+          const GLint loc = glGetUniformLocation(program->programId, "u_RockAOTex");
+          if (loc >= 0) glUniform1i(loc, 8);
+        }
+        if (useRockDisp) {
+          glActiveTexture(GL_TEXTURE9);
+          glBindTexture(GL_TEXTURE_2D, rockDispId);
+          const GLint loc = glGetUniformLocation(program->programId, "u_RockDisplacementTex");
+          if (loc >= 0) glUniform1i(loc, 9);
+        }
+      }
 
-    const GLint locRockOn = glGetUniformLocation(program->programId, "u_RockLayerEnabled");
-    if (locRockOn >= 0) glUniform1i(locRockOn, rockEnabled ? 1 : 0);
-    if (rockEnabled) {
-      const GLint locRockUv = glGetUniformLocation(program->programId, "u_RockUvTiling");
-      if (locRockUv >= 0) glUniform2f(locRockUv, t.rockUvTilingX, t.rockUvTilingY);
-      const GLint locRockNorm = glGetUniformLocation(program->programId, "u_RockNormalStrength");
-      if (locRockNorm >= 0) glUniform1f(locRockNorm, t.rockNormalStrength);
-      const GLint locRockDisp = glGetUniformLocation(program->programId, "u_RockDisplacementStrength");
-      if (locRockDisp >= 0) glUniform1f(locRockDisp, t.rockDisplacementStrength);
-      const GLint locRockBlend = glGetUniformLocation(program->programId, "u_RockBlendStrength");
-      if (locRockBlend >= 0) glUniform1f(locRockBlend, t.rockBlendStrength);
-      const GLint locRockNoise = glGetUniformLocation(program->programId, "u_RockNoiseScale");
-      if (locRockNoise >= 0) glUniform1f(locRockNoise, t.rockNoiseScale);
+      const GLint locLodStep = glGetUniformLocation(program->programId, "u_TerrainLodStep");
+      if (locLodStep >= 0) glUniform1i(locLodStep, lodStep);
+      const GLint locMapUv = glGetUniformLocation(program->programId, "u_MapUvTiling");
+      if (locMapUv >= 0) glUniform2f(locMapUv, t.mapUvTilingX, t.mapUvTilingY);
+      const GLint locMapBias = glGetUniformLocation(program->programId, "u_MapMipBias");
+      if (locMapBias >= 0) glUniform1f(locMapBias, t.mapMipBias);
+      const GLint locMapScale = glGetUniformLocation(program->programId, "u_MapMipScale");
+      if (locMapScale >= 0) glUniform1f(locMapScale, t.mapMipScale);
+      const GLint locMapMax = glGetUniformLocation(program->programId, "u_MapMipMax");
+      if (locMapMax >= 0) glUniform1f(locMapMax, t.mapMipMax);
+      const GLint locHeightMapStrength = glGetUniformLocation(program->programId, "u_HeightMapStrength");
+      if (locHeightMapStrength >= 0) glUniform1f(locHeightMapStrength, t.heightMapStrength);
+      const GLint locHeightMapInvert = glGetUniformLocation(program->programId, "u_HeightMapInvert");
+      if (locHeightMapInvert >= 0) glUniform1i(locHeightMapInvert, t.heightMapInvert ? 1 : 0);
 
-      const bool useRockAlbedo = rockAlbedoId != 0;
-      const bool useRockNormal = rockNormalId != 0;
-      const bool useRockRough = rockRoughId != 0;
-      const bool useRockAo = rockAoId != 0;
-      const bool useRockDisp = rockDispId != 0;
+      const GLint locSplatStrength = glGetUniformLocation(program->programId, "u_SplatStrength");
+      if (locSplatStrength >= 0) glUniform1f(locSplatStrength, t.splatStrength);
+      const GLint locSplatChannel = glGetUniformLocation(program->programId, "u_SplatChannel");
+      if (locSplatChannel >= 0) glUniform1i(locSplatChannel, t.splatChannel);
+      const GLint locTerrainNormStrength = glGetUniformLocation(program->programId, "u_TerrainNormalMapStrength");
+      if (locTerrainNormStrength >= 0) glUniform1f(locTerrainNormStrength, t.terrainNormalMapStrength);
+      const GLint locTerrainRoughStrength = glGetUniformLocation(program->programId, "u_TerrainRoughnessMapStrength");
+      if (locTerrainRoughStrength >= 0) glUniform1f(locTerrainRoughStrength, t.terrainRoughnessMapStrength);
+      const GLint locTerrainRoughInv = glGetUniformLocation(program->programId, "u_TerrainRoughnessInvert");
+      if (locTerrainRoughInv >= 0) glUniform1i(locTerrainRoughInv, t.terrainRoughnessInvert ? 1 : 0);
+      const GLint locTerrainSurfaceStrength = glGetUniformLocation(program->programId, "u_TerrainSurfaceStrength");
+      if (locTerrainSurfaceStrength >= 0) glUniform1f(locTerrainSurfaceStrength, t.terrainSurfaceStrength);
+      const GLint locShallowColor = glGetUniformLocation(program->programId, "u_ShallowColor");
+      if (locShallowColor >= 0) glUniform3f(locShallowColor, t.shallowColorR, t.shallowColorG, t.shallowColorB);
+      const GLint locFoamColor = glGetUniformLocation(program->programId, "u_FoamColor");
+      if (locFoamColor >= 0) glUniform3f(locFoamColor, t.foamColorR, t.foamColorG, t.foamColorB);
+      const GLint locWaterAlpha = glGetUniformLocation(program->programId, "u_WaterAlpha");
+      if (locWaterAlpha >= 0) glUniform1f(locWaterAlpha, t.waterAlpha);
+      const GLint locClarity = glGetUniformLocation(program->programId, "u_Clarity");
+      if (locClarity >= 0) glUniform1f(locClarity, t.clarity);
+      const GLint locShoreFade = glGetUniformLocation(program->programId, "u_ShoreFadeDistance");
+      if (locShoreFade >= 0) glUniform1f(locShoreFade, t.shoreFadeDistance);
+      const GLint locShoreFoamDepth = glGetUniformLocation(program->programId, "u_ShoreFoamDepth");
+      if (locShoreFoamDepth >= 0) glUniform1f(locShoreFoamDepth, t.shoreFoamDepth);
+      const GLint locShoreFoamStrength = glGetUniformLocation(program->programId, "u_ShoreFoamStrength");
+      if (locShoreFoamStrength >= 0) glUniform1f(locShoreFoamStrength, t.shoreFoamStrength);
+      const GLint locShoreBaseY = glGetUniformLocation(program->programId, "u_ShoreTerrainBaseY");
+      if (locShoreBaseY >= 0) glUniform1f(locShoreBaseY, t.shoreTerrainBaseY);
+      const GLint locShoreHeightScale = glGetUniformLocation(program->programId, "u_ShoreTerrainHeightScale");
+      if (locShoreHeightScale >= 0) glUniform1f(locShoreHeightScale, t.shoreTerrainHeightScale);
+      const GLint locWaterLevel = glGetUniformLocation(program->programId, "u_WaterLevel");
+      if (locWaterLevel >= 0) glUniform1f(locWaterLevel, t.position.y);
+      const GLint locWaveHeight = glGetUniformLocation(program->programId, "u_WaveHeight");
+      if (locWaveHeight >= 0) glUniform1f(locWaveHeight, t.waveHeight);
+      const GLint locWaveScale = glGetUniformLocation(program->programId, "u_WaveScale");
+      if (locWaveScale >= 0) glUniform1f(locWaveScale, t.waveScale);
+      const GLint locWaveSpeed = glGetUniformLocation(program->programId, "u_WaveSpeed");
+      if (locWaveSpeed >= 0) glUniform1f(locWaveSpeed, t.waveSpeed);
+      const GLint locWaveDirection = glGetUniformLocation(program->programId, "u_WaveDirection");
+      if (locWaveDirection >= 0) glUniform2f(locWaveDirection, t.waveDirectionX, t.waveDirectionY);
+      const GLint locWaveHeight2 = glGetUniformLocation(program->programId, "u_SecondaryWaveHeight");
+      if (locWaveHeight2 >= 0) glUniform1f(locWaveHeight2, t.secondaryWaveHeight);
+      const GLint locWaveScale2 = glGetUniformLocation(program->programId, "u_SecondaryWaveScale");
+      if (locWaveScale2 >= 0) glUniform1f(locWaveScale2, t.secondaryWaveScale);
+      const GLint locWaveSpeed2 = glGetUniformLocation(program->programId, "u_SecondaryWaveSpeed");
+      if (locWaveSpeed2 >= 0) glUniform1f(locWaveSpeed2, t.secondaryWaveSpeed);
+      const GLint locWaveDirection2 = glGetUniformLocation(program->programId, "u_SecondaryWaveDirection");
+      if (locWaveDirection2 >= 0) {
+        glUniform2f(locWaveDirection2, t.secondaryWaveDirectionX, t.secondaryWaveDirectionY);
+      }
+      const GLint locRippleTiling = glGetUniformLocation(program->programId, "u_RippleTiling");
+      if (locRippleTiling >= 0) glUniform1f(locRippleTiling, t.rippleTiling);
+      const GLint locRippleStrength = glGetUniformLocation(program->programId, "u_RippleStrength");
+      if (locRippleStrength >= 0) glUniform1f(locRippleStrength, t.rippleStrength);
+      const GLint locFoamTiling = glGetUniformLocation(program->programId, "u_FoamTiling");
+      if (locFoamTiling >= 0) glUniform1f(locFoamTiling, t.foamTiling);
+      const GLint locFoamStrength = glGetUniformLocation(program->programId, "u_FoamStrength");
+      if (locFoamStrength >= 0) glUniform1f(locFoamStrength, t.foamStrength);
 
-      const GLint l0 = glGetUniformLocation(program->programId, "u_UseRockAlbedo");
-      if (l0 >= 0) glUniform1i(l0, useRockAlbedo ? 1 : 0);
-      const GLint l1 = glGetUniformLocation(program->programId, "u_UseRockNormal");
-      if (l1 >= 0) glUniform1i(l1, useRockNormal ? 1 : 0);
-      const GLint l2 = glGetUniformLocation(program->programId, "u_UseRockRoughness");
-      if (l2 >= 0) glUniform1i(l2, useRockRough ? 1 : 0);
-      const GLint l3 = glGetUniformLocation(program->programId, "u_UseRockAO");
-      if (l3 >= 0) glUniform1i(l3, useRockAo ? 1 : 0);
-      const GLint l4 = glGetUniformLocation(program->programId, "u_UseRockDisplacement");
-      if (l4 >= 0) glUniform1i(l4, useRockDisp ? 1 : 0);
+      const GLuint heightMapId = (t.hasHeightMapTex) ? m_textures.requestTexture(t.heightMapTex.key, false) : 0;
+      const GLuint terrainNormMapId =
+          (t.hasTerrainNormalMapTex) ? m_textures.requestTexture(t.terrainNormalMapTex.key, false) : 0;
+      const GLuint terrainRoughMapId =
+          (t.hasTerrainRoughnessMapTex) ? m_textures.requestTexture(t.terrainRoughnessMapTex.key, false) : 0;
+      const GLuint terrainSurfaceMapId =
+          (t.hasTerrainSurfaceMapTex) ? m_textures.requestTexture(t.terrainSurfaceMapTex.key, false) : 0;
+      const GLuint splatMapId = (t.hasSplatMapTex) ? m_textures.requestTexture(t.splatMapTex.key, false) : 0;
+      const GLuint foamNormalId = (t.hasFoamNormalTex) ? m_textures.requestTexture(t.foamNormalTex.key, false) : 0;
+      const GLuint rippleMaskId = (t.hasRippleMaskTex) ? m_textures.requestTexture(t.rippleMaskTex.key, false) : 0;
 
-      if (useRockAlbedo) {
+      const bool useHeightMap = heightMapId != 0;
+      const bool useTerrainNormMap = terrainNormMapId != 0;
+      const bool useTerrainRoughMap = terrainRoughMapId != 0;
+      const bool useTerrainSurfaceMap = terrainSurfaceMapId != 0;
+      const bool useSplatMap = splatMapId != 0;
+      const bool useFoamNormal = foamNormalId != 0;
+      const bool useRippleMask = rippleMaskId != 0;
+
+      const GLint locUseHeightMap = glGetUniformLocation(program->programId, "u_UseHeightMap");
+      if (locUseHeightMap >= 0) glUniform1i(locUseHeightMap, useHeightMap ? 1 : 0);
+      const GLint locUseTerrainNormMap = glGetUniformLocation(program->programId, "u_UseTerrainNormalMap");
+      if (locUseTerrainNormMap >= 0) glUniform1i(locUseTerrainNormMap, useTerrainNormMap ? 1 : 0);
+      const GLint locUseTerrainRoughMap = glGetUniformLocation(program->programId, "u_UseTerrainRoughnessMap");
+      if (locUseTerrainRoughMap >= 0) glUniform1i(locUseTerrainRoughMap, useTerrainRoughMap ? 1 : 0);
+      const GLint locUseTerrainSurfaceMap = glGetUniformLocation(program->programId, "u_UseTerrainSurfaceMap");
+      if (locUseTerrainSurfaceMap >= 0) glUniform1i(locUseTerrainSurfaceMap, useTerrainSurfaceMap ? 1 : 0);
+      const GLint locUseSplatMap = glGetUniformLocation(program->programId, "u_UseSplatMap");
+      if (locUseSplatMap >= 0) glUniform1i(locUseSplatMap, useSplatMap ? 1 : 0);
+      const GLint locUseFoamNormal = glGetUniformLocation(program->programId, "u_UseFoamNormal");
+      if (locUseFoamNormal >= 0) glUniform1i(locUseFoamNormal, useFoamNormal ? 1 : 0);
+      const GLint locUseRippleMask = glGetUniformLocation(program->programId, "u_UseRippleMask");
+      if (locUseRippleMask >= 0) glUniform1i(locUseRippleMask, useRippleMask ? 1 : 0);
+
+      if (useHeightMap) {
+        glActiveTexture(GL_TEXTURE10);
+        glBindTexture(GL_TEXTURE_2D, heightMapId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_HeightMapTex");
+        if (loc >= 0) glUniform1i(loc, 10);
+      }
+      if (useTerrainNormMap) {
+        glActiveTexture(GL_TEXTURE11);
+        glBindTexture(GL_TEXTURE_2D, terrainNormMapId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_TerrainNormalMapTex");
+        if (loc >= 0) glUniform1i(loc, 11);
+      }
+      if (useTerrainRoughMap) {
+        glActiveTexture(GL_TEXTURE12);
+        glBindTexture(GL_TEXTURE_2D, terrainRoughMapId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_TerrainRoughnessMapTex");
+        if (loc >= 0) glUniform1i(loc, 12);
+      }
+      if (useTerrainSurfaceMap) {
+        glActiveTexture(GL_TEXTURE13);
+        glBindTexture(GL_TEXTURE_2D, terrainSurfaceMapId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_TerrainSurfaceMapTex");
+        if (loc >= 0) glUniform1i(loc, 13);
+      }
+      if (useSplatMap) {
+        glActiveTexture(GL_TEXTURE14);
+        glBindTexture(GL_TEXTURE_2D, splatMapId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_SplatMapTex");
+        if (loc >= 0) glUniform1i(loc, 14);
+      }
+      if (useFoamNormal) {
         glActiveTexture(GL_TEXTURE5);
-        glBindTexture(GL_TEXTURE_2D, rockAlbedoId);
-        const GLint loc = glGetUniformLocation(program->programId, "u_RockAlbedo");
+        glBindTexture(GL_TEXTURE_2D, foamNormalId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_FoamNormalTex");
         if (loc >= 0) glUniform1i(loc, 5);
       }
-      if (useRockNormal) {
+      if (useRippleMask) {
         glActiveTexture(GL_TEXTURE6);
-        glBindTexture(GL_TEXTURE_2D, rockNormalId);
-        const GLint loc = glGetUniformLocation(program->programId, "u_RockNormalTex");
+        glBindTexture(GL_TEXTURE_2D, rippleMaskId);
+        const GLint loc = glGetUniformLocation(program->programId, "u_RippleMaskTex");
         if (loc >= 0) glUniform1i(loc, 6);
       }
-      if (useRockRough) {
-        glActiveTexture(GL_TEXTURE7);
-        glBindTexture(GL_TEXTURE_2D, rockRoughId);
-        const GLint loc = glGetUniformLocation(program->programId, "u_RockRoughnessTex");
-        if (loc >= 0) glUniform1i(loc, 7);
+
+      glActiveTexture(GL_TEXTURE0);
+
+      const GLint locLc = glGetUniformLocation(program->programId, "u_LightCount");
+      if (locLc >= 0) glUniform1i(locLc, lightCount);
+      const GLint locLt = glGetUniformLocation(program->programId, "u_LightType");
+      const GLint locLp = glGetUniformLocation(program->programId, "u_LightPos");
+      const GLint locLd = glGetUniformLocation(program->programId, "u_LightDir");
+      const GLint locLcol = glGetUniformLocation(program->programId, "u_LightColor");
+      const GLint locLi = glGetUniformLocation(program->programId, "u_LightIntensity");
+      const GLint locLr = glGetUniformLocation(program->programId, "u_LightRange");
+      if (locLt >= 0) glUniform1iv(locLt, lightCount, types);
+      if (locLp >= 0) glUniform3fv(locLp, lightCount, &pos[0][0]);
+      if (locLd >= 0) glUniform3fv(locLd, lightCount, &dir[0][0]);
+      if (locLcol >= 0) glUniform3fv(locLcol, lightCount, &col[0][0]);
+      if (locLi >= 0) glUniform1fv(locLi, lightCount, intensity);
+      if (locLr >= 0) glUniform1fv(locLr, lightCount, range);
+
+      if (program->hasTessellation) {
+        glPatchParameteri(GL_PATCH_VERTICES, 3);
+        int q = t.tessQuality;
+        if (q < 0) q = 0;
+        if (q > 2) q = 2;
+        const float qScale = (q == 0) ? 0.45f : (q == 1 ? 0.70f : 1.0f);
+        const float qFarScale = (q == 0) ? 0.65f : (q == 1 ? 0.85f : 1.0f);
+        const float tessNear = t.tessNear;
+        const float tessFar = std::max(tessNear + 1.0f, t.tessFar * qFarScale);
+        const float tessMin = std::max(1.0f, t.tessMin);
+        const float tessMax = std::max(tessMin, std::min(64.0f, t.tessMax * qScale));
+
+        const GLint locTessNear = glGetUniformLocation(program->programId, "u_TessNear");
+        const GLint locTessFar = glGetUniformLocation(program->programId, "u_TessFar");
+        const GLint locTessMin = glGetUniformLocation(program->programId, "u_TessMin");
+        const GLint locTessMax = glGetUniformLocation(program->programId, "u_TessMax");
+        if (locTessNear >= 0) glUniform1f(locTessNear, tessNear);
+        if (locTessFar >= 0) glUniform1f(locTessFar, tessFar);
+        if (locTessMin >= 0) glUniform1f(locTessMin, tessMin);
+        if (locTessMax >= 0) glUniform1f(locTessMax, tessMax);
+
+        const GLint locNormDispBoost = glGetUniformLocation(program->programId, "u_NormalDisplacementBoost");
+        if (locNormDispBoost >= 0) glUniform1f(locNormDispBoost, 0.85f);
+        const GLint locNormDerived = glGetUniformLocation(program->programId, "u_NormalDerivedDisplacementStrength");
+        if (locNormDerived >= 0) glUniform1f(locNormDerived, 0.55f * t.displacementStrength);
+        const GLint locRockNormDerived =
+            glGetUniformLocation(program->programId, "u_RockNormalDerivedDisplacementStrength");
+        if (locRockNormDerived >= 0) glUniform1f(locRockNormDerived, 0.75f * t.rockDisplacementStrength);
       }
-      if (useRockAo) {
-        glActiveTexture(GL_TEXTURE8);
-        glBindTexture(GL_TEXTURE_2D, rockAoId);
-        const GLint loc = glGetUniformLocation(program->programId, "u_RockAOTex");
-        if (loc >= 0) glUniform1i(loc, 8);
-      }
-      if (useRockDisp) {
-        glActiveTexture(GL_TEXTURE9);
-        glBindTexture(GL_TEXTURE_2D, rockDispId);
-        const GLint loc = glGetUniformLocation(program->programId, "u_RockDisplacementTex");
-        if (loc >= 0) glUniform1i(loc, 9);
-      }
+
+      glBindVertexArray(mesh->vao);
+      const GLenum mode = program->hasTessellation ? GL_PATCHES : GL_TRIANGLES;
+      glDrawElements(mode, static_cast<GLsizei>(mesh->indexCount), GL_UNSIGNED_INT, nullptr);
+      glBindVertexArray(0);
     }
-
-    // Terrain tile maps (optional; aligned to terrain UVs).
-    const GLint locLodStep = glGetUniformLocation(program->programId, "u_TerrainLodStep");
-    if (locLodStep >= 0) glUniform1i(locLodStep, lodStep);
-    const GLint locMapUv = glGetUniformLocation(program->programId, "u_MapUvTiling");
-    if (locMapUv >= 0) glUniform2f(locMapUv, t.mapUvTilingX, t.mapUvTilingY);
-    const GLint locMapBias = glGetUniformLocation(program->programId, "u_MapMipBias");
-    if (locMapBias >= 0) glUniform1f(locMapBias, t.mapMipBias);
-    const GLint locMapScale = glGetUniformLocation(program->programId, "u_MapMipScale");
-    if (locMapScale >= 0) glUniform1f(locMapScale, t.mapMipScale);
-    const GLint locMapMax = glGetUniformLocation(program->programId, "u_MapMipMax");
-    if (locMapMax >= 0) glUniform1f(locMapMax, t.mapMipMax);
-
-    const GLint locSplatStrength = glGetUniformLocation(program->programId, "u_SplatStrength");
-    if (locSplatStrength >= 0) glUniform1f(locSplatStrength, t.splatStrength);
-    const GLint locSplatChannel = glGetUniformLocation(program->programId, "u_SplatChannel");
-    if (locSplatChannel >= 0) glUniform1i(locSplatChannel, t.splatChannel);
-    const GLint locTerrainNormStrength = glGetUniformLocation(program->programId, "u_TerrainNormalMapStrength");
-    if (locTerrainNormStrength >= 0) glUniform1f(locTerrainNormStrength, t.terrainNormalMapStrength);
-    const GLint locTerrainRoughStrength = glGetUniformLocation(program->programId, "u_TerrainRoughnessMapStrength");
-    if (locTerrainRoughStrength >= 0) glUniform1f(locTerrainRoughStrength, t.terrainRoughnessMapStrength);
-    const GLint locTerrainRoughInv = glGetUniformLocation(program->programId, "u_TerrainRoughnessInvert");
-    if (locTerrainRoughInv >= 0) glUniform1i(locTerrainRoughInv, t.terrainRoughnessInvert ? 1 : 0);
-    const GLint locTerrainSurfaceStrength = glGetUniformLocation(program->programId, "u_TerrainSurfaceStrength");
-    if (locTerrainSurfaceStrength >= 0) glUniform1f(locTerrainSurfaceStrength, t.terrainSurfaceStrength);
-
-    const GLuint heightMapId = (t.hasHeightMapTex) ? m_textures.requestTexture(t.heightMapTex.key, false) : 0;
-    const GLuint terrainNormMapId = (t.hasTerrainNormalMapTex) ? m_textures.requestTexture(t.terrainNormalMapTex.key, false) : 0;
-    const GLuint terrainRoughMapId = (t.hasTerrainRoughnessMapTex) ? m_textures.requestTexture(t.terrainRoughnessMapTex.key, false) : 0;
-    const GLuint terrainSurfaceMapId = (t.hasTerrainSurfaceMapTex) ? m_textures.requestTexture(t.terrainSurfaceMapTex.key, false) : 0;
-    const GLuint splatMapId = (t.hasSplatMapTex) ? m_textures.requestTexture(t.splatMapTex.key, false) : 0;
-
-    const bool useHeightMap = heightMapId != 0;
-    const bool useTerrainNormMap = terrainNormMapId != 0;
-    const bool useTerrainRoughMap = terrainRoughMapId != 0;
-    const bool useTerrainSurfaceMap = terrainSurfaceMapId != 0;
-    const bool useSplatMap = splatMapId != 0;
-
-    const GLint locUseHeightMap = glGetUniformLocation(program->programId, "u_UseHeightMap");
-    if (locUseHeightMap >= 0) glUniform1i(locUseHeightMap, useHeightMap ? 1 : 0);
-    const GLint locUseTerrainNormMap = glGetUniformLocation(program->programId, "u_UseTerrainNormalMap");
-    if (locUseTerrainNormMap >= 0) glUniform1i(locUseTerrainNormMap, useTerrainNormMap ? 1 : 0);
-    const GLint locUseTerrainRoughMap = glGetUniformLocation(program->programId, "u_UseTerrainRoughnessMap");
-    if (locUseTerrainRoughMap >= 0) glUniform1i(locUseTerrainRoughMap, useTerrainRoughMap ? 1 : 0);
-    const GLint locUseTerrainSurfaceMap = glGetUniformLocation(program->programId, "u_UseTerrainSurfaceMap");
-    if (locUseTerrainSurfaceMap >= 0) glUniform1i(locUseTerrainSurfaceMap, useTerrainSurfaceMap ? 1 : 0);
-    const GLint locUseSplatMap = glGetUniformLocation(program->programId, "u_UseSplatMap");
-    if (locUseSplatMap >= 0) glUniform1i(locUseSplatMap, useSplatMap ? 1 : 0);
-
-    if (useHeightMap) {
-      glActiveTexture(GL_TEXTURE10);
-      glBindTexture(GL_TEXTURE_2D, heightMapId);
-      const GLint loc = glGetUniformLocation(program->programId, "u_HeightMapTex");
-      if (loc >= 0) glUniform1i(loc, 10);
-    }
-    if (useTerrainNormMap) {
-      glActiveTexture(GL_TEXTURE11);
-      glBindTexture(GL_TEXTURE_2D, terrainNormMapId);
-      const GLint loc = glGetUniformLocation(program->programId, "u_TerrainNormalMapTex");
-      if (loc >= 0) glUniform1i(loc, 11);
-    }
-    if (useTerrainRoughMap) {
-      glActiveTexture(GL_TEXTURE12);
-      glBindTexture(GL_TEXTURE_2D, terrainRoughMapId);
-      const GLint loc = glGetUniformLocation(program->programId, "u_TerrainRoughnessMapTex");
-      if (loc >= 0) glUniform1i(loc, 12);
-    }
-    if (useTerrainSurfaceMap) {
-      glActiveTexture(GL_TEXTURE13);
-      glBindTexture(GL_TEXTURE_2D, terrainSurfaceMapId);
-      const GLint loc = glGetUniformLocation(program->programId, "u_TerrainSurfaceMapTex");
-      if (loc >= 0) glUniform1i(loc, 13);
-    }
-    if (useSplatMap) {
-      glActiveTexture(GL_TEXTURE14);
-      glBindTexture(GL_TEXTURE_2D, splatMapId);
-      const GLint loc = glGetUniformLocation(program->programId, "u_SplatMapTex");
-      if (loc >= 0) glUniform1i(loc, 14);
-    }
-
-    glActiveTexture(GL_TEXTURE0);
-
-    const GLint locLc = glGetUniformLocation(program->programId, "u_LightCount");
-    if (locLc >= 0) glUniform1i(locLc, lightCount);
-    const GLint locLt = glGetUniformLocation(program->programId, "u_LightType");
-    const GLint locLp = glGetUniformLocation(program->programId, "u_LightPos");
-    const GLint locLd = glGetUniformLocation(program->programId, "u_LightDir");
-    const GLint locLcol = glGetUniformLocation(program->programId, "u_LightColor");
-    const GLint locLi = glGetUniformLocation(program->programId, "u_LightIntensity");
-    const GLint locLr = glGetUniformLocation(program->programId, "u_LightRange");
-    if (locLt >= 0) glUniform1iv(locLt, lightCount, types);
-    if (locLp >= 0) glUniform3fv(locLp, lightCount, &pos[0][0]);
-    if (locLd >= 0) glUniform3fv(locLd, lightCount, &dir[0][0]);
-    if (locLcol >= 0) glUniform3fv(locLcol, lightCount, &col[0][0]);
-    if (locLi >= 0) glUniform1fv(locLi, lightCount, intensity);
-    if (locLr >= 0) glUniform1fv(locLr, lightCount, range);
-
-    // Terrain tessellation (if the shader key provides TCS+TES).
-    if (program->hasTessellation) {
-      glPatchParameteri(GL_PATCH_VERTICES, 3);
-
-      // Tess quality (renderer-defined): keep tessellation modest by default.
-      // 0=Low, 1=Medium, 2=High.
-      int q = t.tessQuality;
-      if (q < 0) q = 0;
-      if (q > 2) q = 2;
-      const float qScale = (q == 0) ? 0.45f : (q == 1 ? 0.70f : 1.0f);
-      const float qFarScale = (q == 0) ? 0.65f : (q == 1 ? 0.85f : 1.0f);
-
-      const float tessNear = t.tessNear;
-      const float tessFar = std::max(tessNear + 1.0f, t.tessFar * qFarScale);
-      const float tessMin = std::max(1.0f, t.tessMin);
-      const float tessMax = std::max(tessMin, std::min(64.0f, t.tessMax * qScale));
-
-      const GLint locTessNear = glGetUniformLocation(program->programId, "u_TessNear");
-      const GLint locTessFar = glGetUniformLocation(program->programId, "u_TessFar");
-      const GLint locTessMin = glGetUniformLocation(program->programId, "u_TessMin");
-      const GLint locTessMax = glGetUniformLocation(program->programId, "u_TessMax");
-      if (locTessNear >= 0) glUniform1f(locTessNear, tessNear);
-      if (locTessFar >= 0) glUniform1f(locTessFar, tessFar);
-      if (locTessMin >= 0) glUniform1f(locTessMin, tessMin);
-      if (locTessMax >= 0) glUniform1f(locTessMax, tessMax);
-
-      const GLint locNormDispBoost = glGetUniformLocation(program->programId, "u_NormalDisplacementBoost");
-      if (locNormDispBoost >= 0) glUniform1f(locNormDispBoost, 0.85f);
-
-      // Use normal maps as additional displacement (micro-height).
-      const GLint locNormDerived = glGetUniformLocation(program->programId, "u_NormalDerivedDisplacementStrength");
-      if (locNormDerived >= 0) glUniform1f(locNormDerived, 0.55f * t.displacementStrength);
-      const GLint locRockNormDerived = glGetUniformLocation(program->programId, "u_RockNormalDerivedDisplacementStrength");
-      if (locRockNormDerived >= 0) glUniform1f(locRockNormDerived, 0.75f * t.rockDisplacementStrength);
-    }
-
-    glBindVertexArray(mesh->vao);
-    const GLenum mode = program->hasTessellation ? GL_PATCHES : GL_TRIANGLES;
-    glDrawElements(mode, static_cast<GLsizei>(mesh->indexCount), GL_UNSIGNED_INT, nullptr);
-    glBindVertexArray(0);
-  }
+  };
+  passStart = glfwGetTime();
+  drawTerrains(false);
   recordPass("terrain_pass", passStart);
 
   // Choose a ground terrain to anchor procedural scatters (first terrain for now).
@@ -3807,6 +3936,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glBindVertexArray(0);
   }
   recordPass("rock_pass", passStart);
+
+  passStart = glfwGetTime();
+  drawTerrains(true);
+  recordPass("terrain_transparent_pass", passStart);
 
   // VFX pass.
   passStart = glfwGetTime();
