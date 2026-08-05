@@ -414,7 +414,7 @@ void Game::onStart() {
     m_registry.emplace<ecs::FogVolumeComponent>(fogEntity, persistentConfig.fog);
   }
 
-  if (skyEntity != ecs::kInvalidEntityId && fogEntity != ecs::kInvalidEntityId) {
+  if (skyEntity != ecs::kInvalidEntityId && fogEntity != ecs::kInvalidEntityId && !persistentConfig.hasFog) {
     m_registry.get<ecs::SkyComponent>(skyEntity).linkedFogVolumeEntity = fogEntity;
   }
 

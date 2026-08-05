@@ -79,6 +79,32 @@ void Tooling::applyToolingConfigToRuntime() {
   m_chunkStreaming.setConfig(chunkCfg);
 }
 
+bool Tooling::applyPersistentWorldConfigToScene() {
+  PersistentWorldConfig persistentConfig{};
+  if (!loadPersistentWorldConfig(m_config.chunkConfigPath, persistentConfig)) return false;
+
+  if (auto* sky = m_registry.tryGet<ecs::SkyComponent>(m_sky)) {
+    *sky = persistentConfig.sky;
+    sky->linkedDirectionalLightEntity = m_light;
+    sky->linkedFogVolumeEntity =
+        (!persistentConfig.hasFog && m_fog != ecs::kInvalidEntityId) ? m_fog : ecs::kInvalidEntityId;
+  }
+
+  if (auto* fogTransform = m_registry.tryGet<ecs::TransformComponent>(m_fog)) {
+    fogTransform->position = persistentConfig.fogAnchor;
+  }
+  if (auto* fog = m_registry.tryGet<ecs::FogVolumeComponent>(m_fog)) {
+    *fog = persistentConfig.fog;
+  }
+
+  m_skyPresetSystem.tick(m_registry);
+
+  std::error_code ec;
+  const auto wt = std::filesystem::last_write_time(m_config.chunkConfigPath, ec);
+  if (!ec) m_worldConfigWriteTime = wt;
+  return true;
+}
+
 bool Tooling::loadToolingConfig() {
   if (m_toolingConfigPath.empty()) return false;
 
@@ -182,14 +208,10 @@ void Tooling::onStart() {
     light.castShadows = true;
   }
 
-  PersistentWorldConfig persistentConfig{};
-  (void)loadPersistentWorldConfig(m_config.chunkConfigPath, persistentConfig);
-
   m_sky = m_registry.createEntity("sky");
   m_registry.emplace<ecs::TransformComponent>(m_sky);
   {
-    auto& sky = m_registry.emplace<ecs::SkyComponent>(m_sky, persistentConfig.sky);
-    sky.linkedDirectionalLightEntity = m_light;
+    m_registry.emplace<ecs::SkyComponent>(m_sky);
     auto& sh = m_registry.emplace<ecs::ShaderComponent>(m_sky, materials::presets::RealisticSkyClouds());
     sh.shader.key = "graphics/shaders/sky";
   }
@@ -197,14 +219,10 @@ void Tooling::onStart() {
   m_fog = m_registry.createEntity("mist");
   {
     auto& tr = m_registry.emplace<ecs::TransformComponent>(m_fog);
-    tr.position = persistentConfig.fogAnchor;
-    m_registry.emplace<ecs::FogVolumeComponent>(m_fog, persistentConfig.fog);
+    tr.position = {0.0f, 4.0f, 0.0f};
+    m_registry.emplace<ecs::FogVolumeComponent>(m_fog);
   }
-
-  if (m_sky != ecs::kInvalidEntityId && m_fog != ecs::kInvalidEntityId) {
-    m_registry.get<ecs::SkyComponent>(m_sky).linkedFogVolumeEntity = m_fog;
-  }
-  m_skyPresetSystem.tick(m_registry);
+  (void)applyPersistentWorldConfigToScene();
 
   ecs::services::registerFactoriesFromEcsFactoriesDir(m_factoryRegistry);
   applyToolingConfigToRuntime();
@@ -234,6 +252,7 @@ void Tooling::onTick(const core::TickContext& ctx) {
   }
 
   if (m_chunkSource && m_chunkSource->reloadIfChanged()) {
+    (void)applyPersistentWorldConfigToScene();
     m_chunkStreaming.unloadAll(m_registry);
     std::cout << "[chunks] reloaded " << m_chunkSource->path() << "\n";
   }
@@ -246,6 +265,7 @@ void Tooling::onTick(const core::TickContext& ctx) {
     if (!m_chunkSource || m_chunkSource->path() != m_config.chunkConfigPath) {
       m_chunkSource = std::make_unique<ecs::services::FileChunkSource>(m_config.chunkConfigPath);
     }
+    (void)applyPersistentWorldConfigToScene();
     m_chunkStreaming.unloadAll(m_registry);
     std::cout << "[tooling] reloaded " << m_toolingConfigPath << "\n";
   }

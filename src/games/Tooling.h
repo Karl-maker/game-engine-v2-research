@@ -38,12 +38,14 @@ class Tooling final : public core::IGame {
 
  private:
   void applyToolingConfigToRuntime();
+  bool applyPersistentWorldConfigToScene();
   bool reloadToolingConfigIfChanged();
   bool loadToolingConfig();
 
   GameConfig m_config{};
   std::string m_toolingConfigPath = "assets/world/tooling_view.json";
   std::filesystem::file_time_type m_toolingConfigWriteTime{};
+  std::filesystem::file_time_type m_worldConfigWriteTime{};
   math::Vec3 m_cameraStartPosition{0.0f, 36.0f, 120.0f};
   math::Vec3 m_cameraStartRotation{24.0f, 0.0f, 0.0f};
   ecs::EntityRegistry m_registry;

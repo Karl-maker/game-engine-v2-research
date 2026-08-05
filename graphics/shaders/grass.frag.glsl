@@ -19,6 +19,7 @@ out vec4 o_Color;
 uniform int u_GrassMode; // 0=clumps, 1=planes
 
 // Shared lighting/color controls.
+uniform vec3 u_CameraPos;
 uniform vec3 u_SunDir;
 uniform vec3 u_SunColor;
 uniform float u_SunIntensity;
