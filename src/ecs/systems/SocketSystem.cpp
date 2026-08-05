@@ -102,6 +102,14 @@ static ecs::EntityId resolveEntityByName(ecs::EntityRegistry& registry, const st
   return found;
 }
 
+static ecs::EntityId resolveEntityByMeshId(ecs::EntityRegistry& registry, const std::string& meshId) {
+  ecs::EntityId found = ecs::kInvalidEntityId;
+  registry.view<ecs::MeshComponent>([&](ecs::EntityId id, const ecs::MeshComponent& mesh) {
+    if (found == ecs::kInvalidEntityId && mesh.meshId == meshId) found = id;
+  });
+  return found;
+}
+
 static math::Vec3 translationFromMat4(const math::Mat4& m) { return {m.m[12], m.m[13], m.m[14]}; }
 
 }  // namespace
@@ -120,6 +128,9 @@ void SocketSystem::tick(EntityRegistry& registry, double deltaSeconds) const {
     ecs::EntityId targetEntity = socket.targetEntity;
     if (targetEntity == ecs::kInvalidEntityId && !socket.targetEntityName.empty()) {
       targetEntity = resolveEntityByName(registry, socket.targetEntityName);
+    }
+    if (targetEntity == ecs::kInvalidEntityId && !socket.targetMeshId.empty()) {
+      targetEntity = resolveEntityByMeshId(registry, socket.targetMeshId);
     }
     if (!registry.isAlive(targetEntity)) return;
 

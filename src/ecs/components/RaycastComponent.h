@@ -37,6 +37,7 @@ struct RaycastComponent {
   bool enabled = true;
 
   // Logical ownership and filtering metadata.
+  EntityId ownerEntity = kInvalidEntityId;
   EntityId sensorEntity = kInvalidEntityId;
   std::string raycastCategory = "default";
   physics::LayerMask raycastLayer = physics::kAllLayers;

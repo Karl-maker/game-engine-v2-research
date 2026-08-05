@@ -10,6 +10,7 @@
 // - Weapon (e.g., sword) has a Hit volume that is enabled during attack windows
 
 #include "math/Vec3.h"
+#include "ecs/EntityId.h"
 
 #include <cstdint>
 #include <string>
@@ -70,8 +71,10 @@ struct CombatVolumeComponent {
   };
 
   // Multiple volumes per entity (body, head, sword hitbox, etc).
+  EntityId ownerEntity = kInvalidEntityId;
+  std::string attachmentKey;
+  std::string sourceMeshId;
   std::vector<Volume> volumes;
 };
 
 }  // namespace ecs
-

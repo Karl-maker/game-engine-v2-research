@@ -39,6 +39,8 @@ struct AttachmentComponent {
   struct Attachment {
     // Which entity this attachment references.
     EntityId targetEntity = kInvalidEntityId;
+    std::string targetEntityName;
+    std::string targetMeshId;
 
     // How the attachment should be interpreted by the attachment system.
     Mode mode = Mode::Parent;

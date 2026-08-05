@@ -161,6 +161,25 @@ void applyFogDefaults(ecs::FogVolumeComponent& fog, math::Vec3& anchor) {
   fog.enabled = true;
 }
 
+void applyRenderDefaults(ecs::RenderSettingsComponent& render) {
+  render.enabled = true;
+  render.shadowsEnabled = true;
+  render.shadowQuality = 2;
+  render.shadowStrength = 0.82f;
+  render.shadowUseTessellation = true;
+}
+
+void applySunDefaults(ecs::LightComponent& sun) {
+  sun.type = ecs::LightComponent::Type::Directional;
+  sun.direction = math::normalize(math::Vec3{-0.32f, -1.0f, -0.18f});
+  sun.intensity = 3.65f;
+  sun.color = {1.0f, 0.96f, 0.88f};
+  sun.castShadows = true;
+  sun.shadowResolution = 2048u;
+  sun.shadowBias = 0.0006f;
+  sun.shadowDistance = 82.0f;
+}
+
 void readPlayerConfig(const data::JsonValue::Object& obj, ecs::services::PlayableCharacterConfig& cfg) {
   cfg.hasController = data::getBoolOr(obj, "hasController", cfg.hasController);
 
@@ -299,6 +318,32 @@ void readFogConfig(const data::JsonValue::Object& obj, ecs::FogVolumeComponent& 
   if (const auto* windDir = data::getObjectKey(obj, "windDirection")) data::readVec2(*windDir, fog.windDirection);
 }
 
+void readRenderConfig(const data::JsonValue::Object& obj, ecs::RenderSettingsComponent& render) {
+  render.enabled = data::getBoolOr(obj, "enabled", render.enabled);
+  render.shadowsEnabled = data::getBoolOr(obj, "shadowsEnabled", render.shadowsEnabled);
+  render.shadowQuality = data::getIntOr(obj, "shadowQuality", render.shadowQuality);
+  render.shadowStrength = data::getFloatOr(obj, "shadowStrength", render.shadowStrength);
+  render.shadowUseTessellation = data::getBoolOr(obj, "shadowUseTessellation", render.shadowUseTessellation);
+  render.showRays = data::getBoolOr(obj, "showRays", render.showRays);
+  render.showCollisionBoxes = data::getBoolOr(obj, "showCollisionBoxes", render.showCollisionBoxes);
+  render.showCombatBoxes = data::getBoolOr(obj, "showCombatBoxes", render.showCombatBoxes);
+  render.showSkeletonBones = data::getBoolOr(obj, "showSkeletonBones", render.showSkeletonBones);
+}
+
+void readSunConfig(const data::JsonValue::Object& obj, ecs::LightComponent& sun) {
+  sun.enabled = data::getBoolOr(obj, "enabled", sun.enabled);
+  sun.intensity = data::getFloatOr(obj, "intensity", sun.intensity);
+  sun.castShadows = data::getBoolOr(obj, "castShadows", sun.castShadows);
+  sun.shadowResolution = static_cast<std::uint32_t>(data::getIntOr(obj, "shadowResolution", static_cast<int>(sun.shadowResolution)));
+  sun.shadowBias = data::getFloatOr(obj, "shadowBias", sun.shadowBias);
+  sun.shadowDistance = data::getFloatOr(obj, "shadowDistance", sun.shadowDistance);
+  if (const auto* direction = data::getObjectKey(obj, "direction")) data::readVec3(*direction, sun.direction);
+  if (const auto* color = data::getObjectKey(obj, "color")) {
+    math::Vec3 value{};
+    if (data::readVec3(*color, value)) sun.color = value;
+  }
+}
+
 }  // namespace
 
 bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWorldConfig& outConfig) {
@@ -306,6 +351,8 @@ bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWor
   applyPlayerDefaults(outConfig.player);
   applySkyDefaults(outConfig.sky);
   applyFogDefaults(outConfig.fog, outConfig.fogAnchor);
+  applyRenderDefaults(outConfig.renderSettings);
+  applySunDefaults(outConfig.sun);
 
   data::JsonValue storage;
   const data::JsonValue::Object* root = nullptr;
@@ -335,8 +382,20 @@ bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWor
       outConfig.hasFog = true;
     }
   }
+  if (const auto* renderV = data::getObjectKey(*persistent, "render")) {
+    if (const auto* render = renderV->tryObject()) {
+      readRenderConfig(*render, outConfig.renderSettings);
+      outConfig.hasRenderSettings = true;
+    }
+  }
+  if (const auto* sunV = data::getObjectKey(*persistent, "sun")) {
+    if (const auto* sun = sunV->tryObject()) {
+      readSunConfig(*sun, outConfig.sun);
+      outConfig.hasSun = true;
+    }
+  }
 
-  return outConfig.hasPlayer || outConfig.hasSky || outConfig.hasFog;
+  return outConfig.hasPlayer || outConfig.hasSky || outConfig.hasFog || outConfig.hasRenderSettings || outConfig.hasSun;
 }
 
 }  // namespace games

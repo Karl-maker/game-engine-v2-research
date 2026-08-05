@@ -123,7 +123,7 @@ VisionDebugResult updatePlayerVisionDrivenIk(ecs::EntityRegistry& registry,
   bool targetSeen = false;
   bool hasTarget = false;
   math::Vec3 targetWorld{};
-  const auto alerts = events.consumeAll<ecs::events::SensorAlertEvent>();
+  const auto& alerts = events.peekAll<ecs::events::SensorAlertEvent>();
   for (const auto& alert : alerts) {
     if (alert.parentEntity != player) continue;
     if (result.firstHitName.empty()) {
@@ -383,12 +383,7 @@ void Game::onStart() {
   m_registry.emplace<ecs::TransformComponent>(m_light);
   {
     auto& light = m_registry.emplace<ecs::LightComponent>(m_light);
-    light.type = ecs::LightComponent::Type::Directional;
-    // Placeholder values; SkyPresetSystem will drive these when linked from SkyComponent.
-    light.direction = math::normalize(math::Vec3{-0.35f, -1.0f, -0.15f});
-    light.intensity = 3.25f;
-    light.color = {1.0f, 0.96f, 0.88f};
-    light.castShadows = true;
+    light = persistentConfig.sun;
   }
 
   // Sky (procedural clouds).
@@ -428,7 +423,7 @@ void Game::onStart() {
   {
     m_renderSettings = m_registry.createEntity("render_settings");
     auto& rs = m_registry.emplace<ecs::RenderSettingsComponent>(m_renderSettings);
-    rs.enabled = true;
+    rs = persistentConfig.renderSettings;
   }
 
   {
@@ -598,6 +593,8 @@ void Game::onTick(const core::TickContext& ctx) {
   profile("pose", [&] { m_poseSystem.tick(m_registry); });
   profile("socket", [&] { m_socketSystem.tick(m_registry, ctx.deltaSeconds); });
   profile("hit_detect", [&] { m_hitDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds); });
+  profile("combat_interaction", [&] { m_combatInteractionSystem.tick(m_registry, m_events, ctx.elapsedSeconds); });
+  profile("knockback", [&] { m_knockbackSystem.tick(m_registry, m_events); });
 
   // --- Third-person camera follow ---
   profile("camera_follow", [&] { m_thirdPersonCameraSystem.tick(m_registry, ctx.deltaSeconds); });

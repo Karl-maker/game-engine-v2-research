@@ -3,6 +3,7 @@
 // Author: Karl-Johan Bailey
 
 #include "ecs/components/ColliderComponent.h"
+#include "ecs/components/MeshComponent.h"
 #include "ecs/components/MotionComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/TerrainComponent.h"
@@ -35,7 +36,7 @@ bool layersCollide(physics::LayerMask a, physics::LayerMask b) {
   return (aWorld && bChar) || (aChar && bWorld);
 }
 
-Aabb colliderAabb(const ecs::TransformComponent& tr, const ecs::ColliderComponent& c) {
+Aabb colliderAabb(const ecs::TransformComponent& tr, const ecs::ColliderComponent& c, const ecs::MeshComponent* mesh = nullptr) {
   const math::Vec3 center = tr.position + c.offset;
   math::Vec3 half{};
   switch (c.shape) {
@@ -46,10 +47,21 @@ Aabb colliderAabb(const ecs::TransformComponent& tr, const ecs::ColliderComponen
       half = {c.size.x, c.size.y * 0.5f, c.size.x};
       break;
     case ecs::ColliderComponent::Shape::Box:
-    case ecs::ColliderComponent::Shape::Mesh:
     case ecs::ColliderComponent::Shape::Terrain:
     default:
       half = {std::max(0.01f, c.size.x * 0.5f), std::max(0.01f, c.size.y * 0.5f), std::max(0.01f, c.size.z * 0.5f)};
+      break;
+    case ecs::ColliderComponent::Shape::Mesh:
+      if (c.useMeshBounds && mesh && mesh->bounds.max.x >= mesh->bounds.min.x) {
+        const math::Vec3 meshScale{std::max(0.01f, std::abs(tr.scale.x * mesh->scale.x)),
+                                   std::max(0.01f, std::abs(tr.scale.y * mesh->scale.y)),
+                                   std::max(0.01f, std::abs(tr.scale.z * mesh->scale.z))};
+        half = {std::max(0.01f, (mesh->bounds.max.x - mesh->bounds.min.x) * 0.5f * meshScale.x),
+                std::max(0.01f, (mesh->bounds.max.y - mesh->bounds.min.y) * 0.5f * meshScale.y),
+                std::max(0.01f, (mesh->bounds.max.z - mesh->bounds.min.z) * 0.5f * meshScale.z)};
+      } else {
+        half = {std::max(0.01f, c.size.x * 0.5f), std::max(0.01f, c.size.y * 0.5f), std::max(0.01f, c.size.z * 0.5f)};
+      }
       break;
   }
   return {center - half, center + half};
@@ -150,7 +162,7 @@ void CollisionDetectionSystem::tick(EntityRegistry& registry, ecs::services::Eve
         body.id = id;
         body.collider = collider;
         body.transform = tr;
-        body.aabb = colliderAabb(tr, collider);
+        body.aabb = colliderAabb(tr, collider, registry.tryGet<ecs::MeshComponent>(id));
         bodies.emplace(id, body);
         m_grid.insert({id, body.aabb});
       });

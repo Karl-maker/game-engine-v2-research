@@ -21,6 +21,7 @@ struct SocketComponent final {
 
   EntityId targetEntity = kInvalidEntityId;
   std::string targetEntityName;
+  std::string targetMeshId;
 
   std::string skeletonName;
   std::string boneName;

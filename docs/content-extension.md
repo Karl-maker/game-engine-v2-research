@@ -106,9 +106,19 @@ Mesh material override tips:
 - add `ShaderComponent.parameters` such as `roughness`, `metallic`, `specularIntensity`, `normalScale`, `aoStrength`, `emissiveColor`, `emissiveStrength`, or `displacementStrength`
 - add `ShaderComponent.lodBreakpoints` when you want those textures or parameters to swap by camera distance
 - set `overrideTessellation = true` inside a breakpoint when you also want a different tessellation band or quality at that distance
+- for chunk-authored actors/combatants/objects you can now use a higher-level `material` block with `maps`, `textures`, `values`, or `shading` keys; common aliases like `albedo`, `normal`, `metallicRoughness`, `displacement`, `roughness`, `normalScale`, `aoStrength`, `displacementStrength`, `tessNear`, `tessFar`, `tessMin`, `tessMax`, `tessQuality`, and `sinkStrength` are converted into the lower-level shader bindings automatically
 - glTF files already auto-import base color, normal, metallic-roughness, occlusion, emissive, and `KHR_materials_specular` data when those channels exist in the file
 - rely on asset UVs for mapping; UV coordinates are loaded from the mesh file when they exist
 - if the asset has no UVs, the engine does not auto-generate a new unwrap during load
+
+Combat and animation authoring tips:
+
+- add `animation.clips` entries with `{ "key": "...", "clip": "..." }` so gameplay can refer to stable keys like `idle`, `walk`, `run`, or `attack_light` instead of raw asset clip names
+- add `animation.locomotion` to map the automatic idle/walk/run selection onto those keys
+- add `pose.poses` for reusable named bone overrides that can be blended by weight
+- add `combat.volumes` to spawn many hurt or hit volumes on the parent, a specific bone, a socket, or another mesh target
+- add `combat.raycasts` when you want traces and combat volumes to work together; combat impact events now record whether there was ray support and whether a physics collision happened
+- add `combat.vfx` for attached high-quality fire, electricity, smoke, steam, or sparks emitters with extra controls such as `glowStrength`, `emberRate`, `smokeAmount`, `arcThickness`, and `sparkGravityScale`
 
 ## 5) Materials
 

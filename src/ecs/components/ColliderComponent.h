@@ -15,6 +15,8 @@
 #include "math/Vec3.h"
 #include "physics/LayerMask.h"
 
+#include <string>
+
 namespace ecs {
 
 struct ColliderComponent {
@@ -48,6 +50,9 @@ struct ColliderComponent {
   // Mesh collider (engine-defined handle/id).
   bool hasMesh = false;
   std::uint32_t meshId = 0;
+  std::string meshRef;
+  std::string meshAssetKey;
+  bool useMeshBounds = false;
 
   // Terrain collider settings.
   struct TerrainSource {
@@ -60,4 +65,3 @@ struct ColliderComponent {
 };
 
 }  // namespace ecs
-

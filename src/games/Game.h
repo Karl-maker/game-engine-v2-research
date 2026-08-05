@@ -24,6 +24,7 @@
 #include "ecs/systems/HitDetectionSystem.h"
 #include "ecs/systems/HierarchySystem.h"
 #include "ecs/systems/CombatantHudSystem.h"
+#include "ecs/systems/CombatInteractionSystem.h"
 #include "ecs/systems/GraphicsSystem.h"
 #include "ecs/systems/GravitySystem.h"
 #include "ecs/systems/IdleAnimationSystem.h"
@@ -31,6 +32,7 @@
 #include "ecs/systems/JumpSystem.h"
 #include "ecs/systems/MotionSystem.h"
 #include "ecs/systems/MovementSystem.h"
+#include "ecs/systems/KnockbackSystem.h"
 #include "ecs/systems/PlayerHudSystem.h"
 #include "ecs/systems/PoseSystem.h"
 #include "ecs/systems/RayDetectionSystem.h"
@@ -92,9 +94,11 @@ class Game final : public core::IGame {
   ecs::systems::CollisionDetectionSystem m_collisionDetectionSystem;
   ecs::systems::CollisionResolutionSystem m_collisionResolutionSystem;
   ecs::systems::HitDetectionSystem m_hitDetectionSystem;
+  ecs::systems::CombatInteractionSystem m_combatInteractionSystem;
   ecs::systems::HierarchySystem m_hierarchySystem;
   ecs::systems::MotionSystem m_motionSystem;
   ecs::systems::MovementSystem m_movementSystem;
+  ecs::systems::KnockbackSystem m_knockbackSystem;
   ecs::systems::PoseSystem m_poseSystem;
   ecs::systems::SocketSystem m_socketSystem;
   ecs::systems::RayDetectionSystem m_rayDetectionSystem;

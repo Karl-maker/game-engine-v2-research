@@ -174,6 +174,7 @@ AnimationInput readAnimationInput(const data::JsonValue::Object& obj);
 PoseInput readPoseInput(const data::JsonValue::Object& obj);
 IkInput readIkInput(const data::JsonValue::Object& obj);
 SensorConeInput readSensorConeInput(const data::JsonValue::Object& obj);
+CombatSetupInput readCombatSetupInput(const data::JsonValue::Object& obj);
 
 std::optional<ecs::ShaderComponent> resolveTerrainMaterialPreset(const std::string& preset) {
   if (preset == "Dirt") return materials::presets::Dirt();
@@ -380,6 +381,23 @@ render::TextureBinding readTextureBinding(const data::JsonValue::Object& obj) {
   return out;
 }
 
+bool readMaterialValue(const data::JsonValue& v, render::MaterialParamValue& out);
+
+std::string canonicalTextureSlot(std::string key) {
+  for (char& ch : key) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (key == "basecolor" || key == "base_color" || key == "albedo" || key == "diffuse") return "albedo";
+  if (key == "normal" || key == "normalgl" || key == "normal_gl") return "normalgl";
+  if (key == "roughness") return "roughness";
+  if (key == "metallic") return "metallic";
+  if (key == "ao" || key == "ambientocclusion" || key == "ambient_occlusion" || key == "occlusion") return "ao";
+  if (key == "emissive") return "emissive";
+  if (key == "specular") return "specular";
+  if (key == "displacement" || key == "height") return "displacement";
+  if (key == "metallicroughness" || key == "metallic_roughness") return "metallicRoughness";
+  if (key == "orm") return "orm";
+  return key;
+}
+
 bool readMaterialValue(const data::JsonValue& v, render::MaterialParamValue& out) {
   if (const auto* b = v.tryBool()) {
     out = *b;
@@ -459,6 +477,35 @@ std::vector<render::MaterialParameter> readMaterialParameters(const data::JsonVa
     }
   }
   return out;
+}
+
+void appendMaterialTexturesFromObject(const data::JsonValue::Object& obj, std::vector<render::TextureBinding>& out) {
+  for (const auto& [key, value] : obj) {
+    render::TextureBinding binding{};
+    binding.slot = canonicalTextureSlot(key);
+    if (const auto* vo = value.tryObject()) {
+      binding = readTextureBinding(*vo);
+      binding.slot = binding.slot.empty() ? canonicalTextureSlot(key) : canonicalTextureSlot(binding.slot);
+    } else {
+      std::string textureKey;
+      if (!data::readString(value, textureKey)) continue;
+      binding.texture.enabled = true;
+      binding.texture.key = std::move(textureKey);
+      binding.srgb = (binding.slot == "albedo" || binding.slot == "emissive");
+    }
+    out.push_back(std::move(binding));
+  }
+}
+
+void appendMaterialParametersFromObject(const data::JsonValue::Object& obj, std::vector<render::MaterialParameter>& out) {
+  for (const auto& [key, value] : obj) {
+    render::MaterialParameter param{};
+    if (key == "sink" || key == "sinkStrength") param.name = "dirtSinkStrength";
+    else if (key == "uvScale") param.name = "uvTiling";
+    else param.name = key;
+    if (!readMaterialValue(value, param.value)) continue;
+    out.push_back(std::move(param));
+  }
 }
 
 std::vector<ShaderBreakpointInput> readShaderBreakpoints(const data::JsonValue& v) {
@@ -555,6 +602,27 @@ ViewableInput readViewableInput(const data::JsonValue::Object& obj) {
       if (const auto* lv = data::getObjectKey(*so, "lodBreakpoints")) v.lodBreakpoints = readShaderBreakpoints(*lv);
       v.castShadows = data::getBoolOr(*so, "castShadows", v.castShadows);
       v.receiveShadows = data::getBoolOr(*so, "receiveShadows", v.receiveShadows);
+    }
+  }
+  if (const auto* mv = data::getObjectKey(obj, "material")) {
+    if (const auto* mo = mv->tryObject()) {
+      if (const auto* tx = data::getObjectKey(*mo, "textures")) {
+        if (const auto* txObj = tx->tryObject()) appendMaterialTexturesFromObject(*txObj, v.textures);
+        else upsertTextureBindingsBySlot(v.textures, readTextureBindings(*tx));
+      }
+      if (const auto* maps = data::getObjectKey(*mo, "maps")) {
+        if (const auto* mapsObj = maps->tryObject()) appendMaterialTexturesFromObject(*mapsObj, v.textures);
+      }
+      if (const auto* pv = data::getObjectKey(*mo, "parameters")) {
+        upsertMaterialParametersByName(v.parameters, readMaterialParameters(*pv));
+      }
+      if (const auto* values = data::getObjectKey(*mo, "values")) {
+        if (const auto* valuesObj = values->tryObject()) appendMaterialParametersFromObject(*valuesObj, v.parameters);
+      }
+      if (const auto* shading = data::getObjectKey(*mo, "shading")) {
+        if (const auto* shadingObj = shading->tryObject()) appendMaterialParametersFromObject(*shadingObj, v.parameters);
+      }
+      if (const auto* lv = data::getObjectKey(*mo, "lodBreakpoints")) v.lodBreakpoints = readShaderBreakpoints(*lv);
     }
   }
 
@@ -830,6 +898,7 @@ PlayableCharacterConfig readPlayableCharacterInput(const data::JsonValue::Object
   pc.base.pose = readPoseInput(obj);
   pc.base.ik = readIkInput(obj);
   pc.base.sensorCone = readSensorConeInput(obj);
+  pc.base.combat = readCombatSetupInput(obj);
   readCombatantHudInto(obj, pc.base.hud);
 
   pc.hasController = data::getBoolOr(obj, "hasController", pc.hasController);
@@ -871,6 +940,7 @@ PlayableCharacterConfig readPlayableCharacterInput(const data::JsonValue::Object
       pc.base.pose = readPoseInput(*bo);
       pc.base.ik = readIkInput(*bo);
       pc.base.sensorCone = readSensorConeInput(*bo);
+      pc.base.combat = readCombatSetupInput(*bo);
       readCombatantHudInto(*bo, pc.base.hud);
     }
   }
@@ -923,15 +993,25 @@ VfxConfig readVfxInput(const data::JsonValue::Object& obj, const FactoryContext&
     v.vfx.upwardBias = data::getFloatOr(src, "upwardBias", v.vfx.upwardBias);
     v.vfx.spreadRadiusMeters = data::getFloatOr(src, "spreadRadiusMeters", v.vfx.spreadRadiusMeters);
     v.vfx.heatHazeStrength = data::getFloatOr(src, "heatHazeStrength", v.vfx.heatHazeStrength);
+    v.vfx.turbulence = data::getFloatOr(src, "turbulence", v.vfx.turbulence);
+    v.vfx.swirlStrength = data::getFloatOr(src, "swirlStrength", v.vfx.swirlStrength);
+    v.vfx.coreSizeMeters = data::getFloatOr(src, "coreSizeMeters", v.vfx.coreSizeMeters);
+    v.vfx.glowStrength = data::getFloatOr(src, "glowStrength", v.vfx.glowStrength);
+    v.vfx.emberRate = data::getFloatOr(src, "emberRate", v.vfx.emberRate);
+    v.vfx.smokeAmount = data::getFloatOr(src, "smokeAmount", v.vfx.smokeAmount);
     v.vfx.chargeLengthMeters = data::getFloatOr(src, "chargeLengthMeters", v.vfx.chargeLengthMeters);
     v.vfx.arcJitter = data::getFloatOr(src, "arcJitter", v.vfx.arcJitter);
     v.vfx.branchCount = data::getIntOr(src, "branchCount", v.vfx.branchCount);
     v.vfx.segmentCount = data::getIntOr(src, "segmentCount", v.vfx.segmentCount);
     v.vfx.pulseSpeed = data::getFloatOr(src, "pulseSpeed", v.vfx.pulseSpeed);
+    v.vfx.arcThickness = data::getFloatOr(src, "arcThickness", v.vfx.arcThickness);
+    v.vfx.arcGlow = data::getFloatOr(src, "arcGlow", v.vfx.arcGlow);
     v.vfx.sparkCount = data::getIntOr(src, "sparkCount", v.vfx.sparkCount);
     v.vfx.sparkSpreadDegrees = data::getFloatOr(src, "sparkSpreadDegrees", v.vfx.sparkSpreadDegrees);
     v.vfx.sparkTrailLengthMeters = data::getFloatOr(src, "sparkTrailLengthMeters", v.vfx.sparkTrailLengthMeters);
     v.vfx.sparkFadeSeconds = data::getFloatOr(src, "sparkFadeSeconds", v.vfx.sparkFadeSeconds);
+    v.vfx.sparkBurstJitter = data::getFloatOr(src, "sparkBurstJitter", v.vfx.sparkBurstJitter);
+    v.vfx.sparkGravityScale = data::getFloatOr(src, "sparkGravityScale", v.vfx.sparkGravityScale);
     if (const auto* c = data::getObjectKey(src, "primaryColor")) (void)readColorValue(*c, v.vfx.primaryColor);
     if (const auto* c = data::getObjectKey(src, "secondaryColor")) (void)readColorValue(*c, v.vfx.secondaryColor);
   };
@@ -1021,6 +1101,9 @@ PhysicalInput readPhysicalInput(const data::JsonValue::Object& obj) {
           if (data::readString(*lv, s)) p.collisionLayer = parseLayerMask(std::move(s));
         }
       }
+      p.colliderMeshId = data::getStringOr(*po, "meshId", p.colliderMeshId);
+      p.colliderMeshKey = data::getStringOr(*po, "meshKey", p.colliderMeshKey);
+      p.colliderUseMeshBounds = data::getBoolOr(*po, "useMeshBounds", p.colliderUseMeshBounds);
     }
   }
   return p;
@@ -1036,10 +1119,36 @@ AnimationInput readAnimationInput(const data::JsonValue::Object& obj) {
   a.enabled = data::getBoolOr(*ao, "enabled", a.enabled);
   a.idleDelaySeconds = data::getFloatOr(*ao, "idleDelaySeconds", a.idleDelaySeconds);
   a.idleAnimationClip = data::getStringOr(*ao, "idleAnimationClip", a.idleAnimationClip);
+  a.idleAnimationKey = data::getStringOr(*ao, "idleAnimationKey", a.idleAnimationKey);
   a.idleAnimationLayer = data::getStringOr(*ao, "idleAnimationLayer", a.idleAnimationLayer);
+  a.locomotionIdleKey = data::getStringOr(*ao, "locomotionIdleKey", a.locomotionIdleKey);
+  a.locomotionWalkKey = data::getStringOr(*ao, "locomotionWalkKey", a.locomotionWalkKey);
+  a.locomotionRunKey = data::getStringOr(*ao, "locomotionRunKey", a.locomotionRunKey);
 
   if (const auto* clipsV = data::getObjectKey(*ao, "availableClips")) {
     a.availableClips = readStringArrayOrEmpty(*clipsV);
+  }
+  if (const auto* bindingV = data::getObjectKey(*ao, "clips")) {
+    if (const auto* arr = bindingV->tryArray()) {
+      a.clipBindings.clear();
+      a.clipBindings.reserve(arr->size());
+      for (const auto& el : *arr) {
+        if (const auto* bo = el.tryObject()) {
+          AnimationClipBindingInput binding{};
+          binding.key = data::getStringOr(*bo, "key", binding.key);
+          binding.clip = data::getStringOr(*bo, "clip", binding.clip);
+          binding.speed = data::getFloatOr(*bo, "speed", binding.speed);
+          if (!binding.key.empty() && !binding.clip.empty()) a.clipBindings.push_back(std::move(binding));
+        }
+      }
+    }
+  }
+  if (const auto* locomotionV = data::getObjectKey(*ao, "locomotion")) {
+    if (const auto* locomotionO = locomotionV->tryObject()) {
+      a.locomotionIdleKey = data::getStringOr(*locomotionO, "idle", a.locomotionIdleKey);
+      a.locomotionWalkKey = data::getStringOr(*locomotionO, "walk", a.locomotionWalkKey);
+      a.locomotionRunKey = data::getStringOr(*locomotionO, "run", a.locomotionRunKey);
+    }
   }
 
   if (const auto* layersV = data::getObjectKey(*ao, "layers")) {
@@ -1053,7 +1162,9 @@ AnimationInput readAnimationInput(const data::JsonValue::Object& obj) {
           l.weight = data::getFloatOr(*lo, "weight", l.weight);
           l.blendMode = data::getStringOr(*lo, "blendMode", l.blendMode);
           if (const auto* mv = data::getObjectKey(*lo, "mask")) l.mask = readStringArrayOrEmpty(*mv);
+          l.currentState = data::getStringOr(*lo, "currentStateKey", l.currentState);
           l.currentState = data::getStringOr(*lo, "currentState", l.currentState);
+          l.nextState = data::getStringOr(*lo, "nextStateKey", l.nextState);
           l.nextState = data::getStringOr(*lo, "nextState", l.nextState);
           l.transition = data::getFloatOr(*lo, "transition", l.transition);
           a.layers.push_back(std::move(l));
@@ -1076,6 +1187,47 @@ PoseInput readPoseInput(const data::JsonValue::Object& obj) {
   p.defaultPoseName = data::getStringOr(*po, "defaultPoseName", p.defaultPoseName);
   p.defaultPoseEnabled = data::getBoolOr(*po, "defaultPoseEnabled", p.defaultPoseEnabled);
   p.defaultPoseWeight = data::getFloatOr(*po, "defaultPoseWeight", p.defaultPoseWeight);
+  if (const auto* posesV = data::getObjectKey(*po, "poses")) {
+    if (const auto* arr = posesV->tryArray()) {
+      p.poses.clear();
+      p.poses.reserve(arr->size());
+      for (const auto& poseV : *arr) {
+        const auto* poseO = poseV.tryObject();
+        if (!poseO) continue;
+        PoseDefinitionInput pose{};
+        pose.name = data::getStringOr(*poseO, "name", pose.name);
+        pose.enabled = data::getBoolOr(*poseO, "enabled", pose.enabled);
+        pose.weight = data::getFloatOr(*poseO, "weight", pose.weight);
+        if (const auto* bonesV = data::getObjectKey(*poseO, "bones")) {
+          if (const auto* bonesA = bonesV->tryArray()) {
+            pose.bones.reserve(bonesA->size());
+            for (const auto& boneV : *bonesA) {
+              const auto* boneO = boneV.tryObject();
+              if (!boneO) continue;
+              PoseBoneOverrideInput bone{};
+              bone.boneKey = data::getStringOr(*boneO, "boneKey", bone.boneKey);
+              bone.boneKey = data::getStringOr(*boneO, "bone", bone.boneKey);
+              bone.weight = data::getFloatOr(*boneO, "weight", bone.weight);
+              if (const auto* t = data::getObjectKey(*boneO, "translation")) {
+                bone.hasTranslation = data::readVec3(*t, bone.translation);
+              }
+              if (const auto* r = data::getObjectKey(*boneO, "rotationEulerDeg")) {
+                bone.hasRotationEulerDeg = data::readVec3(*r, bone.rotationEulerDeg);
+              }
+              if (const auto* r = data::getObjectKey(*boneO, "rotationDeg")) {
+                bone.hasRotationEulerDeg = data::readVec3(*r, bone.rotationEulerDeg);
+              }
+              if (const auto* s = data::getObjectKey(*boneO, "scale")) {
+                bone.hasScale = data::readVec3(*s, bone.scale);
+              }
+              pose.bones.push_back(std::move(bone));
+            }
+          }
+        }
+        p.poses.push_back(std::move(pose));
+      }
+    }
+  }
   return p;
 }
 
@@ -1156,6 +1308,147 @@ SensorConeInput readSensorConeInput(const data::JsonValue::Object& obj) {
   return s;
 }
 
+AttachmentMountInput readAttachmentMountInput(const data::JsonValue::Object& obj) {
+  AttachmentMountInput mount{};
+  mount.mode = data::getStringOr(obj, "mode", mount.mode);
+  mount.targetEntityName = data::getStringOr(obj, "targetEntityName", mount.targetEntityName);
+  mount.targetMeshId = data::getStringOr(obj, "targetMeshId", mount.targetMeshId);
+  mount.skeletonId = data::getStringOr(obj, "skeletonId", mount.skeletonId);
+  mount.boneName = data::getStringOr(obj, "boneName", mount.boneName);
+  mount.socketName = data::getStringOr(obj, "socketName", mount.socketName);
+  mount.inheritPosition = data::getBoolOr(obj, "inheritPosition", mount.inheritPosition);
+  mount.inheritRotation = data::getBoolOr(obj, "inheritRotation", mount.inheritRotation);
+  mount.inheritScale = data::getBoolOr(obj, "inheritScale", mount.inheritScale);
+  if (const auto* v = data::getObjectKey(obj, "positionOffset")) (void)data::readVec3(*v, mount.positionOffset);
+  if (const auto* v = data::getObjectKey(obj, "rotationOffset")) (void)data::readVec3(*v, mount.rotationOffset);
+  if (const auto* v = data::getObjectKey(obj, "scaleOffset")) (void)data::readVec3(*v, mount.scaleOffset);
+  return mount;
+}
+
+ecs::CombatVolumeComponent::Role parseCombatRole(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  return value == "hit" ? ecs::CombatVolumeComponent::Role::Hit : ecs::CombatVolumeComponent::Role::Hurt;
+}
+
+ecs::CombatVolumeComponent::Shape parseCombatShape(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "sphere") return ecs::CombatVolumeComponent::Shape::Sphere;
+  if (value == "capsule") return ecs::CombatVolumeComponent::Shape::Capsule;
+  return ecs::CombatVolumeComponent::Shape::Box;
+}
+
+CombatSetupInput readCombatSetupInput(const data::JsonValue::Object& obj) {
+  CombatSetupInput out{};
+  const auto* combatV = data::getObjectKey(obj, "combat");
+  const auto* combatO = combatV ? combatV->tryObject() : nullptr;
+  if (!combatO) return out;
+
+  if (const auto* volumesV = data::getObjectKey(*combatO, "volumes")) {
+    if (const auto* arr = volumesV->tryArray()) {
+      out.volumes.reserve(arr->size());
+      for (const auto& el : *arr) {
+        const auto* vo = el.tryObject();
+        if (!vo) continue;
+        CombatAttachmentInput attach{};
+        attach.name = data::getStringOr(*vo, "name", attach.name);
+        attach.sourceMeshId = data::getStringOr(*vo, "sourceMeshId", attach.sourceMeshId);
+        if (const auto* mountV = data::getObjectKey(*vo, "attach")) {
+          if (const auto* mountO = mountV->tryObject()) attach.mount = readAttachmentMountInput(*mountO);
+        }
+        if (const auto* listV = data::getObjectKey(*vo, "items")) {
+          if (const auto* itemsA = listV->tryArray()) {
+            attach.volumes.reserve(itemsA->size());
+            for (const auto& itemV : *itemsA) {
+              const auto* itemO = itemV.tryObject();
+              if (!itemO) continue;
+              ecs::CombatVolumeComponent::Volume volume{};
+              std::string role = data::getStringOr(*itemO, "role", "hurt");
+              std::string shape = data::getStringOr(*itemO, "shape", "box");
+              volume.role = parseCombatRole(std::move(role));
+              volume.shape = parseCombatShape(std::move(shape));
+              if (const auto* ov = data::getObjectKey(*itemO, "offset")) (void)data::readVec3(*ov, volume.offset);
+              if (const auto* size = data::getObjectKey(*itemO, "size")) {
+                math::Vec3 dims{};
+                if (data::readVec3(*size, dims)) {
+                  volume.box = {dims.x, dims.y, dims.z};
+                  volume.capsule = {dims.x, dims.y};
+                  volume.sphere = {dims.x};
+                }
+              }
+              volume.damageMultiplier = data::getFloatOr(*itemO, "damageMultiplier", volume.damageMultiplier);
+              volume.damage = data::getFloatOr(*itemO, "damage", volume.damage);
+              volume.damageType = data::getStringOr(*itemO, "damageType", volume.damageType);
+              volume.force = data::getFloatOr(*itemO, "force", volume.force);
+              volume.enabled = data::getBoolOr(*itemO, "enabled", volume.enabled);
+              volume.singleHit = data::getBoolOr(*itemO, "singleHit", volume.singleHit);
+              if (const auto* tags = data::getObjectKey(*itemO, "tags")) volume.tags = readStringArrayOrEmpty(*tags);
+              attach.volumes.push_back(std::move(volume));
+            }
+          }
+        }
+        out.volumes.push_back(std::move(attach));
+      }
+    }
+  }
+
+  if (const auto* raysV = data::getObjectKey(*combatO, "raycasts")) {
+    if (const auto* arr = raysV->tryArray()) {
+      out.raycasts.reserve(arr->size());
+      for (const auto& el : *arr) {
+        const auto* ro = el.tryObject();
+        if (!ro) continue;
+        RaycastAttachmentInput ray{};
+        ray.name = data::getStringOr(*ro, "name", ray.name);
+        ray.sensorName = data::getStringOr(*ro, "sensorName", ray.sensorName);
+        ray.createSensor = data::getBoolOr(*ro, "createSensor", ray.createSensor);
+        if (const auto* mountV = data::getObjectKey(*ro, "attach")) {
+          if (const auto* mountO = mountV->tryObject()) ray.mount = readAttachmentMountInput(*mountO);
+        }
+        ray.raycast.enabled = data::getBoolOr(*ro, "enabled", ray.raycast.enabled);
+        ray.raycast.raycastCategory = data::getStringOr(*ro, "category", ray.raycast.raycastCategory);
+        ray.raycast.length = data::getFloatOr(*ro, "length", ray.raycast.length);
+        ray.raycast.radius = data::getFloatOr(*ro, "radius", ray.raycast.radius);
+        ray.raycast.maxHits = data::getIntOr(*ro, "maxHits", ray.raycast.maxHits);
+        ray.raycast.ignoreSelf = data::getBoolOr(*ro, "ignoreSelf", ray.raycast.ignoreSelf);
+        if (const auto* v = data::getObjectKey(*ro, "localOffset")) (void)data::readVec3(*v, ray.raycast.localOffset);
+        if (const auto* v = data::getObjectKey(*ro, "customDirection")) {
+          if (data::readVec3(*v, ray.raycast.customDirection)) ray.raycast.directionMode = ecs::RaycastComponent::DirectionMode::CustomVector;
+        }
+        out.raycasts.push_back(std::move(ray));
+      }
+    }
+  }
+
+  if (const auto* vfxV = data::getObjectKey(*combatO, "vfx")) {
+    if (const auto* arr = vfxV->tryArray()) {
+      out.vfx.reserve(arr->size());
+      for (const auto& el : *arr) {
+        const auto* vo = el.tryObject();
+        if (!vo) continue;
+        VfxAttachmentInput vfx{};
+        vfx.name = data::getStringOr(*vo, "name", vfx.name);
+        if (const auto* mountV = data::getObjectKey(*vo, "attach")) {
+          if (const auto* mountO = mountV->tryObject()) vfx.mount = readAttachmentMountInput(*mountO);
+        }
+        std::string type = data::getStringOr(*vo, "type", "fire");
+        std::string quality = data::getStringOr(*vo, "quality", "high");
+        vfx.vfx.type = parseVfxType(std::move(type));
+        vfx.vfx.quality = parseVfxQuality(std::move(quality));
+        vfx.vfx.enabled = data::getBoolOr(*vo, "enabled", vfx.vfx.enabled);
+        vfx.vfx.intensity = data::getFloatOr(*vo, "intensity", vfx.vfx.intensity);
+        vfx.vfx.spawnRate = data::getFloatOr(*vo, "spawnRate", vfx.vfx.spawnRate);
+        vfx.vfx.sizeMeters = data::getFloatOr(*vo, "sizeMeters", vfx.vfx.sizeMeters);
+        vfx.vfx.glowStrength = data::getFloatOr(*vo, "glowStrength", vfx.vfx.glowStrength);
+        vfx.vfx.emberRate = data::getFloatOr(*vo, "emberRate", vfx.vfx.emberRate);
+        vfx.vfx.smokeAmount = data::getFloatOr(*vo, "smokeAmount", vfx.vfx.smokeAmount);
+        out.vfx.push_back(std::move(vfx));
+      }
+    }
+  }
+
+  return out;
+}
+
 class ObjectJsonFactory final : public IEntityFactory {
  public:
   EntityId create(
@@ -1234,6 +1527,7 @@ class ActorJsonFactory final : public IEntityFactory {
       cfg.pose = readPoseInput(*obj);
       cfg.ik = readIkInput(*obj);
       cfg.sensorCone = readSensorConeInput(*obj);
+      cfg.combat = readCombatSetupInput(*obj);
     }
 
     ActorFactory factory;
@@ -1330,6 +1624,7 @@ class CombatantJsonFactory final : public IEntityFactory {
       cfg.pose = readPoseInput(*obj);
       cfg.ik = readIkInput(*obj);
       cfg.sensorCone = readSensorConeInput(*obj);
+      cfg.combat = readCombatSetupInput(*obj);
       readCombatantHudInto(*obj, cfg.hud);
       readPlayerHudInto(*obj, "playerHud", false, cfg.playerHud);
     }

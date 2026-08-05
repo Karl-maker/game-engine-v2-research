@@ -15,6 +15,19 @@
 
 namespace ecs::services {
 
+namespace {
+
+std::uint32_t hashString32(const std::string& text) {
+  std::uint32_t hash = 2166136261u;
+  for (unsigned char ch : text) {
+    hash ^= static_cast<std::uint32_t>(ch);
+    hash *= 16777619u;
+  }
+  return hash;
+}
+
+}
+
 EntityId PhysicalObjectFactory::create(
     EntityRegistry& registry,
     const PhysicalObjectConfig& config) {
@@ -40,6 +53,12 @@ EntityId PhysicalObjectFactory::create(
     collider.offset = config.physical.colliderOffset;
     collider.isTrigger = config.physical.colliderIsTrigger;
     collider.collisionLayer = config.physical.collisionLayer;
+    collider.meshRef = config.physical.colliderMeshId.empty() ? config.viewable.meshId : config.physical.colliderMeshId;
+    collider.meshAssetKey = config.physical.colliderMeshKey.empty() ? config.viewable.meshKey : config.physical.colliderMeshKey;
+    collider.useMeshBounds = config.physical.colliderUseMeshBounds;
+    collider.hasMesh = !collider.meshRef.empty() || !collider.meshAssetKey.empty();
+    const std::string meshHashSource = !collider.meshRef.empty() ? collider.meshRef : collider.meshAssetKey;
+    collider.meshId = collider.hasMesh ? hashString32(meshHashSource) : 0u;
   }
 
   // Ensure collidable dynamic objects participate in collision resolution.

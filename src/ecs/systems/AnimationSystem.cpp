@@ -73,6 +73,35 @@ const ecs::SkeletonComponent::AnimationClip* findClip(const ecs::SkeletonCompone
   return skeleton.animationClips.empty() ? nullptr : &skeleton.animationClips.front();
 }
 
+const ecs::AnimationComponent::ClipBinding* findBinding(const ecs::AnimationComponent& anim, const std::string& key) {
+  for (const auto& binding : anim.clipBindings) {
+    if (binding.key == key) return &binding;
+  }
+  return nullptr;
+}
+
+std::string resolveClipName(const ecs::AnimationComponent& anim, const ecs::SkeletonComponent* skeleton, const std::string& keyOrClip) {
+  if (const auto* binding = findBinding(anim, keyOrClip)) {
+    return binding->clip;
+  }
+  if (skeleton && !skeleton->animationClips.empty()) {
+    for (const auto& clip : skeleton->animationClips) {
+      if (clip.name == keyOrClip) return keyOrClip;
+    }
+  }
+  if (std::find(anim.availableClips.begin(), anim.availableClips.end(), keyOrClip) != anim.availableClips.end()) {
+    return keyOrClip;
+  }
+  return keyOrClip;
+}
+
+float resolveClipSpeed(const ecs::AnimationComponent& anim, const std::string& keyOrClip) {
+  if (const auto* binding = findBinding(anim, keyOrClip)) {
+    return std::max(0.01f, binding->speed);
+  }
+  return 1.0f;
+}
+
 void applyClipToSkeleton(ecs::SkeletonComponent& skeleton, const std::string& clipName, float currentFrame) {
   if (skeleton.bindPose.size() != skeleton.bones.size()) return;
   skeleton.currentPose = skeleton.bindPose;
@@ -127,20 +156,23 @@ void AnimationSystem::tick(EntityRegistry& registry, double deltaSeconds) const 
     }
 
     const auto* motion = registry.tryGet<ecs::MotionComponent>(id);
-    std::string desired = "Idle";
+    std::string desired = anim.locomotionIdleKey.empty() ? std::string("Idle") : anim.locomotionIdleKey;
     if (motion && motion->isMoving) {
-      desired = (motion->currentSpeed > 6.5f) ? "Run" : "Walk";
+      desired = (motion->currentSpeed > 6.5f)
+                    ? (anim.locomotionRunKey.empty() ? std::string("Run") : anim.locomotionRunKey)
+                    : (anim.locomotionWalkKey.empty() ? std::string("Walk") : anim.locomotionWalkKey);
     }
 
     const auto* skeleton = registry.tryGet<ecs::SkeletonComponent>(id);
     auto hasClip = [&](const std::string& name) {
+      const std::string resolved = resolveClipName(anim, skeleton, name);
       if (skeleton && !skeleton->animationClips.empty()) {
         for (const auto& clip : skeleton->animationClips) {
-          if (clip.name == name) return true;
+          if (clip.name == resolved) return true;
         }
         return false;
       }
-      return std::find(anim.availableClips.begin(), anim.availableClips.end(), name) != anim.availableClips.end();
+      return std::find(anim.availableClips.begin(), anim.availableClips.end(), resolved) != anim.availableClips.end();
     };
     if (!hasClip(desired) && skeleton && !skeleton->animationClips.empty()) {
       desired = skeleton->animationClips.front().name;
@@ -163,11 +195,14 @@ void AnimationSystem::tick(EntityRegistry& registry, double deltaSeconds) const 
       base.currentState = desired;
     }
 
-    anim.currentFrame += dt * 30.0f;
+    const std::string activeState = base.currentState.empty() ? desired : base.currentState;
+    const std::string activeClip = resolveClipName(anim, skeleton, activeState);
+    const float clipSpeed = resolveClipSpeed(anim, activeState);
+    anim.currentFrame += dt * 30.0f * clipSpeed;
     if (skeleton) {
       auto* mutableSkeleton = registry.tryGet<ecs::SkeletonComponent>(id);
       if (mutableSkeleton) {
-        applyClipToSkeleton(*mutableSkeleton, base.currentState.empty() ? desired : base.currentState, anim.currentFrame);
+        applyClipToSkeleton(*mutableSkeleton, activeClip, anim.currentFrame);
       }
     }
   });

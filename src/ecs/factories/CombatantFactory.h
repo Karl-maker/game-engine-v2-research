@@ -23,6 +23,7 @@ struct CombatantConfig final {
   PoseInput pose{};
   IkInput ik{};
   SensorConeInput sensorCone{};
+  CombatSetupInput combat{};
   CombatantHudInput hud{};
   PlayerHudInput playerHud{};
 };

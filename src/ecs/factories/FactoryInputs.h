@@ -6,12 +6,16 @@
 // Reusable "mix and match" config blocks for factories.
 
 #include "ecs/components/ColliderComponent.h"
+#include "ecs/components/CombatVolumeComponent.h"
 #include "ecs/components/MeshComponent.h"
+#include "ecs/components/RaycastComponent.h"
 #include "ecs/components/ShaderComponent.h"
+#include "ecs/components/VfxComponent.h"
 #include "ecs/EntityId.h"
 #include "render/MaterialParameter.h"
 #include "render/TextureBinding.h"
 #include "render/Color.h"
+#include "math/Mat4.h"
 #include "math/Vec2.h"
 #include "math/Vec3.h"
 #include "physics/LayerMask.h"
@@ -101,6 +105,9 @@ struct PhysicalInput final {
   math::Vec3 colliderOffset{0.0f, 0.925f, 0.0f};  // centered for capsule height above ground
   bool colliderIsTrigger = false;
   physics::LayerMask collisionLayer = physics::kLayerCharacter;
+  std::string colliderMeshId;
+  std::string colliderMeshKey;
+  bool colliderUseMeshBounds = false;
 };
 
 struct SkeletonInput final {
@@ -176,13 +183,44 @@ struct AnimationLayerInput final {
   float transition = 0.0f;
 };
 
+struct AnimationClipBindingInput final {
+  std::string key;
+  std::string clip;
+  float speed = 1.0f;
+};
+
 struct AnimationInput final {
   bool enabled = false;
   std::vector<std::string> availableClips = {"IdleV4.2(maya_head)", "Idle", "Walk", "Run"};
+  std::vector<AnimationClipBindingInput> clipBindings;
   std::vector<AnimationLayerInput> layers = {AnimationLayerInput{.currentState = "IdleV4.2(maya_head)"}};
   float idleDelaySeconds = 5.0f;
   std::string idleAnimationClip = "IdleV4.2(maya_head)";
+  std::string idleAnimationKey = "idle";
   std::string idleAnimationLayer = "Base Layer";
+  std::string locomotionIdleKey = "idle";
+  std::string locomotionWalkKey = "walk";
+  std::string locomotionRunKey = "run";
+};
+
+struct PoseBoneOverrideInput final {
+  std::string boneKey;
+  float weight = 1.0f;
+  bool hasTranslation = false;
+  math::Vec3 translation{0.0f, 0.0f, 0.0f};
+  bool hasRotationEulerDeg = false;
+  math::Vec3 rotationEulerDeg{0.0f, 0.0f, 0.0f};
+  bool hasRotationQuat = false;
+  math::Quat rotation{};
+  bool hasScale = false;
+  math::Vec3 scale{1.0f, 1.0f, 1.0f};
+};
+
+struct PoseDefinitionInput final {
+  std::string name;
+  bool enabled = true;
+  float weight = 0.0f;
+  std::vector<PoseBoneOverrideInput> bones;
 };
 
 struct PoseInput final {
@@ -190,6 +228,7 @@ struct PoseInput final {
   std::string defaultPoseName = "right_hand_pose";
   bool defaultPoseEnabled = true;
   float defaultPoseWeight = 0.0f;
+  std::vector<PoseDefinitionInput> poses;
 };
 
 struct IkChainInput final {
@@ -259,6 +298,49 @@ struct SensorConeInput final {
   std::string socketName = "player_head_socket";
   math::Vec3 socketPositionOffset{0.0f, 0.0f, 0.0f};
   RaycastConeInput cone{};
+};
+
+struct AttachmentMountInput final {
+  std::string mode = "parent";
+  EntityId targetEntity = kInvalidEntityId;
+  std::string targetEntityName;
+  std::string targetMeshId;
+  std::string skeletonId;
+  std::string boneName;
+  std::string socketName;
+  math::Vec3 positionOffset{0.0f, 0.0f, 0.0f};
+  math::Vec3 rotationOffset{0.0f, 0.0f, 0.0f};
+  math::Vec3 scaleOffset{0.0f, 0.0f, 0.0f};
+  bool inheritPosition = true;
+  bool inheritRotation = true;
+  bool inheritScale = false;
+};
+
+struct CombatAttachmentInput final {
+  std::string name = "combat_volume";
+  std::string sourceMeshId;
+  AttachmentMountInput mount{};
+  std::vector<ecs::CombatVolumeComponent::Volume> volumes;
+};
+
+struct RaycastAttachmentInput final {
+  std::string name = "raycast";
+  std::string sensorName;
+  bool createSensor = false;
+  AttachmentMountInput mount{};
+  ecs::RaycastComponent raycast{};
+};
+
+struct VfxAttachmentInput final {
+  std::string name = "vfx";
+  AttachmentMountInput mount{};
+  ecs::VfxComponent vfx{};
+};
+
+struct CombatSetupInput final {
+  std::vector<CombatAttachmentInput> volumes;
+  std::vector<RaycastAttachmentInput> raycasts;
+  std::vector<VfxAttachmentInput> vfx;
 };
 
 struct GrassLayerInput final {

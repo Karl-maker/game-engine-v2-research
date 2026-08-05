@@ -4,6 +4,7 @@
 
 #include "ecs/components/AttachmentComponent.h"
 #include "ecs/components/IdentityComponent.h"
+#include "ecs/components/MeshComponent.h"
 #include "ecs/components/SocketComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "ecs/systems/Angle.h"
@@ -72,6 +73,22 @@ static bool socketMatchesTarget(const ecs::SocketComponent& socket, ecs::EntityI
   return socket.targetEntityName == targetIdentity->name;
 }
 
+static ecs::EntityId resolveEntityByNameOrMeshId(EntityRegistry& registry,
+                                                 const std::string& entityName,
+                                                 const std::string& meshId) {
+  ecs::EntityId found = ecs::kInvalidEntityId;
+  if (!entityName.empty()) {
+    registry.view<IdentityComponent>([&](EntityId id, const IdentityComponent& identity) {
+      if (found == ecs::kInvalidEntityId && identity.name == entityName) found = id;
+    });
+  }
+  if (found != ecs::kInvalidEntityId || meshId.empty()) return found;
+  registry.view<MeshComponent>([&](EntityId id, const MeshComponent& mesh) {
+    if (found == ecs::kInvalidEntityId && mesh.meshId == meshId) found = id;
+  });
+  return found;
+}
+
 void AttachmentSystem::update(EntityRegistry& registry, double deltaSeconds) {
   const float dt = static_cast<float>(deltaSeconds);
 
@@ -80,6 +97,9 @@ void AttachmentSystem::update(EntityRegistry& registry, double deltaSeconds) {
         (void)id;
         for (auto& a : ac.attachments) {
           if (!a.enabled) continue;
+          if (a.targetEntity == ecs::kInvalidEntityId && (!a.targetEntityName.empty() || !a.targetMeshId.empty())) {
+            a.targetEntity = resolveEntityByNameOrMeshId(registry, a.targetEntityName, a.targetMeshId);
+          }
           if (!registry.isAlive(a.targetEntity)) continue;
 
           const auto* targetTr = registry.tryGet<TransformComponent>(a.targetEntity);

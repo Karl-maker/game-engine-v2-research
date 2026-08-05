@@ -19,6 +19,7 @@ add_executable(duppy
   src/ecs/systems/AttachmentSystem.cpp
   src/ecs/systems/CollisionDetectionSystem.cpp
   src/ecs/systems/CollisionResolutionSystem.cpp
+  src/ecs/systems/CombatInteractionSystem.cpp
   src/ecs/systems/ControllerSystem.cpp
   src/ecs/systems/GraphicsSystem.cpp
   src/ecs/systems/GravitySystem.cpp
@@ -29,6 +30,7 @@ add_executable(duppy
   src/ecs/systems/HitDetectionSystem.cpp
   src/ecs/systems/MotionSystem.cpp
   src/ecs/systems/MovementSystem.cpp
+  src/ecs/systems/KnockbackSystem.cpp
   src/ecs/systems/CombatantHudSystem.cpp
   src/ecs/systems/PlayerHudSystem.cpp
   src/ecs/systems/PoseSystem.cpp

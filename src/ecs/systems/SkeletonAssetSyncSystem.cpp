@@ -12,9 +12,7 @@
 namespace ecs::systems {
 
 void SkeletonAssetSyncSystem::tick(EntityRegistry& registry, assets::MeshAssetService& assetService) const {
-  registry.view<ecs::MeshComponent, ecs::SkeletonComponent>([&](ecs::EntityId id,
-                                                                 const ecs::MeshComponent& mesh,
-                                                                 ecs::SkeletonComponent& skeleton) {
+  registry.view<ecs::MeshComponent>([&](ecs::EntityId id, ecs::MeshComponent& mesh) {
     if (!mesh.meshData.enabled || mesh.meshData.key.empty()) return;
 
     auto ready = assetService.takeReady(mesh.meshData.key);
@@ -24,23 +22,33 @@ void SkeletonAssetSyncSystem::tick(EntityRegistry& registry, assets::MeshAssetSe
     }
 
     const auto& src = *ready;
-    if (src.skeleton.bones.empty()) return;
-    if (skeleton.skeletonId == src.skeleton.id && skeleton.boneCount == static_cast<int>(src.skeleton.bones.size())) return;
+    mesh.subMeshes.clear();
+    mesh.subMeshes.reserve(src.subMeshes.size());
+    for (const auto& sub : src.subMeshes) {
+      mesh.subMeshes.push_back({sub.name, sub.materialIndex, 0u, static_cast<std::uint32_t>(sub.indices.size())});
+    }
+    mesh.bounds.min = src.boundsMin;
+    mesh.bounds.max = src.boundsMax;
 
-    skeleton.enabled = true;
-    skeleton.skeletonId = src.skeleton.id;
-    skeleton.skeletonData = src.sourcePath;
-    skeleton.rootBone = src.skeleton.rootBone;
-    skeleton.boneCount = static_cast<int>(src.skeleton.bones.size());
-    skeleton.bones.clear();
-    skeleton.bones.reserve(src.skeleton.bones.size());
-    skeleton.currentPose.clear();
-    skeleton.bindPose.clear();
-    skeleton.inverseBindMatrices.clear();
-    skeleton.animationClips.clear();
-    skeleton.currentPose.reserve(src.skeleton.bones.size());
-    skeleton.bindPose.reserve(src.skeleton.bones.size());
-    skeleton.inverseBindMatrices.reserve(src.skeleton.bones.size());
+    auto* skeleton = registry.tryGet<ecs::SkeletonComponent>(id);
+    if (!skeleton) return;
+    if (src.skeleton.bones.empty()) return;
+    if (skeleton->skeletonId == src.skeleton.id && skeleton->boneCount == static_cast<int>(src.skeleton.bones.size())) return;
+
+    skeleton->enabled = true;
+    skeleton->skeletonId = src.skeleton.id;
+    skeleton->skeletonData = src.sourcePath;
+    skeleton->rootBone = src.skeleton.rootBone;
+    skeleton->boneCount = static_cast<int>(src.skeleton.bones.size());
+    skeleton->bones.clear();
+    skeleton->bones.reserve(src.skeleton.bones.size());
+    skeleton->currentPose.clear();
+    skeleton->bindPose.clear();
+    skeleton->inverseBindMatrices.clear();
+    skeleton->animationClips.clear();
+    skeleton->currentPose.reserve(src.skeleton.bones.size());
+    skeleton->bindPose.reserve(src.skeleton.bones.size());
+    skeleton->inverseBindMatrices.reserve(src.skeleton.bones.size());
 
     for (std::size_t i = 0; i < src.skeleton.bones.size(); ++i) {
       const auto& bone = src.skeleton.bones[i];
@@ -48,13 +56,13 @@ void SkeletonAssetSyncSystem::tick(EntityRegistry& registry, assets::MeshAssetSe
       dst.key = bone.name;
       dst.parentIndex = bone.parentIndex;
       dst.localBindTransform = bone.localBindTransform;
-      skeleton.bones.push_back(dst);
-      skeleton.currentPose.push_back(dst.localBindTransform);
-      skeleton.bindPose.push_back(dst.localBindTransform);
-      skeleton.inverseBindMatrices.push_back(bone.inverseBindMatrix);
+      skeleton->bones.push_back(dst);
+      skeleton->currentPose.push_back(dst.localBindTransform);
+      skeleton->bindPose.push_back(dst.localBindTransform);
+      skeleton->inverseBindMatrices.push_back(bone.inverseBindMatrix);
     }
 
-    skeleton.animationClips.reserve(src.animations.size());
+    skeleton->animationClips.reserve(src.animations.size());
     for (const auto& srcClip : src.animations) {
       ecs::SkeletonComponent::AnimationClip clip;
       clip.name = srcClip.name;
@@ -80,16 +88,16 @@ void SkeletonAssetSyncSystem::tick(EntityRegistry& registry, assets::MeshAssetSe
         }
         clip.channels.push_back(std::move(channel));
       }
-      skeleton.animationClips.push_back(std::move(clip));
+      skeleton->animationClips.push_back(std::move(clip));
     }
 
     if (auto* anim = registry.tryGet<ecs::AnimationComponent>(id)) {
-      for (const auto& clip : skeleton.animationClips) {
+      for (const auto& clip : skeleton->animationClips) {
         const bool has = std::find(anim->availableClips.begin(), anim->availableClips.end(), clip.name) != anim->availableClips.end();
         if (!has) anim->availableClips.push_back(clip.name);
       }
-      if (!skeleton.animationClips.empty() && anim->idleAnimationClip.empty()) {
-        anim->idleAnimationClip = skeleton.animationClips.front().name;
+      if (!skeleton->animationClips.empty() && anim->idleAnimationClip.empty()) {
+        anim->idleAnimationClip = skeleton->animationClips.front().name;
       }
     }
   });

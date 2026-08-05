@@ -24,6 +24,7 @@ EntityId CombatantFactory::create(
   baseCfg.pose = config.pose;
   baseCfg.ik = config.ik;
   baseCfg.sensorCone = config.sensorCone;
+  baseCfg.combat = config.combat;
   const EntityId id = baseFactory.create(registry, baseCfg);
   if (id == kInvalidEntityId) return id;
 

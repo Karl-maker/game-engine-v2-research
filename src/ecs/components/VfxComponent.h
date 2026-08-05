@@ -64,6 +64,12 @@ struct VfxComponent final {
   float upwardBias = 0.65f;
   float spreadRadiusMeters = 0.45f;
   float heatHazeStrength = 0.25f;
+  float turbulence = 0.45f;
+  float swirlStrength = 0.15f;
+  float coreSizeMeters = 0.18f;
+  float glowStrength = 1.0f;
+  float emberRate = 0.35f;
+  float smokeAmount = 0.45f;
 
   // Electricity shaping.
   float chargeLengthMeters = 3.5f;
@@ -71,16 +77,19 @@ struct VfxComponent final {
   int branchCount = 4;
   int segmentCount = 8;
   float pulseSpeed = 12.0f;
+  float arcThickness = 0.14f;
+  float arcGlow = 1.0f;
 
   // Sparks shaping.
   int sparkCount = 16;
   float sparkSpreadDegrees = 28.0f;
   float sparkTrailLengthMeters = 0.6f;
   float sparkFadeSeconds = 0.25f;
+  float sparkBurstJitter = 0.35f;
+  float sparkGravityScale = 1.0f;
 
   render::Color primaryColor{1.0f, 0.55f, 0.10f, 1.0f};
   render::Color secondaryColor{1.0f, 0.95f, 0.35f, 1.0f};
 };
 
 }  // namespace ecs
-

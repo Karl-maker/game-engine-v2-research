@@ -4003,7 +4003,9 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
       switch (vfx.type) {
         case ecs::VfxComponent::Type::Fire: {
-          const int particleCount = std::max(8, static_cast<int>(std::round((18.0f + vfx.spawnRate * 2.0f) * budgetScale * intensityScale)));
+          const float fancyFireScale = 1.0f + vfx.glowStrength * 0.35f + vfx.emberRate * 0.20f + vfx.smokeAmount * 0.15f;
+          const int particleCount =
+              std::max(10, static_cast<int>(std::round((24.0f + vfx.spawnRate * 2.6f) * budgetScale * intensityScale * fancyFireScale)));
           for (int i = 0; i < particleCount; ++i) {
             const std::uint32_t base = hashU32(vfx.seed + static_cast<std::uint32_t>(i) * 1664525u);
             const float phase = fract01(timeSeconds * std::max(0.1f, vfx.spawnRate) + hash01(base));
@@ -4012,16 +4014,19 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
             const float height = vfx.heightMeters * scaleMeters;
             const float up = phase * height;
             const float wobble = (hash01(base + 7u) - 0.5f) * 2.0f * vfx.heatHazeStrength * scaleMeters;
-            const math::Vec3 pos = emitterPos + emitterUp * up + emitterRight * (std::sin(timeSeconds * 3.0f + phase * 7.0f + hash01(base + 1u) * 6.0f) * radius) +
-                                   emitterForward * (std::cos(timeSeconds * 2.7f + phase * 5.0f + hash01(base + 2u) * 6.0f) * radius) +
+            const float swirl = std::sin(timeSeconds * (4.5f + vfx.turbulence) + phase * (7.0f + vfx.swirlStrength * 5.0f));
+            const math::Vec3 pos = emitterPos + emitterUp * up +
+                                   emitterRight * (swirl * radius) +
+                                   emitterForward * (std::cos(timeSeconds * (2.7f + vfx.turbulence) + phase * 5.0f + hash01(base + 2u) * 6.0f) *
+                                                     radius) +
                                    emitterUp * wobble;
             const float mixT = std::clamp(phase * 1.15f, 0.0f, 1.0f);
             const render::Color color{
                 vfx.primaryColor.r * (1.0f - mixT) + vfx.secondaryColor.r * mixT,
                 vfx.primaryColor.g * (1.0f - mixT) + vfx.secondaryColor.g * mixT,
                 vfx.primaryColor.b * (1.0f - mixT) + vfx.secondaryColor.b * mixT,
-                vfx.primaryColor.a * flicker};
-            const float sizeMeters = std::max(0.02f, vfx.sizeMeters * scaleMeters * (0.35f + 0.65f * (1.0f - phase)) *
+                vfx.primaryColor.a * flicker * (0.95f + vfx.glowStrength * 0.08f)};
+            const float sizeMeters = std::max(0.02f, (vfx.coreSizeMeters + vfx.sizeMeters) * scaleMeters * (0.35f + 0.65f * (1.0f - phase)) *
                                                            (0.70f + 0.30f * hash01(base + 4u)));
             pushPoint(pos, color, sizeMeters, 0.0f, static_cast<float>(base));
           }
@@ -4029,7 +4034,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         }
         case ecs::VfxComponent::Type::Electricity: {
           const int branches = std::max(1, static_cast<int>(std::round(vfx.branchCount * budgetScale * intensityScale)));
-          const int segments = std::max(3, static_cast<int>(std::round(vfx.segmentCount * std::max(0.65f, budgetScale))));
+          const int segments = std::max(4, static_cast<int>(std::round(vfx.segmentCount * std::max(0.85f, budgetScale + vfx.arcGlow * 0.1f))));
           for (int b = 0; b < branches; ++b) {
             const std::uint32_t base = hashU32(vfx.seed + static_cast<std::uint32_t>(b) * 374761393u);
             const float branchPhase = hash01(base + 1u);
@@ -4045,20 +4050,21 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
               const float jitter = (hash01(base + static_cast<std::uint32_t>(s) + 9u) - 0.5f) * 2.0f;
               const math::Vec3 pos = basePos + emitterRight * (waveA * vfx.arcJitter * scaleMeters * 0.55f + jitter * 0.04f * scaleMeters) +
                                      emitterUp * (waveB * vfx.arcJitter * scaleMeters * 0.35f);
-              const float lineSize = std::max(0.03f, vfx.sizeMeters * scaleMeters * 0.34f * (1.0f - 0.55f * t));
+              const float lineSize = std::max(0.03f, (vfx.arcThickness + vfx.sizeMeters) * scaleMeters * 0.34f * (1.0f - 0.55f * t));
               const float alpha = (0.70f + 0.30f * std::sin(timeSeconds * 20.0f + t * 4.0f + branchPhase * 10.0f));
               const render::Color color{
                   vfx.primaryColor.r * 0.45f + vfx.secondaryColor.r * 0.55f,
                   vfx.primaryColor.g * 0.55f + vfx.secondaryColor.g * 0.45f,
                   vfx.primaryColor.b * 0.85f + vfx.secondaryColor.b * 0.15f,
-                  vfx.primaryColor.a * alpha};
+                  vfx.primaryColor.a * alpha * (0.85f + vfx.arcGlow * 0.15f)};
               pushPoint(pos, color, lineSize, 1.0f, static_cast<float>(base ^ static_cast<std::uint32_t>(s)));
             }
           }
           break;
         }
         case ecs::VfxComponent::Type::Sparks: {
-          const int sparkCount = std::max(4, static_cast<int>(std::round(vfx.sparkCount * budgetScale * intensityScale)));
+          const int sparkCount =
+              std::max(6, static_cast<int>(std::round(vfx.sparkCount * budgetScale * intensityScale * (1.0f + vfx.sparkBurstJitter * 0.2f))));
           for (int i = 0; i < sparkCount; ++i) {
             const std::uint32_t base = hashU32(vfx.seed + static_cast<std::uint32_t>(i) * 2246822519u);
             const float phase = fract01(timeSeconds * std::max(0.1f, vfx.spawnRate) + hash01(base));
@@ -4071,7 +4077,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
             const float velocity = vfx.speedMetersPerSecond * scaleMeters * (0.45f + hash01(base + 3u)) * std::max(0.35f, budgetScale);
             const float arc = phase * vfx.sparkTrailLengthMeters * scaleMeters;
             const math::Vec3 pos = emitterPos + dir * (velocity * phase * 0.7f) + emitterUp * (arc * 0.45f) -
-                                   emitterUp * (vfx.gravityScale * 0.6f * phase * phase * scaleMeters);
+                                   emitterUp * (vfx.gravityScale * vfx.sparkGravityScale * 0.6f * phase * phase * scaleMeters);
             const float fade = std::max(0.0f, 1.0f - phase / std::max(0.01f, vfx.sparkFadeSeconds));
             const render::Color color{
                 vfx.secondaryColor.r,
@@ -4083,7 +4089,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
           break;
         }
         case ecs::VfxComponent::Type::Smoke: {
-          const int particleCount = std::max(6, static_cast<int>(std::round((12.0f + vfx.spawnRate) * budgetScale * intensityScale)));
+          const int particleCount =
+              std::max(6, static_cast<int>(std::round((12.0f + vfx.spawnRate) * budgetScale * intensityScale * (1.0f + vfx.smokeAmount * 0.25f))));
           for (int i = 0; i < particleCount; ++i) {
             const std::uint32_t base = hashU32(vfx.seed + static_cast<std::uint32_t>(i) * 747796405u);
             const float phase = fract01(timeSeconds * std::max(0.08f, vfx.spawnRate * 0.25f) + hash01(base));

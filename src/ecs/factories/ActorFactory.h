@@ -21,6 +21,7 @@ struct ActorConfig final {
   PoseInput pose{};
   IkInput ik{};
   SensorConeInput sensorCone{};
+  CombatSetupInput combat{};
 };
 
 class ActorFactory final {

@@ -53,6 +53,16 @@ class EventService final {
     return out;
   }
 
+  template <typename T>
+  const std::vector<T>& peekAll() const {
+    auto it = m_buckets.find(std::type_index(typeid(T)));
+    if (it == m_buckets.end()) {
+      static const std::vector<T> empty;
+      return empty;
+    }
+    return static_cast<const Bucket<T>*>(it->second.get())->events;
+  }
+
  private:
   struct IBucket {
     virtual ~IBucket() = default;
@@ -84,4 +94,3 @@ class EventService final {
 };
 
 }  // namespace ecs::services
-

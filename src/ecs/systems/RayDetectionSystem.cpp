@@ -3,6 +3,7 @@
 // Author: Karl-Johan Bailey
 
 #include "ecs/components/ColliderComponent.h"
+#include "ecs/components/MeshComponent.h"
 #include "ecs/components/SensorComponent.h"
 #include "ecs/components/RaycastComponent.h"
 #include "ecs/components/TerrainComponent.h"
@@ -20,7 +21,7 @@ namespace {
 
 using Aabb = ecs::services::SpatialHashGridService::Aabb;
 
-Aabb colliderAabb(const ecs::TransformComponent& tr, const ecs::ColliderComponent& c) {
+Aabb colliderAabb(const ecs::TransformComponent& tr, const ecs::ColliderComponent& c, const ecs::MeshComponent* mesh = nullptr) {
   const math::Vec3 center = tr.position + c.offset;
   math::Vec3 half{};
   switch (c.shape) {
@@ -32,9 +33,21 @@ Aabb colliderAabb(const ecs::TransformComponent& tr, const ecs::ColliderComponen
       break;
     case ecs::ColliderComponent::Shape::Terrain:
     case ecs::ColliderComponent::Shape::Box:
-    case ecs::ColliderComponent::Shape::Mesh:
     default:
       half = {std::max(0.01f, c.size.x * 0.5f), std::max(0.01f, c.size.y * 0.5f), std::max(0.01f, c.size.z * 0.5f)};
+      break;
+    case ecs::ColliderComponent::Shape::Mesh:
+      if (c.useMeshBounds && mesh && mesh->bounds.max.x >= mesh->bounds.min.x) {
+        const math::Vec3 meshScale{std::max(0.01f, std::abs(tr.scale.x * mesh->scale.x)),
+                                   std::max(0.01f, std::abs(tr.scale.y * mesh->scale.y)),
+                                   std::max(0.01f, std::abs(tr.scale.z * mesh->scale.z))};
+        const math::Vec3 localHalf{std::max(0.01f, (mesh->bounds.max.x - mesh->bounds.min.x) * 0.5f * meshScale.x),
+                                   std::max(0.01f, (mesh->bounds.max.y - mesh->bounds.min.y) * 0.5f * meshScale.y),
+                                   std::max(0.01f, (mesh->bounds.max.z - mesh->bounds.min.z) * 0.5f * meshScale.z)};
+        half = localHalf;
+      } else {
+        half = {std::max(0.01f, c.size.x * 0.5f), std::max(0.01f, c.size.y * 0.5f), std::max(0.01f, c.size.z * 0.5f)};
+      }
       break;
   }
   return {center - half, center + half};
@@ -146,7 +159,7 @@ void RayDetectionSystem::tick(EntityRegistry& registry, ecs::services::EventServ
     body.id = id;
     body.collider = collider;
     body.transform = tr;
-    body.bounds = colliderAabb(tr, collider);
+    body.bounds = colliderAabb(tr, collider, registry.tryGet<ecs::MeshComponent>(id));
     bodies.emplace(id, body);
     m_grid.insert({id, body.bounds});
   });
@@ -265,6 +278,7 @@ void RayDetectionSystem::tick(EntityRegistry& registry, ecs::services::EventServ
       physics::RaycastHit hit{};
       hit.hasHit = true;
       hit.hitEntityId = candidateId;
+      hit.colliderId = collider.hasMesh ? collider.meshId : static_cast<std::uint32_t>(candidateId);
       hit.hitNormal = boxHit.normal;
       hit.hitPosition = origin + direction * boxHit.distance;
       hit.distance = boxHit.distance;
