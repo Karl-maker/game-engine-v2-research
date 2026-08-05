@@ -3,6 +3,7 @@
 // Author: Karl-Johan Bailey
 
 #include "data/JsonUtil.h"
+#include "ecs/factories/BillboardFactory.h"
 #include "ecs/factories/ObjectFactory.h"
 #include "ecs/factories/PhysicalObjectFactory.h"
 #include "ecs/factories/ActorFactory.h"
@@ -83,6 +84,14 @@ bool readVec2Value(const data::JsonValue& v, math::Vec2& out) {
   return false;
 }
 
+bool readVec2OrUniform(const data::JsonValue& v, math::Vec2& out) {
+  if (readVec2Value(v, out)) return true;
+  float f = 0.0f;
+  if (!data::readFloat(v, f)) return false;
+  out = {f, f};
+  return true;
+}
+
 std::vector<std::string> readStringArrayOrEmpty(const data::JsonValue& v) {
   std::vector<std::string> out;
   const auto* a = v.tryArray();
@@ -126,6 +135,13 @@ ecs::VfxComponent::Quality parseVfxQuality(std::string value) {
   if (value == "medium" || value == "med") return ecs::VfxComponent::Quality::Medium;
   if (value == "ultra") return ecs::VfxComponent::Quality::Ultra;
   return ecs::VfxComponent::Quality::High;
+}
+
+ecs::BillboardComponent::FaceMode parseBillboardFaceMode(std::string value) {
+  for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  if (value == "none" || value == "fixed") return ecs::BillboardComponent::FaceMode::None;
+  if (value == "yaw" || value == "yawonly" || value == "yaw_only") return ecs::BillboardComponent::FaceMode::YawOnly;
+  return ecs::BillboardComponent::FaceMode::CameraPlane;
 }
 
 render::RenderMode parseRenderMode(std::string value) {
@@ -1059,6 +1075,100 @@ VfxConfig readVfxInput(const data::JsonValue::Object& obj, const FactoryContext&
   return v;
 }
 
+BillboardConfig readBillboardInput(const data::JsonValue::Object& obj, const FactoryContext& ctx) {
+  BillboardConfig out{};
+  out.billboard.transform = readTransformInput(obj, ctx);
+  out.billboard.transform.name = data::getStringOr(obj, "name", out.billboard.transform.name);
+
+  auto readAnimatedTextureInto = [&](const data::JsonValue::Object& src, render::AnimatedTexture& animated) {
+    animated.enabled = data::getBoolOr(src, "enabled", animated.enabled);
+    animated.framesPerSecond = data::getFloatOr(src, "framesPerSecond", animated.framesPerSecond);
+    animated.looping = data::getBoolOr(src, "looping", animated.looping);
+    animated.pingPong = data::getBoolOr(src, "pingPong", animated.pingPong);
+    animated.holdLastFrame = data::getBoolOr(src, "holdLastFrame", animated.holdLastFrame);
+    animated.startFrame = data::getIntOr(src, "startFrame", animated.startFrame);
+    if (const auto* framesV = data::getObjectKey(src, "frames")) {
+      if (const auto* arr = framesV->tryArray()) {
+        animated.frames.clear();
+        animated.frames.reserve(arr->size());
+        for (const auto& frameV : *arr) {
+          render::AssetRef frame{};
+          std::string key;
+          if (data::readString(frameV, key)) {
+            frame.enabled = true;
+            frame.key = std::move(key);
+            animated.frames.push_back(std::move(frame));
+            continue;
+          }
+          if (const auto* frameObj = frameV.tryObject()) {
+            key = data::getStringOr(*frameObj, "texture", key);
+            if (key.empty()) key = data::getStringOr(*frameObj, "key", key);
+            if (key.empty()) key = data::getStringOr(*frameObj, "path", key);
+            frame.enabled = data::getBoolOr(*frameObj, "enabled", true);
+            frame.key = std::move(key);
+            if (const auto* idV = data::getObjectKey(*frameObj, "id")) {
+              int id = 0;
+              if (data::readInt(*idV, id) && id >= 0) frame.id = static_cast<std::uint32_t>(id);
+            }
+            if (!frame.key.empty()) animated.frames.push_back(std::move(frame));
+          }
+        }
+      }
+    }
+  };
+
+  auto readInto = [&](const data::JsonValue::Object& src) {
+    out.billboard.enabled = data::getBoolOr(src, "enabled", out.billboard.enabled);
+    out.billboard.visible = data::getBoolOr(src, "visible", out.billboard.visible);
+    out.billboard.textureEnabled = data::getBoolOr(src, "textureEnabled", out.billboard.textureEnabled);
+    out.billboard.depthWrite = data::getBoolOr(src, "depthWrite", out.billboard.depthWrite);
+    out.billboard.doubleSided = data::getBoolOr(src, "doubleSided", out.billboard.doubleSided);
+    out.billboard.maxRenderDistance = data::getFloatOr(src, "maxRenderDistance", out.billboard.maxRenderDistance);
+    if (const auto* faceModeV = data::getObjectKey(src, "faceMode")) {
+      std::string s;
+      if (data::readString(*faceModeV, s)) out.billboard.faceMode = parseBillboardFaceMode(std::move(s));
+    }
+    if (const auto* sizeV = data::getObjectKey(src, "sizeMeters")) (void)readVec2OrUniform(*sizeV, out.billboard.sizeMeters);
+    if (const auto* sizeV = data::getObjectKey(src, "size")) (void)readVec2OrUniform(*sizeV, out.billboard.sizeMeters);
+    if (const auto* pivotV = data::getObjectKey(src, "pivot")) (void)readVec2Value(*pivotV, out.billboard.pivot);
+    if (const auto* offsetV = data::getObjectKey(src, "worldOffset")) (void)data::readVec3(*offsetV, out.billboard.worldOffset);
+    if (const auto* rotV = data::getObjectKey(src, "rotationOffsetDeg")) (void)data::readVec3(*rotV, out.billboard.rotationOffsetDeg);
+    if (const auto* textureV = data::getObjectKey(src, "texture")) {
+      std::string key;
+      if (data::readString(*textureV, key)) {
+        out.billboard.texture.enabled = true;
+        out.billboard.texture.key = std::move(key);
+      } else if (const auto* textureObj = textureV->tryObject()) {
+        out.billboard.texture.enabled = data::getBoolOr(*textureObj, "enabled", out.billboard.texture.enabled);
+        out.billboard.texture.key = data::getStringOr(*textureObj, "key", out.billboard.texture.key);
+        if (out.billboard.texture.key.empty()) {
+          out.billboard.texture.key = data::getStringOr(*textureObj, "path", out.billboard.texture.key);
+        }
+      }
+    }
+    if (const auto* tintV = data::getObjectKey(src, "tint")) (void)readColorValue(*tintV, out.billboard.tint);
+    if (const auto* alphaV = data::getObjectKey(src, "alpha")) {
+      float alpha = out.billboard.tint.a;
+      if (data::readFloat(*alphaV, alpha)) out.billboard.tint.a = alpha;
+    }
+    if (const auto* animV = data::getObjectKey(src, "animatedTexture")) {
+      if (const auto* animObj = animV->tryObject()) readAnimatedTextureInto(*animObj, out.billboard.animatedTexture);
+    }
+    if (const auto* playbackV = data::getObjectKey(src, "playback")) {
+      if (const auto* playbackObj = playbackV->tryObject()) readAnimatedTextureInto(*playbackObj, out.billboard.animatedTexture);
+    }
+  };
+
+  if (const auto* billboardV = data::getObjectKey(obj, "billboard")) {
+    if (const auto* billboardObj = billboardV->tryObject()) readInto(*billboardObj);
+  }
+  readInto(obj);
+
+  if (!out.billboard.texture.enabled && !out.billboard.texture.key.empty()) out.billboard.texture.enabled = true;
+  if (!out.billboard.animatedTexture.frames.empty()) out.billboard.animatedTexture.enabled = true;
+  return out;
+}
+
 SkeletonInput readSkeletonInput(const data::JsonValue::Object& obj) {
   SkeletonInput s{};
   if (const auto* v = data::getObjectKey(obj, "skeletonData")) {
@@ -1638,6 +1748,18 @@ class VfxJsonFactory final : public IEntityFactory {
   }
 };
 
+class BillboardJsonFactory final : public IEntityFactory {
+ public:
+  EntityId create(EntityRegistry& registry, const data::JsonValue& config, const FactoryContext& ctx) override {
+    BillboardConfig cfg{};
+    if (const auto* obj = config.tryObject()) {
+      cfg = readBillboardInput(*obj, ctx);
+    }
+    BillboardFactory factory;
+    return factory.create(registry, cfg);
+  }
+};
+
 class CombatantJsonFactory final : public IEntityFactory {
  public:
   EntityId create(
@@ -1676,6 +1798,7 @@ void registerFactoriesFromEcsFactoriesDir(EntityFactoryRegistry& out) {
   out.registerFactory("terrain", std::make_unique<TerrainJsonFactory>());
   out.registerFactory("grass_patch", std::make_unique<GrassPatchJsonFactory>());
   out.registerFactory("playable_character", std::make_unique<PlayableCharacterJsonFactory>());
+  out.registerFactory("billboard", std::make_unique<BillboardJsonFactory>());
   out.registerFactory("vfx", std::make_unique<VfxJsonFactory>());
   out.registerFactory("combatant", std::make_unique<CombatantJsonFactory>());
   out.registerFactory("weapon", std::make_unique<WeaponJsonFactory>());

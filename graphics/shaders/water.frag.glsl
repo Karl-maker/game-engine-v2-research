@@ -42,6 +42,10 @@ uniform float u_RippleTiling = 0.12;
 uniform float u_RippleStrength = 0.10;
 uniform float u_FoamTiling = 0.085;
 uniform float u_FoamStrength = 0.12;
+uniform float u_FoamNoiseScale = 0.035;
+uniform float u_FoamNoiseStrength = 0.0;
+uniform float u_FoamDriftSpeed = 0.08;
+uniform vec2 u_FoamDriftDirection = vec2(0.8, 0.35);
 uniform vec2 u_MapUvTiling = vec2(1.0);
 
 uniform sampler2D u_NormalTex;
@@ -63,6 +67,35 @@ uniform float u_LightIntensity[MAX_LIGHTS];
 uniform float u_LightRange[MAX_LIGHTS];
 
 float saturate(float x) { return clamp(x, 0.0, 1.0); }
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float valueNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash12(i + vec2(0.0, 0.0));
+  float b = hash12(i + vec2(1.0, 0.0));
+  float c = hash12(i + vec2(0.0, 1.0));
+  float d = hash12(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  float freq = 1.0;
+  for (int i = 0; i < 4; ++i) {
+    sum += valueNoise(p * freq) * amp;
+    freq *= 2.03;
+    amp *= 0.5;
+  }
+  return sum;
+}
 
 vec2 safeDir(vec2 v) {
   float lenSq = dot(v, v);
@@ -146,15 +179,24 @@ void main() {
   float rippleBreakup = u_UseRippleMask ? max(rippleHeight(rippleUv), rippleHeight(rippleUvFine)) : 0.5;
   float shoreMask = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFoamDepth), waterDepth);
   float foamEdge = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFadeDistance * 0.65), waterDepth);
+  vec2 foamDriftDir = safeDir(u_FoamDriftDirection);
+  vec2 foamDrift = foamDriftDir * (u_Time * u_FoamDriftSpeed);
+  float foamNoise = fbm(v_WorldPos.xz * max(0.001, u_FoamNoiseScale) + foamDrift + vec2(1.7, -2.3));
+  float foamClumps = smoothstep(0.48, 0.82, foamNoise);
+  float clumpMask = mix(1.0, foamClumps, saturate(u_FoamNoiseStrength));
   float foam = shoreMask * mix(0.45, 1.0, rippleBreakup) * u_ShoreFoamStrength;
   foam += foamEdge * mix(0.18, 0.55, rippleBreakup) * u_ShoreFoamStrength;
+  foam *= mix(1.0, mix(0.72, 1.3, clumpMask), saturate(u_FoamNoiseStrength));
 
   if (u_UseFoamNormal) {
-    vec2 foamUv = v_WorldPos.xz * u_FoamTiling + vec2(-u_Time * 0.015, u_Time * 0.009);
+    vec2 foamUv = v_WorldPos.xz * u_FoamTiling + foamDrift + vec2(-u_Time * 0.015, u_Time * 0.009);
     vec3 foamNormal = tangentNormal(u_FoamNormalTex, foamUv);
     float foamBreakup = saturate(length(foamNormal.xz));
     foam += shoreMask * foamBreakup * u_FoamStrength * 1.15;
     foam += foamEdge * foamBreakup * u_FoamStrength * 0.90;
+    float driftingFoam = foamBreakup * clumpMask * u_FoamStrength * mix(0.0, 0.8, saturate(u_FoamNoiseStrength));
+    float openWaterFoamMask = mix(shallowMask, 1.0 - deepness * 0.65, 0.35);
+    foam += openWaterFoamMask * driftingFoam;
     N = normalize(mix(N, applyPlanarNormal(N, foamNormal), max(shoreMask * 0.25, foamEdge * 0.18)));
   }
 

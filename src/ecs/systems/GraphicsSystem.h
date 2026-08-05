@@ -225,6 +225,11 @@ class GraphicsSystem final {
     float rippleStrength = 0.10f;
     float foamTiling = 0.085f;
     float foamStrength = 0.12f;
+    float foamNoiseScale = 0.035f;
+    float foamNoiseStrength = 0.0f;
+    float foamDriftSpeed = 0.08f;
+    float foamDriftDirectionX = 0.8f;
+    float foamDriftDirectionY = 0.35f;
 
     // Splat map controls (channel selection + strength).
     float splatStrength = 1.0f;  // 0=procedural, 1=splat override

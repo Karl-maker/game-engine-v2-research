@@ -28,6 +28,7 @@
 - Use `framesPerSecond` to set playback speed.
 - Use `looping`, `pingPong`, and `holdLastFrame` to control how the frame sequence behaves after reaching the end.
 - This is ideal for extracted video frames, GIF-like sequences, stylized sprite animations, or cheap VFX cards.
+- Source-image alpha is preserved, and `tint.a` can further fade the whole billboard.
 
 ## Field guide
 
@@ -79,3 +80,44 @@ billboard.tint = {1.0f, 1.0f, 1.0f, 0.95f};
 
 - Keep frame sequences short unless the visual really needs them, because each distinct frame is still a texture upload/cache entry.
 - If you need actual mesh depth, lighting, or skeletal motion, use a mesh instead of a billboard.
+
+## Config JSON Example
+
+```json
+{
+  "factory": "billboard",
+  "config": {
+    "name": "animated_billboard_example",
+    "positionLocal": [7.0, 53.0, 6.0],
+    "faceMode": "cameraPlane",
+    "sizeMeters": [2.6, 2.6],
+    "pivot": [0.5, 0.1],
+    "maxRenderDistance": 120.0,
+    "doubleSided": true,
+    "depthWrite": false,
+    "textureEnabled": true,
+    "texture": "assets/hud/combatant-health.png",
+    "tint": [1.0, 1.0, 1.0, 0.78],
+    "alpha": 0.78,
+    "animatedTexture": {
+      "enabled": true,
+      "framesPerSecond": 2.25,
+      "looping": true,
+      "pingPong": true,
+      "holdLastFrame": true,
+      "frames": [
+        "assets/hud/combatant-health.png",
+        "assets/hud/player-health.png"
+      ]
+    }
+  }
+}
+```
+
+- `faceMode`: `cameraPlane`, `yawOnly`, or `none`
+- `sizeMeters`: billboard width and height in world space
+- `pivot`: normalized anchor point on the quad
+- `texture`: fallback image used when no animated frame overrides it
+- `animatedTexture.frames`: list of images to cycle
+- `animatedTexture.framesPerSecond`: playback rate
+- `tint` or `alpha`: overall transparency multiplier

@@ -2690,6 +2690,17 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 	          if (!gpu || !gpu->ready) continue;
 	          const GLint locModel = glGetUniformLocation(meshShadowProg->programId, "u_Model");
 	          if (locModel >= 0) glUniformMatrix4fv(locModel, 1, GL_FALSE, m.modelMatrix.m);
+            const GLint locSkinned = glGetUniformLocation(meshShadowProg->programId, "u_Skinned");
+            if (locSkinned >= 0) glUniform1i(locSkinned, (m.hasSkinning && m.skinMatrixCount > 0) ? 1 : 0);
+            if (m.hasSkinning && m.skinMatrixCount > 0) {
+              const GLint locBones = glGetUniformLocation(meshShadowProg->programId, "u_Bones[0]");
+              if (locBones >= 0) {
+                glUniformMatrix4fv(locBones,
+                                   static_cast<GLsizei>(std::min<std::size_t>(96, m.skinMatrixCount)),
+                                   GL_FALSE,
+                                   m.skinMatrices[0].m);
+              }
+            }
 	          for (const auto& sm : gpu->subMeshes) {
 	            glBindVertexArray(sm.vao);
 	            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(sm.indexCount), GL_UNSIGNED_INT, nullptr);
@@ -3187,6 +3198,14 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       if (locFoamTiling >= 0) glUniform1f(locFoamTiling, t.foamTiling);
       const GLint locFoamStrength = glGetUniformLocation(program->programId, "u_FoamStrength");
       if (locFoamStrength >= 0) glUniform1f(locFoamStrength, t.foamStrength);
+      const GLint locFoamNoiseScale = glGetUniformLocation(program->programId, "u_FoamNoiseScale");
+      if (locFoamNoiseScale >= 0) glUniform1f(locFoamNoiseScale, t.foamNoiseScale);
+      const GLint locFoamNoiseStrength = glGetUniformLocation(program->programId, "u_FoamNoiseStrength");
+      if (locFoamNoiseStrength >= 0) glUniform1f(locFoamNoiseStrength, t.foamNoiseStrength);
+      const GLint locFoamDriftSpeed = glGetUniformLocation(program->programId, "u_FoamDriftSpeed");
+      if (locFoamDriftSpeed >= 0) glUniform1f(locFoamDriftSpeed, t.foamDriftSpeed);
+      const GLint locFoamDriftDirection = glGetUniformLocation(program->programId, "u_FoamDriftDirection");
+      if (locFoamDriftDirection >= 0) glUniform2f(locFoamDriftDirection, t.foamDriftDirectionX, t.foamDriftDirectionY);
 
       const GLuint heightMapId = (t.hasHeightMapTex) ? m_textures.requestTexture(t.heightMapTex.key, false) : 0;
       const GLuint terrainNormMapId =

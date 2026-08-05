@@ -42,6 +42,7 @@ add_executable(duppy
   src/ecs/systems/TargetSystem.cpp
   src/ecs/systems/ThirdPersonCameraSystem.cpp
   src/ecs/factories/ObjectFactory.cpp
+  src/ecs/factories/BillboardFactory.cpp
   src/ecs/factories/PhysicalObjectFactory.cpp
   src/ecs/factories/ActorFactory.cpp
   src/ecs/factories/TerrainFactory.cpp

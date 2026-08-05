@@ -10,8 +10,10 @@
 #include "ecs/components/MeshComponent.h"
 #include "ecs/components/RaycastComponent.h"
 #include "ecs/components/ShaderComponent.h"
+#include "ecs/components/BillboardComponent.h"
 #include "ecs/components/VfxComponent.h"
 #include "ecs/EntityId.h"
+#include "render/AnimatedTexture.h"
 #include "render/MaterialParameter.h"
 #include "render/TextureBinding.h"
 #include "render/Color.h"
@@ -89,6 +91,24 @@ struct TerrainInput final {
   physics::LayerMask collisionLayer = physics::kLayerWorld;
   bool hasShader = true;
   ViewableInput viewable{};
+};
+
+struct BillboardInput final {
+  TransformInput transform{.name = "billboard"};
+  bool enabled = true;
+  bool visible = true;
+  bool textureEnabled = true;
+  bool depthWrite = false;
+  bool doubleSided = true;
+  ecs::BillboardComponent::FaceMode faceMode = ecs::BillboardComponent::FaceMode::CameraPlane;
+  math::Vec2 sizeMeters{1.25f, 1.25f};
+  math::Vec2 pivot{0.5f, 0.0f};
+  math::Vec3 worldOffset{0.0f, 0.0f, 0.0f};
+  math::Vec3 rotationOffsetDeg{0.0f, 0.0f, 0.0f};
+  float maxRenderDistance = 96.0f;
+  render::AssetRef texture{};
+  render::AnimatedTexture animatedTexture{};
+  render::Color tint{1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 struct PhysicalInput final {

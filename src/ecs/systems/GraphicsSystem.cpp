@@ -660,6 +660,10 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(resolvedShader, "rippleStrength", draw.rippleStrength);
         (void)readFloatParam(resolvedShader, "foamTiling", draw.foamTiling);
         (void)readFloatParam(resolvedShader, "foamStrength", draw.foamStrength);
+        (void)readFloatParam(resolvedShader, "foamNoiseScale", draw.foamNoiseScale);
+        (void)readFloatParam(resolvedShader, "foamNoiseStrength", draw.foamNoiseStrength);
+        (void)readFloatParam(resolvedShader, "foamDriftSpeed", draw.foamDriftSpeed);
+        (void)readVec2Param(resolvedShader, "foamDriftDirection", draw.foamDriftDirectionX, draw.foamDriftDirectionY);
         (void)readFloatParam(resolvedShader, "splatStrength", draw.splatStrength);
         (void)readIntParam(resolvedShader, "splatChannel", draw.splatChannel);
         (void)readFloatParam(resolvedShader, "mapMipBias", draw.mapMipBias);

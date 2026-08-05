@@ -206,6 +206,50 @@ Use `ecs::BillboardComponent` for simple world-space textured quads.
 - assign `texture` for a single image
 - fill `animatedTexture.frames` for extracted video frames or flipbook playback
 - tune `sizeMeters`, `pivot`, and `maxRenderDistance` for the final presentation
+- use transparent PNGs directly and fade the full card with `tint.a` or `alpha`
+
+Config-driven billboards can be authored directly in `assets/world/config.json`:
+
+```json
+{
+  "factory": "billboard",
+  "config": {
+    "name": "animated_billboard_example",
+    "positionLocal": [7.0, 53.0, 6.0],
+    "faceMode": "cameraPlane",
+    "sizeMeters": [2.6, 2.6],
+    "pivot": [0.5, 0.1],
+    "maxRenderDistance": 120.0,
+    "doubleSided": true,
+    "depthWrite": false,
+    "textureEnabled": true,
+    "texture": "assets/hud/combatant-health.png",
+    "tint": [1.0, 1.0, 1.0, 0.78],
+    "animatedTexture": {
+      "enabled": true,
+      "framesPerSecond": 2.25,
+      "looping": true,
+      "pingPong": true,
+      "holdLastFrame": true,
+      "frames": [
+        "assets/hud/combatant-health.png",
+        "assets/hud/player-health.png"
+      ]
+    }
+  }
+}
+```
+
+Useful `billboard` config fields:
+
+- `faceMode`: `cameraPlane`, `yawOnly`, or `none`
+- `sizeMeters`: `[width, height]`
+- `pivot`: normalized anchor point
+- `worldOffset` and `rotationOffsetDeg`: extra placement control
+- `texture`: base image
+- `animatedTexture.frames`: image sequence
+- `animatedTexture.framesPerSecond`, `looping`, `pingPong`, `holdLastFrame`, `startFrame`: playback behavior
+- `tint` and `alpha`: transparency and color multiplier
 
 ## 8) Useful terminal commands
 
