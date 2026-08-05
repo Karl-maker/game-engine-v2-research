@@ -574,11 +574,20 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.lodStep4Distance = terrain.lodStep4Distance;
         draw.lodStep8Distance = terrain.lodStep8Distance;
         draw.lodStep16Distance = terrain.lodStep16Distance;
+        draw.lodStep32Distance = terrain.lodStep32Distance;
         draw.lodForceNearDistance = terrain.lodForceNearDistance;
         draw.tessLockDistance = terrain.tessLockDistance;
         draw.tessEnableDistance = terrain.tessEnableDistance;
         draw.tessDisableDistance = terrain.tessDisableDistance;
         draw.viewDotBias = terrain.viewDotBias;
+        draw.farLodEnabled = terrain.farLod.enabled;
+        draw.farLodStartDistance = terrain.farLod.startDistance;
+        draw.farLodEndDistance = terrain.farLod.endDistance;
+        draw.farLodBillboardScale = terrain.farLod.billboardScale;
+        draw.farLodHeightOffset = terrain.farLod.heightOffset;
+        draw.farLodCameraFacing = terrain.farLod.cameraFacing;
+        draw.farLodTexture = terrain.farLod.texture;
+        draw.farLodTint = terrain.farLod.tint;
         const math::Vec3 cameraPos = m_frame.camera.position;
         const float terrainDistance = [&]() {
           const float sizeX = static_cast<float>(std::max(2, terrain.gridWidth)) * terrain.cellSizeMeters;
@@ -673,6 +682,37 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         (void)readFloatParam(resolvedShader, "rockBlendStrength", draw.rockBlendStrength);
         (void)readFloatParam(resolvedShader, "rockNoiseScale", draw.rockNoiseScale);
         (void)applySplatChannelRockOverrides(resolvedShader, draw.splatChannel, draw);
+
+        if (draw.farLodEnabled && terrainDistance >= draw.farLodStartDistance && terrainDistance <= draw.farLodEndDistance) {
+          FrameSnapshot::BillboardDraw farBillboard;
+          farBillboard.entity = id;
+          farBillboard.enabled = true;
+          farBillboard.visible = true;
+          farBillboard.textureEnabled = draw.farLodTexture.enabled && !draw.farLodTexture.key.empty();
+          farBillboard.depthWrite = false;
+          farBillboard.doubleSided = true;
+          farBillboard.faceMode = draw.farLodCameraFacing ? ecs::BillboardComponent::FaceMode::YawOnly
+                                                          : ecs::BillboardComponent::FaceMode::None;
+          farBillboard.position = {
+              draw.position.x,
+              draw.position.y + draw.farLodHeightOffset,
+              draw.position.z,
+          };
+          farBillboard.rotation = draw.farLodCameraFacing ? math::Vec3{} : math::Vec3{-90.0f, 0.0f, 0.0f};
+          farBillboard.sizeMeters = {
+              static_cast<float>(std::max(2, draw.gridWidth)) * draw.cellSizeMeters * draw.farLodBillboardScale,
+              static_cast<float>(std::max(2, draw.gridHeight)) * draw.cellSizeMeters * draw.farLodBillboardScale,
+          };
+          farBillboard.pivot = {0.5f, 0.5f};
+          farBillboard.maxRenderDistance = draw.farLodEndDistance;
+          farBillboard.texture = farBillboard.textureEnabled ? draw.farLodTexture
+                                                             : (draw.hasTerrainSurfaceMapTex ? draw.terrainSurfaceMapTex : draw.albedoTex);
+          if (!farBillboard.textureEnabled && farBillboard.texture.enabled && !farBillboard.texture.key.empty()) {
+            farBillboard.textureEnabled = true;
+          }
+          farBillboard.tint = draw.farLodTint;
+          m_frame.billboards.push_back(std::move(farBillboard));
+        }
         m_frame.terrains.push_back(std::move(draw));
       });
 

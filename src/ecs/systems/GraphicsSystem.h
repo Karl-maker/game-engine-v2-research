@@ -73,11 +73,20 @@ class GraphicsSystem final {
     float lodStep4Distance = 84.0f;
     float lodStep8Distance = 132.0f;
     float lodStep16Distance = 180.0f;
+    float lodStep32Distance = 260.0f;
     float lodForceNearDistance = 18.0f;
     float tessLockDistance = 16.0f;
     float tessEnableDistance = 72.0f;
     float tessDisableDistance = 112.0f;
     float viewDotBias = 0.05f;
+    bool farLodEnabled = false;
+    float farLodStartDistance = 280.0f;
+    float farLodEndDistance = 720.0f;
+    float farLodBillboardScale = 1.15f;
+    float farLodHeightOffset = 0.0f;
+    bool farLodCameraFacing = false;
+    render::AssetRef farLodTexture{};
+    render::Color farLodTint{0.78f, 0.82f, 0.74f, 0.92f};
     render::AssetRef shader{};
     int renderMode = 0;  // render::RenderMode (as int)
     int cullMode = 0;    // render::CullMode (as int)

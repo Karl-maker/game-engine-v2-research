@@ -2,6 +2,7 @@
 
 #include "data/JsonUtil.h"
 #include "ecs/components/ColliderComponent.h"
+#include "ecs/services/ChunkStreamingService.h"
 #include "physics/LayerMask.h"
 
 #include <fstream>
@@ -180,6 +181,15 @@ void applySunDefaults(ecs::LightComponent& sun) {
   sun.shadowDistance = 82.0f;
 }
 
+void applyChunkStreamingDefaults(ecs::services::ChunkStreamingConfig& chunkStreaming) {
+  chunkStreaming.chunkSizeMeters = 96.0f;
+  chunkStreaming.searchRadiusChunks = 3;
+  chunkStreaming.loadProximityMeters = 140.0f;
+  chunkStreaming.unloadProximityMeters = 196.0f;
+  chunkStreaming.maxLoadsPerTick = 2;
+  chunkStreaming.maxUnloadsPerTick = 4;
+}
+
 void readPlayerConfig(const data::JsonValue::Object& obj, ecs::services::PlayableCharacterConfig& cfg) {
   cfg.hasController = data::getBoolOr(obj, "hasController", cfg.hasController);
 
@@ -344,6 +354,15 @@ void readSunConfig(const data::JsonValue::Object& obj, ecs::LightComponent& sun)
   }
 }
 
+void readChunkStreamingConfig(const data::JsonValue::Object& obj, ecs::services::ChunkStreamingConfig& chunkStreaming) {
+  chunkStreaming.chunkSizeMeters = data::getFloatOr(obj, "chunkSizeMeters", chunkStreaming.chunkSizeMeters);
+  chunkStreaming.searchRadiusChunks = std::max(0, data::getIntOr(obj, "searchRadiusChunks", chunkStreaming.searchRadiusChunks));
+  chunkStreaming.loadProximityMeters = data::getFloatOr(obj, "loadProximityMeters", chunkStreaming.loadProximityMeters);
+  chunkStreaming.unloadProximityMeters = data::getFloatOr(obj, "unloadProximityMeters", chunkStreaming.unloadProximityMeters);
+  chunkStreaming.maxLoadsPerTick = std::max(0, data::getIntOr(obj, "maxLoadsPerTick", chunkStreaming.maxLoadsPerTick));
+  chunkStreaming.maxUnloadsPerTick = std::max(0, data::getIntOr(obj, "maxUnloadsPerTick", chunkStreaming.maxUnloadsPerTick));
+}
+
 }  // namespace
 
 bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWorldConfig& outConfig) {
@@ -353,6 +372,7 @@ bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWor
   applyFogDefaults(outConfig.fog, outConfig.fogAnchor);
   applyRenderDefaults(outConfig.renderSettings);
   applySunDefaults(outConfig.sun);
+  applyChunkStreamingDefaults(outConfig.chunkStreaming);
 
   data::JsonValue storage;
   const data::JsonValue::Object* root = nullptr;
@@ -394,8 +414,15 @@ bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWor
       outConfig.hasSun = true;
     }
   }
+  if (const auto* chunkStreamingV = data::getObjectKey(*persistent, "chunkStreaming")) {
+    if (const auto* chunkStreaming = chunkStreamingV->tryObject()) {
+      readChunkStreamingConfig(*chunkStreaming, outConfig.chunkStreaming);
+      outConfig.hasChunkStreaming = true;
+    }
+  }
 
-  return outConfig.hasPlayer || outConfig.hasSky || outConfig.hasFog || outConfig.hasRenderSettings || outConfig.hasSun;
+  return outConfig.hasPlayer || outConfig.hasSky || outConfig.hasFog || outConfig.hasRenderSettings || outConfig.hasSun ||
+         outConfig.hasChunkStreaming;
 }
 
 }  // namespace games

@@ -228,6 +228,12 @@ void Game::onStart() {
 
   PersistentWorldConfig persistentConfig{};
   (void)loadPersistentWorldConfig(m_config.chunkConfigPath, persistentConfig);
+  if (persistentConfig.hasChunkStreaming) {
+    m_config.chunkSizeMeters = persistentConfig.chunkStreaming.chunkSizeMeters;
+    m_config.chunkSearchRadius = persistentConfig.chunkStreaming.searchRadiusChunks;
+    m_config.chunkLoadProximityMeters = persistentConfig.chunkStreaming.loadProximityMeters;
+    m_config.chunkUnloadProximityMeters = persistentConfig.chunkStreaming.unloadProximityMeters;
+  }
 
   m_camera = m_registry.createEntity("camera");
   {
@@ -490,6 +496,9 @@ void Game::onStart() {
   chunkCfg.searchRadiusChunks = m_config.chunkSearchRadius;
   chunkCfg.loadProximityMeters = m_config.chunkLoadProximityMeters;
   chunkCfg.unloadProximityMeters = m_config.chunkUnloadProximityMeters;
+  chunkCfg.maxLoadsPerTick = persistentConfig.hasChunkStreaming ? persistentConfig.chunkStreaming.maxLoadsPerTick : chunkCfg.maxLoadsPerTick;
+  chunkCfg.maxUnloadsPerTick =
+      persistentConfig.hasChunkStreaming ? persistentConfig.chunkStreaming.maxUnloadsPerTick : chunkCfg.maxUnloadsPerTick;
   m_chunkStreaming.setConfig(chunkCfg);
   m_chunkSource = std::make_unique<ecs::services::FileChunkSource>(m_config.chunkConfigPath);
 }

@@ -67,11 +67,20 @@ EntityId TerrainFactory::create(EntityRegistry& registry, const TerrainConfig& c
   terrain.lodStep4Distance = config.lodStep4Distance;
   terrain.lodStep8Distance = config.lodStep8Distance;
   terrain.lodStep16Distance = config.lodStep16Distance;
+  terrain.lodStep32Distance = config.lodStep32Distance;
   terrain.lodForceNearDistance = config.lodForceNearDistance;
   terrain.tessLockDistance = config.tessLockDistance;
   terrain.tessEnableDistance = config.tessEnableDistance;
   terrain.tessDisableDistance = config.tessDisableDistance;
   terrain.viewDotBias = config.viewDotBias;
+  terrain.farLod.enabled = config.farLod.enabled;
+  terrain.farLod.startDistance = config.farLod.startDistance;
+  terrain.farLod.endDistance = config.farLod.endDistance;
+  terrain.farLod.billboardScale = config.farLod.billboardScale;
+  terrain.farLod.heightOffset = config.farLod.heightOffset;
+  terrain.farLod.cameraFacing = config.farLod.cameraFacing;
+  terrain.farLod.texture = config.farLod.texture;
+  terrain.farLod.tint = config.farLod.tint;
 
   if (config.hasCollider) {
     auto& collider = registry.emplace<ecs::ColliderComponent>(id);

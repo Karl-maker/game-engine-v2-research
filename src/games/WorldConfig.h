@@ -5,6 +5,7 @@
 #include "ecs/components/RenderSettingsComponent.h"
 #include "ecs/components/SkyComponent.h"
 #include "ecs/factories/PlayableCharacterFactory.h"
+#include "ecs/services/ChunkStreamingService.h"
 
 #include <string>
 
@@ -26,6 +27,9 @@ struct PersistentWorldConfig final {
 
   bool hasSun = false;
   ecs::LightComponent sun{};
+
+  bool hasChunkStreaming = false;
+  ecs::services::ChunkStreamingConfig chunkStreaming{};
 };
 
 bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWorldConfig& outConfig);

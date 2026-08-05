@@ -71,7 +71,7 @@ std::string formatSceneCounts(const ecs::systems::GraphicsSystem::FrameSnapshot&
 }  // namespace
 
 void Tooling::applyToolingConfigToRuntime() {
-  ecs::services::ChunkStreamingConfig chunkCfg{};
+  ecs::services::ChunkStreamingConfig chunkCfg = m_chunkStreaming.config();
   chunkCfg.chunkSizeMeters = m_config.chunkSizeMeters;
   chunkCfg.searchRadiusChunks = m_config.chunkSearchRadius;
   chunkCfg.loadProximityMeters = m_config.chunkLoadProximityMeters;
@@ -82,6 +82,21 @@ void Tooling::applyToolingConfigToRuntime() {
 bool Tooling::applyPersistentWorldConfigToScene() {
   PersistentWorldConfig persistentConfig{};
   if (!loadPersistentWorldConfig(m_config.chunkConfigPath, persistentConfig)) return false;
+
+  if (persistentConfig.hasChunkStreaming) {
+    m_config.chunkSizeMeters = persistentConfig.chunkStreaming.chunkSizeMeters;
+    m_config.chunkSearchRadius = persistentConfig.chunkStreaming.searchRadiusChunks;
+    m_config.chunkLoadProximityMeters = persistentConfig.chunkStreaming.loadProximityMeters;
+    m_config.chunkUnloadProximityMeters = persistentConfig.chunkStreaming.unloadProximityMeters;
+    ecs::services::ChunkStreamingConfig chunkCfg = m_chunkStreaming.config();
+    chunkCfg.chunkSizeMeters = persistentConfig.chunkStreaming.chunkSizeMeters;
+    chunkCfg.searchRadiusChunks = persistentConfig.chunkStreaming.searchRadiusChunks;
+    chunkCfg.loadProximityMeters = persistentConfig.chunkStreaming.loadProximityMeters;
+    chunkCfg.unloadProximityMeters = persistentConfig.chunkStreaming.unloadProximityMeters;
+    chunkCfg.maxLoadsPerTick = persistentConfig.chunkStreaming.maxLoadsPerTick;
+    chunkCfg.maxUnloadsPerTick = persistentConfig.chunkStreaming.maxUnloadsPerTick;
+    m_chunkStreaming.setConfig(chunkCfg);
+  }
 
   if (auto* sky = m_registry.tryGet<ecs::SkyComponent>(m_sky)) {
     *sky = persistentConfig.sky;

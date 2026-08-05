@@ -2486,7 +2486,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
     if (distHoriz > t.lodMaxRenderDistance) {
       st.wantTess = false;
-      st.lodStep = std::max(st.lodStep, 16);
+      st.lodStep = std::max(st.lodStep, 32);
       continue;
     }
 
@@ -2519,6 +2519,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     const float t96_out = std::max(t48_out + 1.0f, t96_in - 18.0f);
     const float t192_in = t.lodStep16Distance;
     const float t192_out = std::max(t96_out + 1.0f, t192_in - 24.0f);
+    const float t384_in = t.lodStep32Distance;
+    const float t384_out = std::max(t192_out + 1.0f, t384_in - 32.0f);
 
     int lodStep = st.lodStep;
     if (lodStep <= 1) {
@@ -2532,9 +2534,13 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     } else if (lodStep == 8) {
       if (distHoriz < t48_out && viewDot > 0.05f) lodStep = 4;
       else if (distHoriz > t192_in || viewDot < -0.25f) lodStep = 16;
-    } else {
+    } else if (lodStep == 16) {
       if (distHoriz < t192_out && viewDot > 0.05f) lodStep = 8;
+      else if (distHoriz > t384_in || viewDot < -0.30f) lodStep = 32;
       else lodStep = 16;
+    } else {
+      if (distHoriz < t384_out && viewDot > 0.05f) lodStep = 16;
+      else lodStep = 32;
     }
 
     // Lock near-camera detail so it doesn't pop right in front of you.

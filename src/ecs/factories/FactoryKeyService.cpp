@@ -659,11 +659,44 @@ TerrainConfig readTerrainInput(const data::JsonValue::Object& obj, const Factory
   t.lodStep4Distance = data::getFloatOr(obj, "lodStep4Distance", t.lodStep4Distance);
   t.lodStep8Distance = data::getFloatOr(obj, "lodStep8Distance", t.lodStep8Distance);
   t.lodStep16Distance = data::getFloatOr(obj, "lodStep16Distance", t.lodStep16Distance);
+  t.lodStep32Distance = data::getFloatOr(obj, "lodStep32Distance", t.lodStep32Distance);
   t.lodForceNearDistance = data::getFloatOr(obj, "lodForceNearDistance", t.lodForceNearDistance);
   t.tessLockDistance = data::getFloatOr(obj, "tessLockDistance", t.tessLockDistance);
   t.tessEnableDistance = data::getFloatOr(obj, "tessEnableDistance", t.tessEnableDistance);
   t.tessDisableDistance = data::getFloatOr(obj, "tessDisableDistance", t.tessDisableDistance);
   t.viewDotBias = data::getFloatOr(obj, "viewDotBias", t.viewDotBias);
+  if (const auto* farLodV = data::getObjectKey(obj, "farLod")) {
+    if (const auto* farLod = farLodV->tryObject()) {
+      t.farLod.enabled = data::getBoolOr(*farLod, "enabled", t.farLod.enabled);
+      t.farLod.startDistance = data::getFloatOr(*farLod, "startDistance", t.farLod.startDistance);
+      t.farLod.endDistance = data::getFloatOr(*farLod, "endDistance", t.farLod.endDistance);
+      t.farLod.billboardScale = data::getFloatOr(*farLod, "billboardScale", t.farLod.billboardScale);
+      t.farLod.heightOffset = data::getFloatOr(*farLod, "heightOffset", t.farLod.heightOffset);
+      t.farLod.cameraFacing = data::getBoolOr(*farLod, "cameraFacing", t.farLod.cameraFacing);
+      if (const auto* texture = data::getObjectKey(*farLod, "texture")) {
+        std::string key;
+        if (data::readString(*texture, key) && !key.empty()) {
+          t.farLod.texture.enabled = true;
+          t.farLod.texture.key = std::move(key);
+        }
+      }
+      if (const auto* tint = data::getObjectKey(*farLod, "tint")) {
+        if (const auto* arr = tint->tryArray()) {
+          float r = t.farLod.tint.r;
+          float g = t.farLod.tint.g;
+          float b = t.farLod.tint.b;
+          float a = t.farLod.tint.a;
+          if (arr->size() >= 3 && data::readFloat((*arr)[0], r) && data::readFloat((*arr)[1], g) &&
+              data::readFloat((*arr)[2], b)) {
+            if (arr->size() >= 4) (void)data::readFloat((*arr)[3], a);
+            t.farLod.tint = {r, g, b, a};
+          }
+        }
+      }
+    }
+  }
+  t.farLod.startDistance = std::max(t.lodMaxRenderDistance, t.farLod.startDistance);
+  t.farLod.endDistance = std::max(t.farLod.startDistance + 1.0f, t.farLod.endDistance);
   t.hasCollider = data::getBoolOr(obj, "colliderEnabled", t.hasCollider);
   t.colliderThicknessMeters = data::getFloatOr(obj, "colliderThicknessMeters", t.colliderThicknessMeters);
   t.hasShader = data::getBoolOr(obj, "shaderEnabled", t.hasShader);

@@ -24,6 +24,8 @@ struct ChunkStreamingConfig final {
   int searchRadiusChunks = 4;  // only consider coords within this radius (square)
   float loadProximityMeters = 20.0f;
   float unloadProximityMeters = 28.0f;
+  int maxLoadsPerTick = 0;     // 0 = unlimited
+  int maxUnloadsPerTick = 0;   // 0 = unlimited
 };
 
 class ChunkStreamingService final {
