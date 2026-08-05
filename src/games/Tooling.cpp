@@ -68,6 +68,18 @@ std::string formatSceneCounts(const ecs::systems::GraphicsSystem::FrameSnapshot&
   return out.str();
 }
 
+std::string formatRenderFeatureSummary(const ecs::systems::GraphicsSystem::FrameSnapshot::RenderSettingsDraw& settings,
+                                       std::string_view preset) {
+  std::ostringstream out;
+  out << "preset=" << preset;
+  out << " shadows=" << (settings.shadowsEnabled ? settings.shadowQuality : -1);
+  out << " grass=" << (settings.grassEnabled ? "on" : "off");
+  out << " vfx=" << (settings.vfxEnabled ? "on" : "off");
+  out << " hud=" << (settings.hudEnabled ? "on" : "off");
+  out << " post=" << (settings.postProcessingEnabled ? "on" : "off");
+  return out.str();
+}
+
 }  // namespace
 
 void Tooling::applyToolingConfigToRuntime() {
@@ -82,6 +94,8 @@ void Tooling::applyToolingConfigToRuntime() {
 bool Tooling::applyPersistentWorldConfigToScene() {
   PersistentWorldConfig persistentConfig{};
   if (!loadPersistentWorldConfig(m_config.chunkConfigPath, persistentConfig)) return false;
+  m_profiling = persistentConfig.profiling;
+  m_performancePreset = persistentConfig.performance.preset;
 
   if (persistentConfig.hasChunkStreaming) {
     m_config.chunkSizeMeters = persistentConfig.chunkStreaming.chunkSizeMeters;
@@ -110,6 +124,21 @@ bool Tooling::applyPersistentWorldConfigToScene() {
   }
   if (auto* fog = m_registry.tryGet<ecs::FogVolumeComponent>(m_fog)) {
     *fog = persistentConfig.fog;
+  }
+  if (auto* light = m_registry.tryGet<ecs::LightComponent>(m_light)) {
+    *light = persistentConfig.sun;
+  }
+  if (auto* renderSettings = m_registry.tryGet<ecs::RenderSettingsComponent>(m_renderSettings)) {
+    *renderSettings = persistentConfig.renderSettings;
+    renderSettings->showRays = true;
+    renderSettings->showCollisionBoxes = true;
+    renderSettings->showCombatBoxes = true;
+    renderSettings->showSkeletonBones = true;
+  }
+  if (auto* camera = m_registry.tryGet<ecs::CameraComponent>(m_camera)) {
+    camera->renderScale = persistentConfig.player.camera.renderScale;
+    camera->depthOfField.enabled = persistentConfig.player.camera.depthOfFieldEnabled;
+    camera->motionBlur.enabled = persistentConfig.player.camera.motionBlurEnabled;
   }
 
   m_skyPresetSystem.tick(m_registry);
@@ -337,7 +366,8 @@ void Tooling::onTick(const core::TickContext& ctx) {
 
   const auto& frame = m_graphics.tick(m_registry);
   std::ostringstream overlay;
-  overlay << formatSceneCounts(frame);
+  if (m_profiling.showSceneCounts) overlay << formatSceneCounts(frame) << "\n";
+  overlay << formatRenderFeatureSummary(frame.settings, m_performancePreset);
   overlay << "\nmouse=" << (mouseCaptured ? "captured" : "released");
   overlay << "\nchunks radius=" << m_config.chunkSearchRadius << " load=" << m_config.chunkLoadProximityMeters;
   overlay << "\ntooling=" << m_toolingConfigPath;

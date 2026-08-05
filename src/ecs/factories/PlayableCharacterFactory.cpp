@@ -36,6 +36,7 @@ EntityId PlayableCharacterFactory::create(EntityRegistry& registry, const Playab
     camTr.scale = config.camera.transform.scale;
 
     auto& cam = registry.emplace<ecs::CameraComponent>(camId);
+    cam.renderScale = config.camera.renderScale;
     cam.depthOfField.enabled = config.camera.depthOfFieldEnabled;
     cam.depthOfField.focusMode = ecs::CameraComponent::DepthOfFieldSettings::FocusMode::TargetEntity;
     cam.depthOfField.focusTarget = player;

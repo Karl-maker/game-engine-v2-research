@@ -74,6 +74,10 @@ Important settings:
 - `loadProximityMeters`
 - `unloadProximityMeters`
 
+For broad quality/performance control, prefer the `persistent.performance`, `persistent.profiling`, and `persistent.render`
+blocks in `assets/world/config.json` before hand-editing every chunk entry. The preset sets sane defaults, the profiling block
+controls the overlay, and the render block can disable expensive feature families like grass, VFX, billboards, HUD, or post.
+
 ## 4) Meshes and model assets
 
 Meshes are loaded by `MeshAssetService`.

@@ -497,6 +497,7 @@ class GraphicsSystem final {
       EntityId entity = kInvalidEntityId;
       bool enabled = true;
       bool visible = true;
+      bool generatedFromFarLod = false;
       bool textureEnabled = true;
       bool depthWrite = false;
       bool doubleSided = true;
@@ -571,6 +572,15 @@ class GraphicsSystem final {
 
   struct RenderSettingsDraw final {
     bool present = false;
+    bool terrainEnabled = true;
+    bool meshEnabled = true;
+    bool rockEnabled = true;
+    bool grassEnabled = true;
+    bool billboardEnabled = true;
+    bool farLodBillboardsEnabled = true;
+    bool vfxEnabled = true;
+    bool hudEnabled = true;
+    bool postProcessingEnabled = true;
     bool shadowsEnabled = false;
     int shadowQuality = 1;
     float shadowStrength = 1.0f;

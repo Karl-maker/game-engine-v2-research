@@ -73,6 +73,7 @@ class OpenGlRenderer final {
   static void glfwCursorPosCallback(GLFWwindow* w, double x, double y);
   void applyCursorCaptured(bool captured);
   int uniformLocation(std::uint32_t programId, const char* name);
+  std::uint32_t requestTextureCached(const std::string& key, bool srgb);
   std::uint32_t requestTextureAsset(const render::AssetRef& texture,
                                     const render::AnimatedTexture* animatedTexture,
                                     bool srgb,
@@ -297,6 +298,8 @@ class OpenGlRenderer final {
   std::unordered_map<std::string, GpuMeshAsset> m_gpuMeshes;       // key: source path
   std::unordered_map<std::string, assets::MeshAssetService::State> m_meshLogState;
   std::unordered_map<std::uint32_t, std::unordered_map<std::string, int>> m_uniformLocationCache;
+  std::unordered_map<std::string, std::uint32_t> m_frameTextureCacheSrgb;
+  std::unordered_map<std::string, std::uint32_t> m_frameTextureCacheLinear;
 
   TextureService m_textures;
   assets::MeshAssetService m_meshAssets;

@@ -542,6 +542,15 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
     if (!s.enabled) return;
     if (m_frame.settings.present) return;
     m_frame.settings.present = true;
+    m_frame.settings.terrainEnabled = s.terrainEnabled;
+    m_frame.settings.meshEnabled = s.meshEnabled;
+    m_frame.settings.rockEnabled = s.rockEnabled;
+    m_frame.settings.grassEnabled = s.grassEnabled;
+    m_frame.settings.billboardEnabled = s.billboardEnabled;
+    m_frame.settings.farLodBillboardsEnabled = s.farLodBillboardsEnabled;
+    m_frame.settings.vfxEnabled = s.vfxEnabled;
+    m_frame.settings.hudEnabled = s.hudEnabled;
+    m_frame.settings.postProcessingEnabled = s.postProcessingEnabled;
     m_frame.settings.shadowsEnabled = s.shadowsEnabled;
     m_frame.settings.shadowQuality = s.shadowQuality;
     m_frame.settings.shadowStrength = s.shadowStrength;
@@ -558,6 +567,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
           const ecs::TerrainComponent& terrain,
           const ecs::ShaderComponent& shader,
           const ecs::TransformComponent& tr) {
+        if (!m_frame.settings.terrainEnabled && !m_frame.settings.farLodBillboardsEnabled) return;
         if (!shader.enabled) return;
         TerrainDraw draw;
         draw.entity = id;
@@ -692,6 +702,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
           farBillboard.entity = id;
           farBillboard.enabled = true;
           farBillboard.visible = true;
+          farBillboard.generatedFromFarLod = true;
           farBillboard.textureEnabled = draw.farLodTexture.enabled && !draw.farLodTexture.key.empty();
           farBillboard.depthWrite = false;
           farBillboard.doubleSided = true;
@@ -715,14 +726,19 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
             farBillboard.textureEnabled = true;
           }
           farBillboard.tint = draw.farLodTint;
-          m_frame.billboards.push_back(std::move(farBillboard));
+          if (m_frame.settings.farLodBillboardsEnabled) {
+            m_frame.billboards.push_back(std::move(farBillboard));
+          }
         }
-        m_frame.terrains.push_back(std::move(draw));
+        if (m_frame.settings.terrainEnabled) {
+          m_frame.terrains.push_back(std::move(draw));
+        }
       });
 
   // --- Mesh renderables ---
   registry.view<ecs::MeshComponent, ecs::ShaderComponent, ecs::TransformComponent>(
       [&](ecs::EntityId id, const ecs::MeshComponent& mesh, const ecs::ShaderComponent& shader, const ecs::TransformComponent& tr) {
+        if (!m_frame.settings.meshEnabled) return;
         if (!mesh.enabled || !mesh.visible || !shader.enabled) return;
         MeshDraw draw;
         draw.entity = id;
@@ -974,6 +990,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
           const ecs::RockScatterComponent& rocks,
           const ecs::ShaderComponent& shader,
           const ecs::TransformComponent& tr) {
+        if (!m_frame.settings.rockEnabled) return;
         if (!rocks.enabled) return;
         if (!shader.enabled) return;
         FrameSnapshot::RockDraw draw;
@@ -999,6 +1016,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
           const ecs::GrassPatchComponent& grass,
           const ecs::ShaderComponent& shader,
           const ecs::TransformComponent& tr) {
+        if (!m_frame.settings.grassEnabled) return;
         if (!grass.enabled) return;
         if (!shader.enabled) return;
         if (grass.layers.empty()) return;
@@ -1067,6 +1085,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
   // --- VFX emitters ---
   registry.view<ecs::VfxComponent, ecs::TransformComponent>(
       [&](ecs::EntityId id, const ecs::VfxComponent& vfx, const ecs::TransformComponent& tr) {
+        if (!m_frame.settings.vfxEnabled) return;
         if (!vfx.enabled) return;
         FrameSnapshot::VfxDraw draw;
         draw.entity = id;
@@ -1129,6 +1148,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
 
   // --- Screen-space 2D quads ---
   registry.view<ecs::Draw2DComponent>([&](ecs::EntityId id, const ecs::Draw2DComponent& draw2d) {
+    if (!m_frame.settings.hudEnabled) return;
     if (!draw2d.enabled) return;
     for (const auto& q : draw2d.quads) {
       if (!q.enabled) continue;
@@ -1155,6 +1175,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
   // --- World billboards ---
   registry.view<ecs::BillboardComponent, ecs::TransformComponent>(
       [&](ecs::EntityId id, const ecs::BillboardComponent& billboard, const ecs::TransformComponent& tr) {
+        if (!m_frame.settings.billboardEnabled) return;
         if (!billboard.enabled || !billboard.visible) return;
         FrameSnapshot::BillboardDraw draw;
         draw.entity = id;

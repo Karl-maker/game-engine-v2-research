@@ -24,6 +24,21 @@ Use both together:
 ./build/duppy gameplay --debug
 ```
 
+You can also turn the overlay on from `assets/world/config.json` without a CLI flag:
+
+```json
+{
+  "persistent": {
+    "profiling": {
+      "overlayEnabled": true,
+      "verbose": true,
+      "cpuTopCount": 8,
+      "renderTopCount": 8
+    }
+  }
+}
+```
+
 ## What each flag does
 
 - `--debug-overlay` turns on the frame debugger overlay and title-bar timing summary.
@@ -31,6 +46,64 @@ Use both together:
 - `--debug` turns on both.
 - `--fps 144 --uncapped` helps when you want to compare capped and uncapped behavior.
 - `--fullscreen --refresh-rate 144 --no-vsync` helps when you want to remove common 60 FPS display limits.
+
+## Config-driven performance tools
+
+The world config now has two top-level tuning blocks inside `persistent`:
+
+- `performance` chooses a default preset before your explicit `player`, `render`, `sun`, and `chunkStreaming` values are applied.
+- `profiling` controls how much timing detail the overlay prints.
+
+Example:
+
+```json
+{
+  "persistent": {
+    "performance": {
+      "preset": "balanced"
+    },
+    "profiling": {
+      "overlayEnabled": true,
+      "verbose": true,
+      "showMaxSamples": false,
+      "cpuTopCount": 8,
+      "renderTopCount": 8,
+      "showSceneCounts": true,
+      "showPerformanceHints": true
+    },
+    "render": {
+      "terrainEnabled": true,
+      "meshEnabled": true,
+      "rockEnabled": true,
+      "grassEnabled": false,
+      "billboardEnabled": true,
+      "farLodBillboardsEnabled": true,
+      "vfxEnabled": true,
+      "hudEnabled": true,
+      "postProcessingEnabled": false,
+      "shadowsEnabled": true,
+      "shadowQuality": 1,
+      "shadowUseTessellation": false
+    }
+  }
+}
+```
+
+Preset guide:
+
+- `low` is for weak hardware or wide scenes where visibility matters more than local detail.
+- `balanced` is the recommended default for iteration and profiling.
+- `high` keeps most scene features on with lighter guardrails than `ultra`.
+- `ultra` keeps the renderer close to authored values and is the most expensive.
+- `custom` skips preset changes and uses only your explicit values.
+
+Feature toggles in `persistent.render` are the fastest way to isolate cost:
+
+- turn off `grassEnabled` to test vegetation cost
+- turn off `vfxEnabled` to test CPU-driven particles and effects
+- turn off `farLodBillboardsEnabled` to compare impostors against true distant meshes/terrain
+- turn off `postProcessingEnabled` to remove depth of field and motion blur
+- lower `shadowQuality`, `shadowResolution`, and `shadowDistance` together when shadows dominate
 
 ## Why the split matters
 
@@ -48,7 +121,9 @@ The overlay shows:
 - `fps`, `dt_ms`, `cpu_ms`, `render_ms`, and `gpu_ms`
 - the hottest CPU systems from the gameplay tick
 - the previous frame’s hottest render passes
+- the active performance preset and renderer feature toggles
 - scene counts such as terrains, meshes, grasses, VFX, HUD widgets, rays, and debug lines
+- a simple hint about whether the current frame looks CPU-bound, render-bound, or mixed
 - whether world debug drawing is currently on or off
 
 Interpretation tips:

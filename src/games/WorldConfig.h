@@ -11,6 +11,21 @@
 
 namespace games {
 
+struct PerformanceWorldConfig final {
+  std::string preset = "custom";
+  bool applyToTooling = true;
+};
+
+struct ProfilingWorldConfig final {
+  bool overlayEnabled = false;
+  bool verbose = true;
+  bool showMaxSamples = false;
+  int cpuTopCount = 8;
+  int renderTopCount = 6;
+  bool showSceneCounts = true;
+  bool showPerformanceHints = true;
+};
+
 struct PersistentWorldConfig final {
   bool hasPlayer = false;
   ecs::services::PlayableCharacterConfig player{};
@@ -30,6 +45,12 @@ struct PersistentWorldConfig final {
 
   bool hasChunkStreaming = false;
   ecs::services::ChunkStreamingConfig chunkStreaming{};
+
+  bool hasPerformance = false;
+  PerformanceWorldConfig performance{};
+
+  bool hasProfiling = false;
+  ProfilingWorldConfig profiling{};
 };
 
 bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWorldConfig& outConfig);

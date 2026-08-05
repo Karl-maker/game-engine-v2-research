@@ -21,6 +21,7 @@
 ## Field guide
 
 - `enabled` — Master on/off switch or similar behavior flag.
+- `terrainEnabled`, `meshEnabled`, `rockEnabled`, `grassEnabled`, `billboardEnabled`, `farLodBillboardsEnabled`, `vfxEnabled`, `hudEnabled`, `postProcessingEnabled` — coarse feature gates for fast performance testing or presets.
 - `shadowsEnabled` — Field of type `bool` consumed by systems that read this component.
 - `shadowQuality` — Enum or bitmask value that changes system behavior.
 - `shadowStrength` — Numeric tuning used by gameplay or rendering systems.
@@ -46,3 +47,4 @@ component = ecs::RenderSettingsComponent{};
 
 - Keep `RenderSettingsComponent` focused on data so systems stay deterministic and easy to extend.
 - Update the docs and the matching system together whenever you add a new field.
+- In practice this is now the main config-controlled feature toggle bucket behind `persistent.render` in `assets/world/config.json`.

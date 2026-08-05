@@ -10,6 +10,7 @@
 #include "core/ControlService.h"
 #include "core/FrameDebugger.h"
 #include "core/ThreadService.h"
+#include "games/WorldConfig.h"
 
 #include "ecs/EntityId.h"
 #include "ecs/EntityRegistry.h"
@@ -130,6 +131,8 @@ class Game final : public core::IGame {
   double m_printTimer = 0.0;
   double m_attackTimerSeconds = 0.0;
   std::string m_debugOverlayText;
+  ProfilingWorldConfig m_profiling{};
+  std::string m_performancePreset = "custom";
 };
 
 }  // namespace games

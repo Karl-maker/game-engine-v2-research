@@ -26,6 +26,7 @@ struct PlayableCharacterCameraConfig final {
   float pitchDeg = 5.0f;
   float minPitchDeg = -30.0f;
   float maxPitchDeg = 45.0f;
+  float renderScale = 1.0f;
 
   // Post effects.
   bool depthOfFieldEnabled = true;

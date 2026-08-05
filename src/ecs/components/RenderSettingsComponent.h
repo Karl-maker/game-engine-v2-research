@@ -10,6 +10,17 @@ namespace ecs {
 struct RenderSettingsComponent final {
   bool enabled = true;
 
+  // Main render feature families.
+  bool terrainEnabled = true;
+  bool meshEnabled = true;
+  bool rockEnabled = true;
+  bool grassEnabled = true;
+  bool billboardEnabled = true;
+  bool farLodBillboardsEnabled = true;
+  bool vfxEnabled = true;
+  bool hudEnabled = true;
+  bool postProcessingEnabled = true;
+
   // Shadows
   // Default is disabled to preserve the current look (no shadow maps yet in the demo scenes).
   bool shadowsEnabled = true;

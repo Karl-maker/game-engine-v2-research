@@ -11,6 +11,7 @@
 #include "core/IGame.h"
 #include "core/ThreadService.h"
 #include "games/Game.h"
+#include "games/WorldConfig.h"
 #include "ecs/EntityId.h"
 #include "ecs/EntityRegistry.h"
 #include "assets/MeshAssetService.h"
@@ -68,6 +69,8 @@ class Tooling final : public core::IGame {
   ecs::systems::SkyPresetSystem m_skyPresetSystem;
 
   std::string m_debugOverlayText;
+  ProfilingWorldConfig m_profiling{};
+  std::string m_performancePreset = "custom";
 };
 
 }  // namespace games

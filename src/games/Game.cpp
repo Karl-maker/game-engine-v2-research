@@ -209,6 +209,38 @@ std::string formatSceneCounts(const ecs::systems::GraphicsSystem::FrameSnapshot&
   return out.str();
 }
 
+std::string formatRenderFeatureSummary(const ecs::systems::GraphicsSystem::FrameSnapshot::RenderSettingsDraw& settings,
+                                       std::string_view preset) {
+  std::ostringstream out;
+  out << "preset=" << preset;
+  out << " shadows=" << (settings.shadowsEnabled ? settings.shadowQuality : -1);
+  out << " terrain=" << (settings.terrainEnabled ? "on" : "off");
+  out << " mesh=" << (settings.meshEnabled ? "on" : "off");
+  out << " grass=" << (settings.grassEnabled ? "on" : "off");
+  out << " vfx=" << (settings.vfxEnabled ? "on" : "off");
+  out << " post=" << (settings.postProcessingEnabled ? "on" : "off");
+  return out.str();
+}
+
+std::string formatPerformanceHint(const core::FrameTimingReport& cpuReport, const core::FrameTimingReport* renderReport) {
+  if (!renderReport || renderReport->samples.empty()) {
+    if (!cpuReport.hottestLabel.empty()) return "hint=cpu hotspot " + cpuReport.hottestLabel;
+    return "hint=profiling warming";
+  }
+
+  if (renderReport->totalMs > cpuReport.totalMs * 1.2) {
+    return "hint=render bound (" + renderReport->hottestLabel + ")";
+  }
+  if (cpuReport.totalMs > renderReport->totalMs * 1.2) {
+    return "hint=cpu bound (" + cpuReport.hottestLabel + ")";
+  }
+  if (!renderReport->hottestLabel.empty()) {
+    return "hint=mixed bottleneck (" + renderReport->hottestLabel + ")";
+  }
+  if (!cpuReport.hottestLabel.empty()) return "hint=mixed bottleneck (" + cpuReport.hottestLabel + ")";
+  return "hint=profiling warming";
+}
+
 }  // namespace
 
 void Game::onStart() {
@@ -228,6 +260,8 @@ void Game::onStart() {
 
   PersistentWorldConfig persistentConfig{};
   (void)loadPersistentWorldConfig(m_config.chunkConfigPath, persistentConfig);
+  m_profiling = persistentConfig.profiling;
+  m_performancePreset = persistentConfig.performance.preset;
   if (persistentConfig.hasChunkStreaming) {
     m_config.chunkSizeMeters = persistentConfig.chunkStreaming.chunkSizeMeters;
     m_config.chunkSearchRadius = persistentConfig.chunkStreaming.searchRadiusChunks;
@@ -619,15 +653,37 @@ void Game::onTick(const core::TickContext& ctx) {
   const auto& cpuReport = m_frameDebugger.endFrame();
 
   m_debugOverlayText.clear();
-  if (ctx.debugOverlayEnabled) {
-    m_debugOverlayText += formatFrameReport("cpu", cpuReport, 8, false);
-    m_debugOverlayText += "\n";
-    m_debugOverlayText += formatSceneCounts(frame);
+  const bool overlayEnabled = ctx.debugOverlayEnabled || m_profiling.overlayEnabled;
+  if (overlayEnabled) {
+    m_debugOverlayText += formatFrameReport("cpu", cpuReport, static_cast<std::size_t>(m_profiling.cpuTopCount), m_profiling.showMaxSamples);
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
     const auto& renderReport = m_renderer.lastRenderDebugReport();
-    if (!renderReport.samples.empty()) {
+    const core::FrameTimingReport* renderReportPtr = renderReport.samples.empty() ? nullptr : &renderReport;
+    if (m_profiling.showSceneCounts) {
       m_debugOverlayText += "\n";
-      m_debugOverlayText += formatFrameReport("render(prev)", renderReport, 6, false);
+      m_debugOverlayText += formatSceneCounts(frame);
+    }
+    m_debugOverlayText += "\n";
+    m_debugOverlayText += formatRenderFeatureSummary(frame.settings, m_performancePreset);
+    if (m_profiling.verbose && renderReportPtr) {
+      m_debugOverlayText += "\n";
+      m_debugOverlayText +=
+          formatFrameReport("render(prev)", renderReport, static_cast<std::size_t>(m_profiling.renderTopCount), m_profiling.showMaxSamples);
+    }
+    if (m_profiling.showPerformanceHints) {
+      m_debugOverlayText += "\n";
+      m_debugOverlayText += formatPerformanceHint(cpuReport, renderReportPtr);
+    }
+#else
+    if (m_profiling.showSceneCounts) {
+      m_debugOverlayText += "\n";
+      m_debugOverlayText += formatSceneCounts(frame);
+    }
+    m_debugOverlayText += "\n";
+    m_debugOverlayText += formatRenderFeatureSummary(frame.settings, m_performancePreset);
+    if (m_profiling.showPerformanceHints) {
+      m_debugOverlayText += "\n";
+      m_debugOverlayText += formatPerformanceHint(cpuReport, nullptr);
     }
 #endif
     if (ctx.debugWorldEnabled) {
@@ -640,7 +696,7 @@ void Game::onTick(const core::TickContext& ctx) {
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   if (m_renderer.isOpen()) {
     m_renderer.render(frame,
-                      ctx.debugOverlayEnabled,
+                      overlayEnabled,
                       static_cast<float>(ctx.fpsEstimate),
                       static_cast<float>(ctx.deltaSeconds * 1000.0),
                       static_cast<float>(ctx.cpuWorkSeconds * 1000.0),

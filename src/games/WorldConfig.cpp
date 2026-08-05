@@ -5,6 +5,8 @@
 #include "ecs/services/ChunkStreamingService.h"
 #include "physics/LayerMask.h"
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 
@@ -164,6 +166,15 @@ void applyFogDefaults(ecs::FogVolumeComponent& fog, math::Vec3& anchor) {
 
 void applyRenderDefaults(ecs::RenderSettingsComponent& render) {
   render.enabled = true;
+  render.terrainEnabled = true;
+  render.meshEnabled = true;
+  render.rockEnabled = true;
+  render.grassEnabled = true;
+  render.billboardEnabled = true;
+  render.farLodBillboardsEnabled = true;
+  render.vfxEnabled = true;
+  render.hudEnabled = true;
+  render.postProcessingEnabled = true;
   render.shadowsEnabled = true;
   render.shadowQuality = 2;
   render.shadowStrength = 0.82f;
@@ -188,6 +199,99 @@ void applyChunkStreamingDefaults(ecs::services::ChunkStreamingConfig& chunkStrea
   chunkStreaming.unloadProximityMeters = 196.0f;
   chunkStreaming.maxLoadsPerTick = 2;
   chunkStreaming.maxUnloadsPerTick = 4;
+}
+
+void applyProfilingDefaults(ProfilingWorldConfig& profiling) {
+  profiling.overlayEnabled = false;
+  profiling.verbose = true;
+  profiling.showMaxSamples = false;
+  profiling.cpuTopCount = 8;
+  profiling.renderTopCount = 6;
+  profiling.showSceneCounts = true;
+  profiling.showPerformanceHints = true;
+}
+
+std::string normalizePerformancePreset(std::string preset) {
+  std::transform(preset.begin(), preset.end(), preset.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  if (preset.empty()) return "custom";
+  if (preset == "medium" || preset == "default") return "balanced";
+  return preset;
+}
+
+void applyPerformancePreset(PersistentWorldConfig& outConfig) {
+  const std::string preset = normalizePerformancePreset(outConfig.performance.preset);
+  outConfig.performance.preset = preset;
+
+  if (preset == "low") {
+    outConfig.player.camera.renderScale = std::min(outConfig.player.camera.renderScale, 0.75f);
+    outConfig.player.camera.depthOfFieldEnabled = false;
+    outConfig.player.camera.motionBlurEnabled = false;
+
+    outConfig.renderSettings.shadowQuality = 0;
+    outConfig.renderSettings.shadowUseTessellation = false;
+    outConfig.renderSettings.grassEnabled = false;
+    outConfig.renderSettings.postProcessingEnabled = false;
+
+    outConfig.sun.shadowResolution = std::min<std::uint32_t>(outConfig.sun.shadowResolution, 1024u);
+    outConfig.sun.shadowDistance = std::min(outConfig.sun.shadowDistance, 48.0f);
+
+    outConfig.chunkStreaming.searchRadiusChunks = std::min(outConfig.chunkStreaming.searchRadiusChunks, 2);
+    outConfig.chunkStreaming.loadProximityMeters = std::min(outConfig.chunkStreaming.loadProximityMeters, 180.0f);
+    outConfig.chunkStreaming.unloadProximityMeters = std::min(outConfig.chunkStreaming.unloadProximityMeters, 240.0f);
+    outConfig.chunkStreaming.maxLoadsPerTick = std::min(outConfig.chunkStreaming.maxLoadsPerTick, 1);
+    outConfig.chunkStreaming.maxUnloadsPerTick = std::min(outConfig.chunkStreaming.maxUnloadsPerTick, 2);
+    return;
+  }
+
+  if (preset == "balanced") {
+    outConfig.player.camera.renderScale = std::min(outConfig.player.camera.renderScale, 0.90f);
+    outConfig.player.camera.depthOfFieldEnabled = false;
+    outConfig.player.camera.motionBlurEnabled = false;
+
+    outConfig.renderSettings.shadowQuality = std::min(outConfig.renderSettings.shadowQuality, 1);
+    outConfig.renderSettings.shadowUseTessellation = false;
+    outConfig.renderSettings.postProcessingEnabled = false;
+
+    outConfig.sun.shadowResolution = std::min<std::uint32_t>(outConfig.sun.shadowResolution, 1536u);
+    outConfig.sun.shadowDistance = std::min(outConfig.sun.shadowDistance, 64.0f);
+
+    outConfig.chunkStreaming.searchRadiusChunks = std::min(outConfig.chunkStreaming.searchRadiusChunks, 3);
+    outConfig.chunkStreaming.loadProximityMeters = std::min(outConfig.chunkStreaming.loadProximityMeters, 220.0f);
+    outConfig.chunkStreaming.unloadProximityMeters = std::min(outConfig.chunkStreaming.unloadProximityMeters, 280.0f);
+    outConfig.chunkStreaming.maxLoadsPerTick = std::min(outConfig.chunkStreaming.maxLoadsPerTick, 2);
+    outConfig.chunkStreaming.maxUnloadsPerTick = std::min(outConfig.chunkStreaming.maxUnloadsPerTick, 3);
+    return;
+  }
+
+  if (preset == "high") {
+    outConfig.player.camera.renderScale = std::min(outConfig.player.camera.renderScale, 1.0f);
+    outConfig.renderSettings.shadowQuality = std::min(outConfig.renderSettings.shadowQuality, 2);
+    outConfig.sun.shadowResolution = std::min<std::uint32_t>(outConfig.sun.shadowResolution, 2048u);
+    outConfig.sun.shadowDistance = std::min(outConfig.sun.shadowDistance, 84.0f);
+    outConfig.chunkStreaming.searchRadiusChunks = std::min(outConfig.chunkStreaming.searchRadiusChunks, 4);
+    outConfig.chunkStreaming.loadProximityMeters = std::min(outConfig.chunkStreaming.loadProximityMeters, 280.0f);
+    outConfig.chunkStreaming.unloadProximityMeters = std::min(outConfig.chunkStreaming.unloadProximityMeters, 340.0f);
+    return;
+  }
+
+  if (preset == "ultra") {
+    outConfig.player.camera.renderScale = std::max(outConfig.player.camera.renderScale, 1.0f);
+  }
+}
+
+void readPerformanceConfig(const data::JsonValue::Object& obj, PerformanceWorldConfig& performance) {
+  if (const auto* presetV = data::getObjectKey(obj, "preset")) data::readString(*presetV, performance.preset);
+  performance.applyToTooling = data::getBoolOr(obj, "applyToTooling", performance.applyToTooling);
+}
+
+void readProfilingConfig(const data::JsonValue::Object& obj, ProfilingWorldConfig& profiling) {
+  profiling.overlayEnabled = data::getBoolOr(obj, "overlayEnabled", profiling.overlayEnabled);
+  profiling.verbose = data::getBoolOr(obj, "verbose", profiling.verbose);
+  profiling.showMaxSamples = data::getBoolOr(obj, "showMaxSamples", profiling.showMaxSamples);
+  profiling.cpuTopCount = std::max(1, data::getIntOr(obj, "cpuTopCount", profiling.cpuTopCount));
+  profiling.renderTopCount = std::max(1, data::getIntOr(obj, "renderTopCount", profiling.renderTopCount));
+  profiling.showSceneCounts = data::getBoolOr(obj, "showSceneCounts", profiling.showSceneCounts);
+  profiling.showPerformanceHints = data::getBoolOr(obj, "showPerformanceHints", profiling.showPerformanceHints);
 }
 
 void readPlayerConfig(const data::JsonValue::Object& obj, ecs::services::PlayableCharacterConfig& cfg) {
@@ -232,6 +336,7 @@ void readPlayerConfig(const data::JsonValue::Object& obj, ecs::services::Playabl
       cfg.camera.pitchDeg = data::getFloatOr(*cameraObj, "pitchDeg", cfg.camera.pitchDeg);
       cfg.camera.minPitchDeg = data::getFloatOr(*cameraObj, "minPitchDeg", cfg.camera.minPitchDeg);
       cfg.camera.maxPitchDeg = data::getFloatOr(*cameraObj, "maxPitchDeg", cfg.camera.maxPitchDeg);
+      cfg.camera.renderScale = data::getFloatOr(*cameraObj, "renderScale", cfg.camera.renderScale);
       cfg.camera.depthOfFieldEnabled = data::getBoolOr(*cameraObj, "depthOfFieldEnabled", cfg.camera.depthOfFieldEnabled);
       cfg.camera.motionBlurEnabled = data::getBoolOr(*cameraObj, "motionBlurEnabled", cfg.camera.motionBlurEnabled);
     }
@@ -330,6 +435,15 @@ void readFogConfig(const data::JsonValue::Object& obj, ecs::FogVolumeComponent& 
 
 void readRenderConfig(const data::JsonValue::Object& obj, ecs::RenderSettingsComponent& render) {
   render.enabled = data::getBoolOr(obj, "enabled", render.enabled);
+  render.terrainEnabled = data::getBoolOr(obj, "terrainEnabled", render.terrainEnabled);
+  render.meshEnabled = data::getBoolOr(obj, "meshEnabled", render.meshEnabled);
+  render.rockEnabled = data::getBoolOr(obj, "rockEnabled", render.rockEnabled);
+  render.grassEnabled = data::getBoolOr(obj, "grassEnabled", render.grassEnabled);
+  render.billboardEnabled = data::getBoolOr(obj, "billboardEnabled", render.billboardEnabled);
+  render.farLodBillboardsEnabled = data::getBoolOr(obj, "farLodBillboardsEnabled", render.farLodBillboardsEnabled);
+  render.vfxEnabled = data::getBoolOr(obj, "vfxEnabled", render.vfxEnabled);
+  render.hudEnabled = data::getBoolOr(obj, "hudEnabled", render.hudEnabled);
+  render.postProcessingEnabled = data::getBoolOr(obj, "postProcessingEnabled", render.postProcessingEnabled);
   render.shadowsEnabled = data::getBoolOr(obj, "shadowsEnabled", render.shadowsEnabled);
   render.shadowQuality = data::getIntOr(obj, "shadowQuality", render.shadowQuality);
   render.shadowStrength = data::getFloatOr(obj, "shadowStrength", render.shadowStrength);
@@ -373,6 +487,7 @@ bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWor
   applyRenderDefaults(outConfig.renderSettings);
   applySunDefaults(outConfig.sun);
   applyChunkStreamingDefaults(outConfig.chunkStreaming);
+  applyProfilingDefaults(outConfig.profiling);
 
   data::JsonValue storage;
   const data::JsonValue::Object* root = nullptr;
@@ -381,6 +496,14 @@ bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWor
   const auto* persistentV = data::getObjectKey(*root, "persistent");
   const auto* persistent = persistentV ? persistentV->tryObject() : nullptr;
   if (!persistent) return false;
+
+  if (const auto* performanceV = data::getObjectKey(*persistent, "performance")) {
+    if (const auto* performance = performanceV->tryObject()) {
+      readPerformanceConfig(*performance, outConfig.performance);
+      outConfig.hasPerformance = true;
+      applyPerformancePreset(outConfig);
+    }
+  }
 
   if (const auto* playerV = data::getObjectKey(*persistent, "player")) {
     if (const auto* player = playerV->tryObject()) {
@@ -420,9 +543,15 @@ bool loadPersistentWorldConfig(const std::string& chunkConfigPath, PersistentWor
       outConfig.hasChunkStreaming = true;
     }
   }
+  if (const auto* profilingV = data::getObjectKey(*persistent, "profiling")) {
+    if (const auto* profiling = profilingV->tryObject()) {
+      readProfilingConfig(*profiling, outConfig.profiling);
+      outConfig.hasProfiling = true;
+    }
+  }
 
   return outConfig.hasPlayer || outConfig.hasSky || outConfig.hasFog || outConfig.hasRenderSettings || outConfig.hasSun ||
-         outConfig.hasChunkStreaming;
+         outConfig.hasChunkStreaming || outConfig.hasPerformance || outConfig.hasProfiling;
 }
 
 }  // namespace games

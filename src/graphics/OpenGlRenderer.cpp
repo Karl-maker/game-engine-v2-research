@@ -699,18 +699,28 @@ int OpenGlRenderer::uniformLocation(std::uint32_t programId, const char* name) {
   return location;
 }
 
+std::uint32_t OpenGlRenderer::requestTextureCached(const std::string& key, bool srgb) {
+  if (key.empty()) return 0u;
+  auto& cache = srgb ? m_frameTextureCacheSrgb : m_frameTextureCacheLinear;
+  const auto it = cache.find(key);
+  if (it != cache.end()) return it->second;
+  const std::uint32_t textureId = m_textures.requestTexture(key, srgb);
+  cache.emplace(key, textureId);
+  return textureId;
+}
+
 std::uint32_t OpenGlRenderer::requestTextureAsset(const render::AssetRef& texture,
                                                   const render::AnimatedTexture* animatedTexture,
                                                   bool srgb,
                                                   double timeSeconds) {
   if (animatedTexture && animatedTexture->enabled) {
     for (const auto& frame : animatedTexture->frames) {
-      if (frame.enabled && !frame.key.empty()) m_textures.requestTexture(frame.key, srgb);
+      if (frame.enabled && !frame.key.empty()) requestTextureCached(frame.key, srgb);
     }
   }
   const render::AssetRef* selected = resolveAnimatedTextureAsset(texture, animatedTexture, timeSeconds);
   if (!selected || !selected->enabled || selected->key.empty()) return 0;
-  return m_textures.requestTexture(selected->key, srgb);
+  return requestTextureCached(selected->key, srgb);
 }
 
 void OpenGlRenderer::pollGpuTimerQueries() {
@@ -2347,6 +2357,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
   double passStart = glfwGetTime();
   m_textures.flushUploads(4);
+  m_frameTextureCacheSrgb.clear();
+  m_frameTextureCacheLinear.clear();
 
   const float rs = std::clamp(frame.camera.renderScale, 0.25f, 1.0f);
   const int sceneW = std::max(1, static_cast<int>(static_cast<float>(m_fbWidth) * rs));
@@ -2563,7 +2575,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   float shadowTexelX = 1.0f;
   float shadowTexelY = 1.0f;
 
-  if (frame.settings.present && frame.settings.shadowsEnabled) {
+  if (frame.settings.present && frame.settings.shadowsEnabled &&
+      (frame.settings.terrainEnabled || frame.settings.meshEnabled || frame.settings.rockEnabled)) {
     const ecs::systems::GraphicsSystem::LightDraw* sun = nullptr;
     for (const auto& l : frame.lights) {
       if (l.type == 0 && l.castShadows) {
@@ -2622,8 +2635,9 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       glCullFace(GL_FRONT);
 
       // Terrain casters.
-      for (const auto& t : frame.terrains) {
-        if (!t.castShadows) continue;
+      if (frame.settings.terrainEnabled) {
+        for (const auto& t : frame.terrains) {
+          if (!t.castShadows) continue;
         const float sizeX = static_cast<float>(std::max(2, t.gridWidth)) * t.cellSizeMeters;
         const float sizeZ = static_cast<float>(std::max(2, t.gridHeight)) * t.cellSizeMeters;
         const float halfX = 0.5f * sizeX;
@@ -2676,20 +2690,21 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         const GLenum mode = program->hasTessellation ? GL_PATCHES : GL_TRIANGLES;
         glDrawElements(mode, static_cast<GLsizei>(mesh->indexCount), GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
-	      }
+        }
+      }
 
-	      // Mesh casters.
-	      const ShaderService::Program* meshShadowProg = m_shaders.getOrCreate("graphics/shaders/model_shadow");
-	      if (meshShadowProg && meshShadowProg->programId) {
-	        glUseProgram(meshShadowProg->programId);
-	        const GLint locLvp = glGetUniformLocation(meshShadowProg->programId, "u_LightViewProj");
-	        if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
-	        for (const auto& m : frame.meshes) {
-	          if (!m.visible || !m.castShadows) continue;
-	          GpuMeshAsset* gpu = getOrCreateGpuMesh(m.meshData.key);
-	          if (!gpu || !gpu->ready) continue;
-	          const GLint locModel = glGetUniformLocation(meshShadowProg->programId, "u_Model");
-	          if (locModel >= 0) glUniformMatrix4fv(locModel, 1, GL_FALSE, m.modelMatrix.m);
+      if (frame.settings.meshEnabled) {
+        const ShaderService::Program* meshShadowProg = m_shaders.getOrCreate("graphics/shaders/model_shadow");
+        if (meshShadowProg && meshShadowProg->programId) {
+          glUseProgram(meshShadowProg->programId);
+          const GLint locLvp = glGetUniformLocation(meshShadowProg->programId, "u_LightViewProj");
+          if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
+          for (const auto& m : frame.meshes) {
+            if (!m.visible || !m.castShadows) continue;
+            GpuMeshAsset* gpu = getOrCreateGpuMesh(m.meshData.key);
+            if (!gpu || !gpu->ready) continue;
+            const GLint locModel = glGetUniformLocation(meshShadowProg->programId, "u_Model");
+            if (locModel >= 0) glUniformMatrix4fv(locModel, 1, GL_FALSE, m.modelMatrix.m);
             const GLint locSkinned = glGetUniformLocation(meshShadowProg->programId, "u_Skinned");
             if (locSkinned >= 0) glUniform1i(locSkinned, (m.hasSkinning && m.skinMatrixCount > 0) ? 1 : 0);
             if (m.hasSkinning && m.skinMatrixCount > 0) {
@@ -2701,58 +2716,59 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
                                    m.skinMatrices[0].m);
               }
             }
-	          for (const auto& sm : gpu->subMeshes) {
-	            glBindVertexArray(sm.vao);
-	            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(sm.indexCount), GL_UNSIGNED_INT, nullptr);
-	          }
-	          glBindVertexArray(0);
-	        }
-	      }
-
-	      // Rock casters (use existing instance chunks).
-	      const ShaderService::Program* rockProg = m_shaders.getOrCreate("graphics/shaders/rocks_shadow");
-      if (rockProg && rockProg->programId) {
-        glUseProgram(rockProg->programId);
-        const GLint locLvp = glGetUniformLocation(rockProg->programId, "u_LightViewProj");
-        if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
-
-        // Choose a ground terrain to anchor rock height (first terrain for now).
-        const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain =
-            frame.terrains.empty() ? nullptr : &frame.terrains[0];
-
-  for (const auto& r : frame.rocks) {
-          if (!r.castShadows) continue;
-          RockMesh* mesh = getOrCreateRockMesh(r, groundTerrain);
-          if (!mesh || !mesh->vao || mesh->instanceCapacity == 0 || mesh->chunks.empty()) continue;
-
-          const GLint locOrigin = glGetUniformLocation(rockProg->programId, "u_InstanceOrigin");
-          if (locOrigin >= 0) glUniform3f(locOrigin, r.position.x, r.position.y, r.position.z);
-
-          glBindVertexArray(mesh->vao);
-          glBindBuffer(GL_ARRAY_BUFFER, mesh->instanceVbo);
-
-          const float lodBias = std::max(0.25f, r.lodBias);
-          const float maxDist = 120.0f / lodBias;
-          for (const auto& c : mesh->chunks) {
-            const math::Vec3 chunkCenter = r.position + c.centerLocal;
-            const math::Vec3 d0 = frame.camera.position - chunkCenter;
-            const float distC = std::sqrt(d0.x * d0.x + d0.y * d0.y + d0.z * d0.z) - c.radius;
-            if (distC > maxDist) continue;
-
-            const std::size_t baseByte = static_cast<std::size_t>(c.instanceOffset) * sizeof(RockInstance);
-            glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(RockInstance), reinterpret_cast<void*>(baseByte + 0));
-            glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(RockInstance),
-                                  reinterpret_cast<void*>(baseByte + sizeof(float) * 3));
-            glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(RockInstance),
-                                  reinterpret_cast<void*>(baseByte + sizeof(float) * 4));
-            glDrawElementsInstanced(GL_TRIANGLES,
-                                    static_cast<GLsizei>(mesh->indexCount),
-                                    GL_UNSIGNED_INT,
-                                    nullptr,
-                                    static_cast<GLsizei>(c.instanceCount));
+            for (const auto& sm : gpu->subMeshes) {
+              glBindVertexArray(sm.vao);
+              glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(sm.indexCount), GL_UNSIGNED_INT, nullptr);
+            }
+            glBindVertexArray(0);
           }
+        }
+      }
 
-          glBindVertexArray(0);
+      if (frame.settings.rockEnabled) {
+        const ShaderService::Program* rockProg = m_shaders.getOrCreate("graphics/shaders/rocks_shadow");
+        if (rockProg && rockProg->programId) {
+          glUseProgram(rockProg->programId);
+          const GLint locLvp = glGetUniformLocation(rockProg->programId, "u_LightViewProj");
+          if (locLvp >= 0) glUniformMatrix4fv(locLvp, 1, GL_FALSE, lightViewProj.m);
+
+          const ecs::systems::GraphicsSystem::TerrainDraw* groundTerrain =
+              frame.terrains.empty() ? nullptr : &frame.terrains[0];
+
+          for (const auto& r : frame.rocks) {
+            if (!r.castShadows) continue;
+            RockMesh* mesh = getOrCreateRockMesh(r, groundTerrain);
+            if (!mesh || !mesh->vao || mesh->instanceCapacity == 0 || mesh->chunks.empty()) continue;
+
+            const GLint locOrigin = glGetUniformLocation(rockProg->programId, "u_InstanceOrigin");
+            if (locOrigin >= 0) glUniform3f(locOrigin, r.position.x, r.position.y, r.position.z);
+
+            glBindVertexArray(mesh->vao);
+            glBindBuffer(GL_ARRAY_BUFFER, mesh->instanceVbo);
+
+            const float lodBias = std::max(0.25f, r.lodBias);
+            const float maxDist = 120.0f / lodBias;
+            for (const auto& c : mesh->chunks) {
+              const math::Vec3 chunkCenter = r.position + c.centerLocal;
+              const math::Vec3 d0 = frame.camera.position - chunkCenter;
+              const float distC = std::sqrt(d0.x * d0.x + d0.y * d0.y + d0.z * d0.z) - c.radius;
+              if (distC > maxDist) continue;
+
+              const std::size_t baseByte = static_cast<std::size_t>(c.instanceOffset) * sizeof(RockInstance);
+              glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(RockInstance), reinterpret_cast<void*>(baseByte + 0));
+              glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(RockInstance),
+                                    reinterpret_cast<void*>(baseByte + sizeof(float) * 3));
+              glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(RockInstance),
+                                    reinterpret_cast<void*>(baseByte + sizeof(float) * 4));
+              glDrawElementsInstanced(GL_TRIANGLES,
+                                      static_cast<GLsizei>(mesh->indexCount),
+                                      GL_UNSIGNED_INT,
+                                      nullptr,
+                                      static_cast<GLsizei>(c.instanceCount));
+            }
+
+            glBindVertexArray(0);
+          }
         }
       }
 
@@ -2901,6 +2917,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   glCullFace(GL_BACK);
 
   const auto drawTerrains = [&](bool transparentPass) {
+    if (!frame.settings.terrainEnabled) return;
     for (const auto& t : frame.terrains) {
       const render::BlendMode blendMode = static_cast<render::BlendMode>(t.blendMode);
       const render::RenderMode renderMode = static_cast<render::RenderMode>(t.renderMode);
@@ -3002,11 +3019,11 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       const GLint locDispInv = glGetUniformLocation(program->programId, "u_DisplacementInvert");
       if (locDispInv >= 0) glUniform1i(locDispInv, t.displacementInvert ? 1 : 0);
 
-      const GLuint albedoId = (t.hasAlbedoTex) ? m_textures.requestTexture(t.albedoTex.key, true) : 0;
-      const GLuint normalId = (t.hasNormalTex) ? m_textures.requestTexture(t.normalTex.key, false) : 0;
-      const GLuint roughId = (t.hasRoughnessTex) ? m_textures.requestTexture(t.roughnessTex.key, false) : 0;
-      const GLuint aoId = (t.hasAoTex) ? m_textures.requestTexture(t.aoTex.key, false) : 0;
-      const GLuint dispId = (t.hasDisplacementTex) ? m_textures.requestTexture(t.displacementTex.key, false) : 0;
+      const GLuint albedoId = (t.hasAlbedoTex) ? requestTextureCached(t.albedoTex.key, true) : 0;
+      const GLuint normalId = (t.hasNormalTex) ? requestTextureCached(t.normalTex.key, false) : 0;
+      const GLuint roughId = (t.hasRoughnessTex) ? requestTextureCached(t.roughnessTex.key, false) : 0;
+      const GLuint aoId = (t.hasAoTex) ? requestTextureCached(t.aoTex.key, false) : 0;
+      const GLuint dispId = (t.hasDisplacementTex) ? requestTextureCached(t.displacementTex.key, false) : 0;
       const bool useAlbedo = albedoId != 0;
       const bool useNormal = normalId != 0;
       const bool useRough = roughId != 0;
@@ -3056,11 +3073,11 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       }
 
       const bool rockEnabled = t.rockLayerEnabled;
-      const GLuint rockAlbedoId = (rockEnabled && t.hasRockAlbedoTex) ? m_textures.requestTexture(t.rockAlbedoTex.key, true) : 0;
-      const GLuint rockNormalId = (rockEnabled && t.hasRockNormalTex) ? m_textures.requestTexture(t.rockNormalTex.key, false) : 0;
-      const GLuint rockRoughId = (rockEnabled && t.hasRockRoughnessTex) ? m_textures.requestTexture(t.rockRoughnessTex.key, false) : 0;
-      const GLuint rockAoId = (rockEnabled && t.hasRockAoTex) ? m_textures.requestTexture(t.rockAoTex.key, false) : 0;
-      const GLuint rockDispId = (rockEnabled && t.hasRockDisplacementTex) ? m_textures.requestTexture(t.rockDisplacementTex.key, false) : 0;
+      const GLuint rockAlbedoId = (rockEnabled && t.hasRockAlbedoTex) ? requestTextureCached(t.rockAlbedoTex.key, true) : 0;
+      const GLuint rockNormalId = (rockEnabled && t.hasRockNormalTex) ? requestTextureCached(t.rockNormalTex.key, false) : 0;
+      const GLuint rockRoughId = (rockEnabled && t.hasRockRoughnessTex) ? requestTextureCached(t.rockRoughnessTex.key, false) : 0;
+      const GLuint rockAoId = (rockEnabled && t.hasRockAoTex) ? requestTextureCached(t.rockAoTex.key, false) : 0;
+      const GLuint rockDispId = (rockEnabled && t.hasRockDisplacementTex) ? requestTextureCached(t.rockDisplacementTex.key, false) : 0;
 
       const GLint locRockOn = glGetUniformLocation(program->programId, "u_RockLayerEnabled");
       if (locRockOn >= 0) glUniform1i(locRockOn, rockEnabled ? 1 : 0);
@@ -3207,16 +3224,16 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       const GLint locFoamDriftDirection = glGetUniformLocation(program->programId, "u_FoamDriftDirection");
       if (locFoamDriftDirection >= 0) glUniform2f(locFoamDriftDirection, t.foamDriftDirectionX, t.foamDriftDirectionY);
 
-      const GLuint heightMapId = (t.hasHeightMapTex) ? m_textures.requestTexture(t.heightMapTex.key, false) : 0;
+      const GLuint heightMapId = (t.hasHeightMapTex) ? requestTextureCached(t.heightMapTex.key, false) : 0;
       const GLuint terrainNormMapId =
-          (t.hasTerrainNormalMapTex) ? m_textures.requestTexture(t.terrainNormalMapTex.key, false) : 0;
+          (t.hasTerrainNormalMapTex) ? requestTextureCached(t.terrainNormalMapTex.key, false) : 0;
       const GLuint terrainRoughMapId =
-          (t.hasTerrainRoughnessMapTex) ? m_textures.requestTexture(t.terrainRoughnessMapTex.key, false) : 0;
+          (t.hasTerrainRoughnessMapTex) ? requestTextureCached(t.terrainRoughnessMapTex.key, false) : 0;
       const GLuint terrainSurfaceMapId =
-          (t.hasTerrainSurfaceMapTex) ? m_textures.requestTexture(t.terrainSurfaceMapTex.key, false) : 0;
-      const GLuint splatMapId = (t.hasSplatMapTex) ? m_textures.requestTexture(t.splatMapTex.key, false) : 0;
-      const GLuint foamNormalId = (t.hasFoamNormalTex) ? m_textures.requestTexture(t.foamNormalTex.key, false) : 0;
-      const GLuint rippleMaskId = (t.hasRippleMaskTex) ? m_textures.requestTexture(t.rippleMaskTex.key, false) : 0;
+          (t.hasTerrainSurfaceMapTex) ? requestTextureCached(t.terrainSurfaceMapTex.key, false) : 0;
+      const GLuint splatMapId = (t.hasSplatMapTex) ? requestTextureCached(t.splatMapTex.key, false) : 0;
+      const GLuint foamNormalId = (t.hasFoamNormalTex) ? requestTextureCached(t.foamNormalTex.key, false) : 0;
+      const GLuint rippleMaskId = (t.hasRippleMaskTex) ? requestTextureCached(t.rippleMaskTex.key, false) : 0;
 
       const bool useHeightMap = heightMapId != 0;
       const bool useTerrainNormMap = terrainNormMapId != 0;
@@ -3346,7 +3363,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
   // Grass pass (GPU-instanced clumps; no ECS entity per blade).
   passStart = glfwGetTime();
-  if (!frame.grasses.empty()) {
+  if (frame.settings.grassEnabled && !frame.grasses.empty()) {
     struct GrassInstance {
       float px, py, pz;
       float scale;
@@ -3373,16 +3390,16 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
 
-    const auto findTerrain = [&](ecs::EntityId id) -> const ecs::systems::GraphicsSystem::TerrainDraw* {
-      for (const auto& t : frame.terrains) {
-        if (t.entity == id) return &t;
-      }
-      return nullptr;
-    };
+    std::unordered_map<ecs::EntityId, const ecs::systems::GraphicsSystem::TerrainDraw*> terrainByEntity;
+    terrainByEntity.reserve(frame.terrains.size());
+    for (const auto& t : frame.terrains) terrainByEntity.emplace(t.entity, &t);
 
     for (const auto& gr : frame.grasses) {
-      const ecs::systems::GraphicsSystem::TerrainDraw* gt =
-          (gr.sourceTerrainEntity != ecs::kInvalidEntityId) ? findTerrain(gr.sourceTerrainEntity) : groundTerrain;
+      const ecs::systems::GraphicsSystem::TerrainDraw* gt = groundTerrain;
+      if (gr.sourceTerrainEntity != ecs::kInvalidEntityId) {
+        const auto it = terrainByEntity.find(gr.sourceTerrainEntity);
+        if (it != terrainByEntity.end()) gt = it->second;
+      }
 
       const std::string shaderKey = gr.shader.key.empty() ? "graphics/shaders/grass" : gr.shader.key;
       const ShaderService::Program* program = m_shaders.getOrCreate(shaderKey);
@@ -3456,16 +3473,16 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
             texCount = std::min(6, static_cast<int>(gr.grassTextures.size()));
             for (int i = 0; i < texCount; ++i) {
               texturePaths[i] = gr.grassTextures[static_cast<std::size_t>(i)].key;
-              bound[i].id = m_textures.requestTexture(texturePaths[i], true);
+              bound[i].id = requestTextureCached(texturePaths[i], true);
             }
           } else if (gr.hasAlbedoTex && !gr.albedoTex.key.empty()) {
             texCount = 1;
             texturePaths[0] = gr.albedoTex.key;
-            bound[0].id = m_textures.requestTexture(texturePaths[0], true);
+            bound[0].id = requestTextureCached(texturePaths[0], true);
           } else {
             texCount = 1;
             texturePaths[0] = kDefaultGrassBillboardTexture;
-            bound[0].id = m_textures.requestTexture(texturePaths[0], true);
+            bound[0].id = requestTextureCached(texturePaths[0], true);
           }
 
           for (int texIndex = 0; texIndex < texCount; ++texIndex) {
@@ -3490,7 +3507,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
           maxBoundTextureUnits = std::max(maxBoundTextureUnits, texCount);
         } else {
           const std::string albedoPath = gr.hasAlbedoTex ? gr.albedoTex.key : "assets/textures/grass/grass_color.jpg";
-          const GLuint albedoId = m_textures.requestTexture(albedoPath, true);
+          const GLuint albedoId = requestTextureCached(albedoPath, true);
           const bool useAlbedo = albedoId != 0;
           const GLint locUseAlb = glGetUniformLocation(program->programId, "u_UseAlbedo");
           if (locUseAlb >= 0) glUniform1i(locUseAlb, useAlbedo ? 1 : 0);
@@ -3616,7 +3633,8 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
   // Mesh pass (async-loaded glTF/extension-based assets).
   passStart = glfwGetTime();
-  for (const auto& m : frame.meshes) {
+  if (frame.settings.meshEnabled) {
+    for (const auto& m : frame.meshes) {
     if (!m.visible) continue;
     const ShaderService::Program* program = m_shaders.getOrCreate(m.shader.key.empty() ? "graphics/shaders/model" : m.shader.key);
     if (!program || !program->programId) continue;
@@ -3741,35 +3759,35 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
                                                      : m.emissiveStrength);
       const float finalDisplacementStrength =
           m.hasDisplacementStrengthParam ? m.displacementStrength : m.displacementStrength;
-      const GLuint albedo = m.hasAlbedoTex ? m_textures.requestTexture(m.albedoTex.key, true)
+      const GLuint albedo = m.hasAlbedoTex ? requestTextureCached(m.albedoTex.key, true)
                                            : ((mat && !mat->baseColorTexture.empty())
-                                                  ? m_textures.requestTexture(mat->baseColorTexture, true)
+                                                  ? requestTextureCached(mat->baseColorTexture, true)
                                                   : 0);
-      const GLuint normal = m.hasNormalTex ? m_textures.requestTexture(m.normalTex.key, false)
+      const GLuint normal = m.hasNormalTex ? requestTextureCached(m.normalTex.key, false)
                                            : ((mat && !mat->normalTexture.empty())
-                                                  ? m_textures.requestTexture(mat->normalTexture, false)
+                                                  ? requestTextureCached(mat->normalTexture, false)
                                                   : 0);
       const GLuint metallicRoughness =
-          m.hasMetallicRoughnessTex ? m_textures.requestTexture(m.metallicRoughnessTex.key, false)
+          m.hasMetallicRoughnessTex ? requestTextureCached(m.metallicRoughnessTex.key, false)
                                     : ((mat && !mat->metallicRoughnessTexture.empty())
-                                           ? m_textures.requestTexture(mat->metallicRoughnessTexture, false)
+                                           ? requestTextureCached(mat->metallicRoughnessTexture, false)
                                            : 0);
-      const GLuint roughness = m.hasRoughnessTex ? m_textures.requestTexture(m.roughnessTex.key, false) : 0;
-      const GLuint metallic = m.hasMetallicTex ? m_textures.requestTexture(m.metallicTex.key, false) : 0;
-      const GLuint ao = m.hasAoTex ? m_textures.requestTexture(m.aoTex.key, false)
+      const GLuint roughness = m.hasRoughnessTex ? requestTextureCached(m.roughnessTex.key, false) : 0;
+      const GLuint metallic = m.hasMetallicTex ? requestTextureCached(m.metallicTex.key, false) : 0;
+      const GLuint ao = m.hasAoTex ? requestTextureCached(m.aoTex.key, false)
                                    : ((mat && !mat->occlusionTexture.empty())
-                                          ? m_textures.requestTexture(mat->occlusionTexture, false)
+                                          ? requestTextureCached(mat->occlusionTexture, false)
                                           : 0);
-      const GLuint specular = m.hasSpecularTex ? m_textures.requestTexture(m.specularTex.key, false)
+      const GLuint specular = m.hasSpecularTex ? requestTextureCached(m.specularTex.key, false)
                                                : ((mat && !mat->specularTexture.empty())
-                                                      ? m_textures.requestTexture(mat->specularTexture, false)
+                                                      ? requestTextureCached(mat->specularTexture, false)
                                                       : 0);
-      const GLuint emissive = m.hasEmissiveTex ? m_textures.requestTexture(m.emissiveTex.key, true)
+      const GLuint emissive = m.hasEmissiveTex ? requestTextureCached(m.emissiveTex.key, true)
                                                : ((mat && !mat->emissiveTexture.empty())
-                                                      ? m_textures.requestTexture(mat->emissiveTexture, true)
+                                                      ? requestTextureCached(mat->emissiveTexture, true)
                                                       : 0);
-      const GLuint displacement = m.hasDisplacementTex ? m_textures.requestTexture(m.displacementTex.key, false) : 0;
-      const GLuint orm = m.hasOrmTex ? m_textures.requestTexture(m.ormTex.key, false) : 0;
+      const GLuint displacement = m.hasDisplacementTex ? requestTextureCached(m.displacementTex.key, false) : 0;
+      const GLuint orm = m.hasOrmTex ? requestTextureCached(m.ormTex.key, false) : 0;
       const GLint locBase = glGetUniformLocation(program->programId, "u_BaseColor");
       if (locBase >= 0) {
         glUniform3f(locBase, finalBaseColor.x, finalBaseColor.y, finalBaseColor.z);
@@ -3881,12 +3899,14 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       glBindTexture(GL_TEXTURE_2D, 0);
     }
     glActiveTexture(GL_TEXTURE0);
+    }
   }
   recordPass("mesh_pass", passStart);
 
   // Rocks pass (true 3D instances).
   passStart = glfwGetTime();
-  for (const auto& r : frame.rocks) {
+  if (frame.settings.rockEnabled) {
+    for (const auto& r : frame.rocks) {
     const ShaderService::Program* program = m_shaders.getOrCreate(r.shader.key);
     if (!program || !program->programId) continue;
 
@@ -3973,6 +3993,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
     }
 
     glBindVertexArray(0);
+    }
   }
   recordPass("rock_pass", passStart);
 
@@ -3982,7 +4003,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
 
   // VFX pass.
   passStart = glfwGetTime();
-  if (!frame.vfx.empty() && m_vfxProgram && m_vfxVao && m_vfxVbo) {
+  if (frame.settings.vfxEnabled && !frame.vfx.empty() && m_vfxProgram && m_vfxVao && m_vfxVbo) {
     std::vector<VfxVert> verts;
     verts.reserve(frame.vfx.size() * 96);
 
@@ -4420,8 +4441,10 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   glViewport(0, 0, m_fbWidth, m_fbHeight);
 
   passStart = glfwGetTime();
-  const bool dofOn = frame.camera.depthOfFieldEnabled && frame.camera.dofBlurStrength > 0.0001f;
-  const bool blurOn = frame.camera.motionBlurEnabled && frame.camera.motionBlurStrength > 0.0001f && m_hasPrevViewProj;
+  const bool dofOn =
+      frame.settings.postProcessingEnabled && frame.camera.depthOfFieldEnabled && frame.camera.dofBlurStrength > 0.0001f;
+  const bool blurOn = frame.settings.postProcessingEnabled && frame.camera.motionBlurEnabled &&
+                      frame.camera.motionBlurStrength > 0.0001f && m_hasPrevViewProj;
   if (!dofOn && !blurOn) {
     if (mainFbo != 0) {
       glBindFramebuffer(GL_READ_FRAMEBUFFER, mainFbo);
