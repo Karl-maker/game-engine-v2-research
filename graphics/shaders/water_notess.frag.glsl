@@ -83,7 +83,11 @@ vec3 applyPlanarNormal(vec3 baseN, vec3 tangentN) {
 
 float rippleHeight(vec2 uv) {
   if (!u_UseRippleMask) return 0.0;
-  return texture(u_RippleMaskTex, uv).r;
+  float a = texture(u_RippleMaskTex, uv).r;
+  float b = texture(u_RippleMaskTex, uv * 1.9 + vec2(0.17, -0.11)).r;
+  float c = texture(u_RippleMaskTex, uv * 3.6 + vec2(-0.23, 0.29)).r;
+  float combined = a * 0.55 + b * 0.30 + c * 0.15;
+  return smoothstep(0.18, 0.82, combined);
 }
 
 vec3 rippleNormal(vec2 uv) {
@@ -127,33 +131,39 @@ void main() {
     N = normalize(mix(N, applyPlanarNormal(N, waterNormal), saturate(u_NormalStrength)));
   }
 
-  vec2 rippleUv = v_WorldPos.xz * u_RippleTiling + vec2(u_Time * 0.018, -u_Time * 0.012);
-  N = normalize(mix(N, applyPlanarNormal(N, rippleNormal(rippleUv)), saturate(u_RippleStrength)));
+  vec2 rippleUv = v_WorldPos.xz * u_RippleTiling + vec2(u_Time * 0.028, -u_Time * 0.020);
+  vec2 rippleUvFine = v_WorldPos.xz * (u_RippleTiling * 2.4) + vec2(-u_Time * 0.035, u_Time * 0.026);
+  vec3 rippleN = normalize(mix(rippleNormal(rippleUv), rippleNormal(rippleUvFine), 0.48));
+  N = normalize(mix(N, applyPlanarNormal(N, rippleN), saturate(u_RippleStrength)));
 
   float groundHeight = terrainHeightAt(v_Uv);
   float waterDepth = max(0.0, u_WaterLevel - groundHeight);
   float deepness = saturate(waterDepth / max(0.001, u_ShoreFadeDistance));
-  float waterShallowMask = 1.0 - deepness;
+  float shallowMask = 1.0 - deepness;
 
   vec3 waterColor = mix(u_ShallowColor, u_BaseColor.rgb, deepness);
 
-  float rippleBreakup = u_UseRippleMask ? texture(u_RippleMaskTex, rippleUv).r : 0.5;
+  float rippleBreakup = u_UseRippleMask ? max(rippleHeight(rippleUv), rippleHeight(rippleUvFine)) : 0.5;
   float shoreMask = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFoamDepth), waterDepth);
-  float foam = shoreMask * mix(0.35, 1.0, rippleBreakup) * u_ShoreFoamStrength;
+  float foamEdge = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFadeDistance * 0.65), waterDepth);
+  float foam = shoreMask * mix(0.45, 1.0, rippleBreakup) * u_ShoreFoamStrength;
+  foam += foamEdge * mix(0.18, 0.55, rippleBreakup) * u_ShoreFoamStrength;
 
   if (u_UseFoamNormal) {
     vec2 foamUv = v_WorldPos.xz * u_FoamTiling + vec2(-u_Time * 0.015, u_Time * 0.009);
     vec3 foamNormal = tangentNormal(u_FoamNormalTex, foamUv);
     float foamBreakup = saturate(length(foamNormal.xz));
-    foam += shoreMask * foamBreakup * u_FoamStrength;
-    N = normalize(mix(N, applyPlanarNormal(N, foamNormal), shoreMask * 0.25));
+    foam += shoreMask * foamBreakup * u_FoamStrength * 1.15;
+    foam += foamEdge * foamBreakup * u_FoamStrength * 0.90;
+    N = normalize(mix(N, applyPlanarNormal(N, foamNormal), max(shoreMask * 0.25, foamEdge * 0.18)));
   }
 
-  foam = saturate(foam);
+  foam = smoothstep(0.18, 0.88, saturate(foam));
 
   vec3 lit = waterColor * vec3(0.06, 0.08, 0.10);
   float NdotV = saturate(dot(N, V));
   float fresnel = pow(1.0 - NdotV, 5.0);
+  float gloss = 1.0 - saturate(u_Roughness);
 
   for (int i = 0; i < u_LightCount && i < MAX_LIGHTS; ++i) {
     vec3 L = vec3(0.0, 1.0, 0.0);
@@ -174,19 +184,25 @@ void main() {
     if (NdotL <= 0.0) continue;
 
     vec3 H = normalize(L + V);
-    float specPower = mix(128.0, 18.0, saturate(u_Roughness));
-    float spec = pow(saturate(dot(N, H)), specPower) * mix(0.04, 1.1, saturate(u_SpecularIntensity));
+    float specPower = mix(180.0, 22.0, saturate(u_Roughness));
+    float spec = pow(saturate(dot(N, H)), specPower) * mix(0.08, 1.35, saturate(u_SpecularIntensity));
     vec3 lightCol = u_LightColor[i] * u_LightIntensity[i] * attenuation;
-    lit += waterColor * lightCol * (NdotL * 0.18);
-    lit += lightCol * spec * mix(0.35, 1.0, fresnel);
+    lit += waterColor * lightCol * (NdotL * mix(0.12, 0.20, shallowMask));
+    lit += lightCol * spec * mix(0.45, 1.15, fresnel);
   }
 
-  vec3 skyReflect = mix(vec3(0.06, 0.15, 0.20), vec3(0.48, 0.64, 0.76), pow(1.0 - saturate(V.y * 0.5 + 0.5), 2.0));
-  vec3 finalColor = mix(lit, skyReflect, clamp(0.25 + fresnel * 0.65, 0.0, 0.9));
-  finalColor = mix(finalColor, u_FoamColor, foam);
+  float causticWave = 0.5 + 0.5 * sin((v_WorldPos.x + v_WorldPos.z) * 0.24 + u_Time * 2.7);
+  float causticRipple = 0.5 + 0.5 * sin((v_WorldPos.x - v_WorldPos.z) * 0.41 - u_Time * 1.8);
+  float caustics = shallowMask * rippleBreakup * causticWave * causticRipple * 0.18;
+  lit += vec3(0.10, 0.20, 0.18) * caustics;
 
-  float alpha = mix(0.10, u_WaterAlpha, deepness);
-  alpha *= mix(1.0, 0.55, saturate(u_Clarity));
+  vec3 skyReflect = mix(vec3(0.06, 0.15, 0.20), vec3(0.48, 0.64, 0.76), pow(1.0 - saturate(V.y * 0.5 + 0.5), 2.0));
+  float reflectionMix = clamp(0.36 + fresnel * 0.70 + gloss * 0.14, 0.0, 0.96);
+  vec3 finalColor = mix(lit, skyReflect, reflectionMix);
+  finalColor = mix(finalColor, mix(u_FoamColor, vec3(1.0), 0.55), foam);
+
+  float alpha = mix(0.24, u_WaterAlpha, deepness);
+  alpha *= mix(1.0, 0.72, saturate(u_Clarity));
   alpha = max(alpha, foam * 0.45);
 
   float fog = fogFactorAt(u_CameraPos, v_WorldPos);

@@ -168,8 +168,14 @@ void CollisionDetectionSystem::tick(EntityRegistry& registry, ecs::services::Eve
     events.emit<ecs::events::CollisionDetectionEvent>(makeAabbContact(a.id, b.id, a.aabb, b.aabb, timeSeconds));
   }
 
-  registry.view<ecs::TerrainComponent, ecs::TransformComponent>(
-      [&](ecs::EntityId terrainId, const ecs::TerrainComponent& terrain, const ecs::TransformComponent& terrainTr) {
+  registry.view<ecs::TerrainComponent, ecs::ColliderComponent, ecs::TransformComponent>(
+      [&](ecs::EntityId terrainId,
+          const ecs::TerrainComponent& terrain,
+          const ecs::ColliderComponent& terrainCollider,
+          const ecs::TransformComponent& terrainTr) {
+        if (terrainCollider.shape != ecs::ColliderComponent::Shape::Terrain) return;
+        if (!terrainCollider.terrain.enabled) return;
+
         const ecs::ShaderComponent* shaderOpt = registry.tryGet<ecs::ShaderComponent>(terrainId);
         std::string heightMapPath;
         float mapUvTilingX = 1.0f;
@@ -203,8 +209,9 @@ void CollisionDetectionSystem::tick(EntityRegistry& registry, ecs::services::Eve
 
         const float halfW = static_cast<float>(terrain.gridWidth) * terrain.cellSizeMeters * 0.5f;
         const float halfD = static_cast<float>(terrain.gridHeight) * terrain.cellSizeMeters * 0.5f;
-        const Aabb terrainBounds{{terrainTr.position.x - halfW, terrainTr.position.y - terrain.heightScaleMeters, terrainTr.position.z - halfD},
-                                 {terrainTr.position.x + halfW, terrainTr.position.y + terrain.heightScaleMeters, terrainTr.position.z + halfD}};
+        const float halfY = std::max(terrain.heightScaleMeters, terrainCollider.terrain.thicknessMeters);
+        const Aabb terrainBounds{{terrainTr.position.x - halfW, terrainTr.position.y - halfY, terrainTr.position.z - halfD},
+                                 {terrainTr.position.x + halfW, terrainTr.position.y + halfY, terrainTr.position.z + halfD}};
         const auto terrainCandidates = m_grid.queryAabb(terrainBounds);
 
         for (const ecs::EntityId id : terrainCandidates) {
