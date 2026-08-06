@@ -1,6 +1,8 @@
 #version 410 core
 
 layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec3 a_Normal;
+layout(location = 2) in vec2 a_Uv;
 layout(location = 3) in uvec4 a_Joints;
 layout(location = 4) in vec4 a_Weights;
 
@@ -8,6 +10,10 @@ uniform mat4 u_Model;
 uniform mat4 u_LightViewProj;
 uniform bool u_Skinned;
 uniform mat4 u_Bones[96];
+
+out vec3 v_WorldPos;
+out vec3 v_WorldNormal;
+out vec2 v_Uv;
 
 void main() {
   mat4 skin = mat4(1.0);
@@ -20,5 +26,10 @@ void main() {
   }
 
   vec4 localPos = skin * vec4(a_Position, 1.0);
-  gl_Position = u_LightViewProj * u_Model * localPos;
+  vec3 localNormal = normalize(mat3(skin) * a_Normal);
+  vec4 worldPos = u_Model * localPos;
+  v_WorldPos = worldPos.xyz;
+  v_WorldNormal = normalize(mat3(u_Model) * localNormal);
+  v_Uv = a_Uv;
+  gl_Position = u_LightViewProj * worldPos;
 }

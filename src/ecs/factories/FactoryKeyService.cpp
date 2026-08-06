@@ -524,6 +524,66 @@ void appendMaterialParametersFromObject(const data::JsonValue::Object& obj, std:
   }
 }
 
+void appendMaterialTessellationFromObject(const data::JsonValue::Object& obj, std::vector<render::MaterialParameter>& out) {
+  auto pushFloat = [&](const char* jsonKey, const char* paramName) {
+    if (const auto* v = data::getObjectKey(obj, jsonKey)) {
+      float value = 0.0f;
+      if (data::readFloat(*v, value)) out.push_back({paramName, value});
+    }
+  };
+  auto pushInt = [&](const char* jsonKey, const char* paramName) {
+    if (const auto* v = data::getObjectKey(obj, jsonKey)) {
+      int value = 0;
+      if (data::readInt(*v, value)) out.push_back({paramName, value});
+    }
+  };
+
+  if (const auto* enabledV = data::getObjectKey(obj, "enabled")) {
+    bool enabled = true;
+    if (data::readBool(*enabledV, enabled) && !enabled) out.push_back({"tessQuality", 0});
+  }
+
+  pushFloat("near", "tessNear");
+  pushFloat("far", "tessFar");
+  pushFloat("min", "tessMin");
+  pushFloat("max", "tessMax");
+  pushFloat("distanceNear", "tessNear");
+  pushFloat("distanceFar", "tessFar");
+  pushFloat("factorMin", "tessMin");
+  pushFloat("factorMax", "tessMax");
+  pushFloat("tessNear", "tessNear");
+  pushFloat("tessFar", "tessFar");
+  pushFloat("tessMin", "tessMin");
+  pushFloat("tessMax", "tessMax");
+  pushInt("quality", "tessQuality");
+  pushInt("tessQuality", "tessQuality");
+}
+
+void readMaterialShaderOverrides(const data::JsonValue::Object& obj, ViewableInput& out) {
+  out.shaderKey = data::getStringOr(obj, "key", out.shaderKey);
+  out.castShadows = data::getBoolOr(obj, "castShadows", out.castShadows);
+  out.receiveShadows = data::getBoolOr(obj, "receiveShadows", out.receiveShadows);
+  if (const auto* tx = data::getObjectKey(obj, "textures")) {
+    if (const auto* txObj = tx->tryObject()) appendMaterialTexturesFromObject(*txObj, out.textures);
+    else upsertTextureBindingsBySlot(out.textures, readTextureBindings(*tx));
+  }
+  if (const auto* pv = data::getObjectKey(obj, "parameters")) {
+    upsertMaterialParametersByName(out.parameters, readMaterialParameters(*pv));
+  }
+  if (const auto* values = data::getObjectKey(obj, "values")) {
+    if (const auto* valuesObj = values->tryObject()) appendMaterialParametersFromObject(*valuesObj, out.parameters);
+  }
+  if (const auto* shading = data::getObjectKey(obj, "shading")) {
+    if (const auto* shadingObj = shading->tryObject()) appendMaterialParametersFromObject(*shadingObj, out.parameters);
+  }
+  if (const auto* tess = data::getObjectKey(obj, "tessellation")) {
+    if (const auto* tessObj = tess->tryObject()) appendMaterialTessellationFromObject(*tessObj, out.parameters);
+  }
+  if (const auto* lv = data::getObjectKey(obj, "lodBreakpoints")) {
+    out.lodBreakpoints = readShaderBreakpoints(*lv);
+  }
+}
+
 std::vector<ShaderBreakpointInput> readShaderBreakpoints(const data::JsonValue& v) {
   std::vector<ShaderBreakpointInput> out;
   if (const auto* arr = v.tryArray()) {
@@ -622,6 +682,7 @@ ViewableInput readViewableInput(const data::JsonValue::Object& obj) {
   }
   if (const auto* mv = data::getObjectKey(obj, "material")) {
     if (const auto* mo = mv->tryObject()) {
+      v.shaderKey = data::getStringOr(*mo, "shaderKey", v.shaderKey);
       if (const auto* tx = data::getObjectKey(*mo, "textures")) {
         if (const auto* txObj = tx->tryObject()) appendMaterialTexturesFromObject(*txObj, v.textures);
         else upsertTextureBindingsBySlot(v.textures, readTextureBindings(*tx));
@@ -637,6 +698,12 @@ ViewableInput readViewableInput(const data::JsonValue::Object& obj) {
       }
       if (const auto* shading = data::getObjectKey(*mo, "shading")) {
         if (const auto* shadingObj = shading->tryObject()) appendMaterialParametersFromObject(*shadingObj, v.parameters);
+      }
+      if (const auto* tess = data::getObjectKey(*mo, "tessellation")) {
+        if (const auto* tessObj = tess->tryObject()) appendMaterialTessellationFromObject(*tessObj, v.parameters);
+      }
+      if (const auto* shaderObjV = data::getObjectKey(*mo, "shader")) {
+        if (const auto* shaderObj = shaderObjV->tryObject()) readMaterialShaderOverrides(*shaderObj, v);
       }
       if (const auto* lv = data::getObjectKey(*mo, "lodBreakpoints")) v.lodBreakpoints = readShaderBreakpoints(*lv);
     }

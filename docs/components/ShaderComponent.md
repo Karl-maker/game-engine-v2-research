@@ -51,6 +51,11 @@ Useful mesh material parameters:
 - `emissiveColor`
 - `emissiveStrength`
 - `displacementStrength`
+- `tessNear`
+- `tessFar`
+- `tessMin`
+- `tessMax`
+- `tessQuality`
 
 ## Distance breakpoints
 
@@ -104,6 +109,15 @@ component.lodBreakpoints.push_back(far);
 - It also imports `baseColorFactor`, `roughnessFactor`, `metallicFactor`, `normalTexture.scale`, `occlusionTexture.strength`, and `emissiveFactor`.
 - If the asset uses `KHR_materials_specular`, the loader also imports `specularFactor` and `specularTexture`.
 - Explicit `ShaderComponent` texture refs or parameters still win over imported file material data.
+
+## Asset shader tweaking
+
+- Mesh textures use the asset's UV mapping. If the imported model already has UVs, `albedo`, `normal`, `metallicRoughness`, `ao`, `emissive`, and `displacement` all sample those UVs.
+- You can swap the mesh onto another shader with `material.shader.key` and still keep imported glTF textures; only the slots you override in `material.maps` or `material.textures` are replaced.
+- The stock mesh shader key `graphics/shaders/model` now supports tessellation when `material.tessellation` or equivalent shader parameters are present.
+- Tessellation changes geometry only when a displacement texture is available, typically through `material.maps.displacement`.
+- Base color, normal, metallic-roughness, occlusion, emissive, and specular can come from imported asset data; displacement should currently be authored explicitly in config when you want this tessellated path.
+- Shadow casting uses the same skinned mesh data and tessellated displacement path, so animated meshes no longer fall back to the undeformed shadow silhouette when this shader path is active.
 
 ## Field guide
 

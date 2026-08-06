@@ -111,9 +111,38 @@ Mesh material override tips:
 - add `ShaderComponent.lodBreakpoints` when you want those textures or parameters to swap by camera distance
 - set `overrideTessellation = true` inside a breakpoint when you also want a different tessellation band or quality at that distance
 - for chunk-authored actors/combatants/objects you can now use a higher-level `material` block with `maps`, `textures`, `values`, or `shading` keys; common aliases like `albedo`, `normal`, `metallicRoughness`, `displacement`, `roughness`, `normalScale`, `aoStrength`, `displacementStrength`, `tessNear`, `tessFar`, `tessMin`, `tessMax`, `tessQuality`, and `sinkStrength` are converted into the lower-level shader bindings automatically
+- `material.shader.key` lets you keep the asset's imported textures but swap to a different mesh shader, and `material.shader.parameters` adds shader-specific values without rewriting the whole component
+- `material.tessellation` is the cleaner config block for mesh tessellation, with aliases like `near`, `far`, `min`, `max`, `quality`, and `enabled`
 - glTF files already auto-import base color, normal, metallic-roughness, occlusion, emissive, and `KHR_materials_specular` data when those channels exist in the file
+- displacement-driven tessellation is usually authored with `material.maps.displacement`, because that slot is not typically auto-populated from imported glTF material data
 - rely on asset UVs for mapping; UV coordinates are loaded from the mesh file when they exist
 - if the asset has no UVs, the engine does not auto-generate a new unwrap during load
+
+Example mesh override that keeps imported glTF textures except the displacement map:
+
+```json
+{
+  "material": {
+    "shader": { "key": "graphics/shaders/model" },
+    "maps": {
+      "displacement": "assets/textures/materials/stone/stone_height.png"
+    },
+    "shading": {
+      "roughness": 0.82,
+      "normalScale": 1.2,
+      "displacementStrength": 0.18
+    },
+    "tessellation": {
+      "enabled": true,
+      "near": 4.0,
+      "far": 28.0,
+      "min": 2.0,
+      "max": 14.0,
+      "quality": 2
+    }
+  }
+}
+```
 
 Combat and animation authoring tips:
 
