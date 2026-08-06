@@ -56,6 +56,28 @@ uniform sampler2D u_FoamNormalTex;
 uniform bool u_UseFoamNormal = false;
 uniform sampler2D u_RippleMaskTex;
 uniform bool u_UseRippleMask = false;
+const int MAX_LOCAL_RIPPLES = 3;
+uniform int u_LocalRippleCount = 0;
+uniform vec2 u_LocalRipplePos[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleRadius[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleLength[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleWidth[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleStrength[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleMagnitude[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleFrequency[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleSpeed[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleFalloff[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleTiling[MAX_LOCAL_RIPPLES];
+uniform vec2 u_LocalRippleDirection[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleDriftSpeed[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleFoamBoost[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleNoiseScale[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleNoiseStrength[MAX_LOCAL_RIPPLES];
+uniform float u_LocalRippleNoiseSpeed[MAX_LOCAL_RIPPLES];
+uniform int u_LocalRippleUseTexture[MAX_LOCAL_RIPPLES];
+uniform sampler2D u_LocalRippleTex0;
+uniform sampler2D u_LocalRippleTex1;
+uniform sampler2D u_LocalRippleTex2;
 
 const int MAX_LIGHTS = 16;
 uniform int u_LightCount;
@@ -114,6 +136,13 @@ vec3 applyPlanarNormal(vec3 baseN, vec3 tangentN) {
   return normalize(T * tangentN.x + baseN * tangentN.y + B * tangentN.z);
 }
 
+float sampleLocalRippleTexture(int index, vec2 uv) {
+  if (index == 0) return texture(u_LocalRippleTex0, uv).r;
+  if (index == 1) return texture(u_LocalRippleTex1, uv).r;
+  if (index == 2) return texture(u_LocalRippleTex2, uv).r;
+  return 1.0;
+}
+
 float rippleHeight(vec2 uv) {
   if (!u_UseRippleMask) return 0.0;
   float a = texture(u_RippleMaskTex, uv).r;
@@ -169,6 +198,68 @@ void main() {
   vec3 rippleN = normalize(mix(rippleNormal(rippleUv), rippleNormal(rippleUvFine), 0.48));
   N = normalize(mix(N, applyPlanarNormal(N, rippleN), saturate(u_RippleStrength)));
 
+  vec3 localRippleAccum = vec3(0.0);
+  float localRippleWeight = 0.0;
+  float localRippleFoam = 0.0;
+  for (int i = 0; i < MAX_LOCAL_RIPPLES; ++i) {
+    if (i >= u_LocalRippleCount) break;
+    vec2 delta = v_WorldPos.xz - u_LocalRipplePos[i];
+    float radius = max(0.001, u_LocalRippleRadius[i]);
+    vec2 dir = safeDir(u_LocalRippleDirection[i]);
+    vec2 side = vec2(-dir.y, dir.x);
+    float noiseScale = max(0.001, u_LocalRippleNoiseScale[i]);
+    vec2 warp = vec2(
+        fbm(delta * noiseScale + vec2(u_Time * u_LocalRippleNoiseSpeed[i], 1.7)),
+        fbm(delta.yx * (noiseScale * 1.11) + vec2(-2.3, u_Time * u_LocalRippleNoiseSpeed[i] * 0.83))) -
+        vec2(0.5);
+    vec2 warpedDelta = delta + warp * (radius * 0.24 * saturate(u_LocalRippleNoiseStrength[i]));
+    float lengthMeters = max(0.001, u_LocalRippleLength[i]);
+    float widthMeters = max(0.001, u_LocalRippleWidth[i]);
+    float along = dot(warpedDelta, dir);
+    float across = dot(warpedDelta, side);
+    float ellipse = sqrt((along * along) / (lengthMeters * lengthMeters) +
+                         (across * across) / (widthMeters * widthMeters));
+    if (ellipse > 1.0) continue;
+    float dist = length(warpedDelta);
+
+    float radiusMask = 1.0 - saturate(dist / radius);
+    float ellipseMask = 1.0 - saturate(ellipse);
+    float frontMask = 1.0 - smoothstep(0.10 * lengthMeters, 0.52 * lengthMeters, along);
+    float trailMask = 1.0 - smoothstep(0.0, lengthMeters, -along);
+    float wakeCore = exp(-abs(across) / max(0.18, widthMeters * 0.30)) * trailMask;
+    float wakeBands = 0.5 + 0.5 * sin((-along * 0.58 + abs(across) * 1.32) * u_LocalRippleFrequency[i] -
+                                      u_Time * u_LocalRippleSpeed[i] * 1.12);
+    float sideChop = 0.5 + 0.5 * sin(across * (u_LocalRippleFrequency[i] * 1.55) + along * 0.30 -
+                                     u_Time * u_LocalRippleSpeed[i] * 0.78);
+    float disturbanceNoise = fbm(warpedDelta * (noiseScale * 1.7) + vec2(4.2, -3.1) +
+                                 dir * (u_Time * u_LocalRippleNoiseSpeed[i] * 1.22));
+    float falloff = pow(radiusMask * ellipseMask, max(0.1, u_LocalRippleFalloff[i]));
+    vec2 localUv = warpedDelta * u_LocalRippleTiling[i] + dir * (u_Time * u_LocalRippleDriftSpeed[i]);
+    float texMask = (u_LocalRippleUseTexture[i] != 0) ? sampleLocalRippleTexture(i, localUv) : 1.0;
+    texMask = mix(0.45, 1.0, smoothstep(0.05, 0.85, texMask));
+    float noise = fbm(warpedDelta * noiseScale + dir * (u_Time * u_LocalRippleNoiseSpeed[i]));
+    float noiseMask = mix(1.0, mix(0.70, 1.0, smoothstep(0.20, 0.80, noise)), saturate(u_LocalRippleNoiseStrength[i]));
+    float impactRing = 0.5 + 0.5 * sin(dist * (u_LocalRippleFrequency[i] * 0.82) - u_Time * u_LocalRippleSpeed[i] * 0.9);
+    float objectDisturbance = frontMask * impactRing;
+    float wakeDisturbance = wakeCore * mix(wakeBands, sideChop, 0.35);
+    float chop = mix(0.82, 1.18, disturbanceNoise);
+    float wave = mix(objectDisturbance, wakeDisturbance, 0.64) * chop;
+    float mask = falloff * noiseMask * mix(1.0, texMask, (u_LocalRippleUseTexture[i] != 0) ? 1.0 : 0.0);
+    float height = wave * mask * u_LocalRippleStrength[i] * max(0.0, u_LocalRippleMagnitude[i]);
+
+    vec2 normalDir = normalize(mix((dist > 1e-4) ? (warpedDelta / dist) : dir, dir, 0.58));
+    vec3 localN = normalize(vec3(-normalDir.x * height * 3.0,
+                                 1.0 / max(0.22, 1.0 + u_LocalRippleMagnitude[i] + wakeCore * 0.8),
+                                 -normalDir.y * height * 3.0));
+    localRippleAccum += localN * (mask * (0.8 + wakeCore * 0.9));
+    localRippleWeight += mask * (1.1 + wakeCore * 0.9);
+    localRippleFoam += mask * max(wakeDisturbance, objectDisturbance * 0.65) * u_LocalRippleFoamBoost[i] * 2.25;
+  }
+  if (localRippleWeight > 1e-4) {
+    vec3 localRippleN = normalize(localRippleAccum / localRippleWeight);
+    N = normalize(mix(N, applyPlanarNormal(N, localRippleN), saturate(localRippleWeight * 1.4)));
+  }
+
   float groundHeight = terrainHeightAt(v_Uv);
   float waterDepth = max(0.0, u_WaterLevel - groundHeight);
   float deepness = saturate(waterDepth / max(0.001, u_ShoreFadeDistance));
@@ -187,6 +278,7 @@ void main() {
   float foam = shoreMask * mix(0.45, 1.0, rippleBreakup) * u_ShoreFoamStrength;
   foam += foamEdge * mix(0.18, 0.55, rippleBreakup) * u_ShoreFoamStrength;
   foam *= mix(1.0, mix(0.72, 1.3, clumpMask), saturate(u_FoamNoiseStrength));
+  foam += localRippleFoam;
 
   if (u_UseFoamNormal) {
     vec2 foamUv = v_WorldPos.xz * u_FoamTiling + foamDrift + vec2(-u_Time * 0.015, u_Time * 0.009);

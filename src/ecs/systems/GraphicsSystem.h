@@ -14,6 +14,7 @@
 #include "ecs/EntityRegistry.h"
 #include "ecs/components/BillboardComponent.h"
 #include "ecs/components/Draw2DComponent.h"
+#include "ecs/components/RippleComponent.h"
 #include "ecs/components/VfxComponent.h"
 #include "math/Vec2.h"
 #include "math/Vec3.h"
@@ -570,6 +571,29 @@ class GraphicsSystem final {
       render::Color secondaryColor{1.0f, 0.95f, 0.35f, 1.0f};
     };
 
+    struct RippleDraw final {
+      EntityId entity = kInvalidEntityId;
+      math::Vec2 position{};
+      float radiusMeters = 8.0f;
+      float lengthMeters = 10.0f;
+      float widthMeters = 4.0f;
+      float strength = 0.35f;
+      float magnitude = 1.0f;
+      float frequency = 8.5f;
+      float speed = 2.2f;
+      float falloffPower = 1.8f;
+      float tiling = 0.22f;
+      float directionX = 1.0f;
+      float directionY = 0.0f;
+      float driftSpeed = 0.12f;
+      float foamBoost = 0.20f;
+      float noiseScale = 0.28f;
+      float noiseStrength = 0.35f;
+      float noiseSpeed = 0.55f;
+      bool hasTexture = false;
+      render::AssetRef texture{};
+    };
+
   struct RenderSettingsDraw final {
     bool present = false;
     bool terrainEnabled = true;
@@ -602,6 +626,7 @@ class GraphicsSystem final {
     std::vector<Draw2DQuadDraw> draw2d;
     std::vector<BillboardDraw> billboards;
     std::vector<VfxDraw> vfx;
+    std::vector<RippleDraw> ripples;
     std::vector<LightDraw> lights;
     RenderSettingsDraw settings{};
     std::vector<DebugLine> debugLines;

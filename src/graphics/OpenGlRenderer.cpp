@@ -2965,6 +2965,7 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
   glCullFace(GL_BACK);
 
   const auto drawTerrains = [&](bool transparentPass) {
+    constexpr int kMaxLocalRippleEmitters = 3;
     if (!frame.settings.terrainEnabled) return;
     for (const auto& t : frame.terrains) {
       const render::BlendMode blendMode = static_cast<render::BlendMode>(t.blendMode);
@@ -3349,6 +3350,102 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
         if (loc >= 0) glUniform1i(loc, 6);
       }
 
+      {
+        int rippleCount = 0;
+        float ripplePos[kMaxLocalRippleEmitters * 2] = {};
+        float rippleRadius[kMaxLocalRippleEmitters] = {};
+        float rippleLength[kMaxLocalRippleEmitters] = {};
+        float rippleWidth[kMaxLocalRippleEmitters] = {};
+        float rippleStrength[kMaxLocalRippleEmitters] = {};
+        float rippleMagnitude[kMaxLocalRippleEmitters] = {};
+        float rippleFrequency[kMaxLocalRippleEmitters] = {};
+        float rippleSpeed[kMaxLocalRippleEmitters] = {};
+        float rippleFalloff[kMaxLocalRippleEmitters] = {};
+        float rippleTiling[kMaxLocalRippleEmitters] = {};
+        float rippleDirection[kMaxLocalRippleEmitters * 2] = {};
+        float rippleDrift[kMaxLocalRippleEmitters] = {};
+        float rippleFoamBoost[kMaxLocalRippleEmitters] = {};
+        float rippleNoiseScale[kMaxLocalRippleEmitters] = {};
+        float rippleNoiseStrength[kMaxLocalRippleEmitters] = {};
+        float rippleNoiseSpeed[kMaxLocalRippleEmitters] = {};
+        int rippleUseTexture[kMaxLocalRippleEmitters] = {};
+        GLuint rippleTextureIds[kMaxLocalRippleEmitters] = {};
+
+        for (const auto& ripple : frame.ripples) {
+          if (rippleCount >= kMaxLocalRippleEmitters) break;
+          ripplePos[rippleCount * 2 + 0] = ripple.position.x;
+          ripplePos[rippleCount * 2 + 1] = ripple.position.y;
+          rippleRadius[rippleCount] = ripple.radiusMeters;
+          rippleLength[rippleCount] = ripple.lengthMeters;
+          rippleWidth[rippleCount] = ripple.widthMeters;
+          rippleStrength[rippleCount] = ripple.strength;
+          rippleMagnitude[rippleCount] = ripple.magnitude;
+          rippleFrequency[rippleCount] = ripple.frequency;
+          rippleSpeed[rippleCount] = ripple.speed;
+          rippleFalloff[rippleCount] = ripple.falloffPower;
+          rippleTiling[rippleCount] = ripple.tiling;
+          rippleDirection[rippleCount * 2 + 0] = ripple.directionX;
+          rippleDirection[rippleCount * 2 + 1] = ripple.directionY;
+          rippleDrift[rippleCount] = ripple.driftSpeed;
+          rippleFoamBoost[rippleCount] = ripple.foamBoost;
+          rippleNoiseScale[rippleCount] = ripple.noiseScale;
+          rippleNoiseStrength[rippleCount] = ripple.noiseStrength;
+          rippleNoiseSpeed[rippleCount] = ripple.noiseSpeed;
+          if (ripple.hasTexture) {
+            rippleTextureIds[rippleCount] = requestTextureCached(ripple.texture.key, false);
+            rippleUseTexture[rippleCount] = rippleTextureIds[rippleCount] != 0 ? 1 : 0;
+          }
+          ++rippleCount;
+        }
+
+        const GLint locRippleCount = glGetUniformLocation(program->programId, "u_LocalRippleCount");
+        if (locRippleCount >= 0) glUniform1i(locRippleCount, rippleCount);
+        const GLint locRipplePos = glGetUniformLocation(program->programId, "u_LocalRipplePos");
+        if (locRipplePos >= 0 && rippleCount > 0) glUniform2fv(locRipplePos, rippleCount, ripplePos);
+        const GLint locRippleRadius = glGetUniformLocation(program->programId, "u_LocalRippleRadius");
+        if (locRippleRadius >= 0 && rippleCount > 0) glUniform1fv(locRippleRadius, rippleCount, rippleRadius);
+        const GLint locRippleLength = glGetUniformLocation(program->programId, "u_LocalRippleLength");
+        if (locRippleLength >= 0 && rippleCount > 0) glUniform1fv(locRippleLength, rippleCount, rippleLength);
+        const GLint locRippleWidth = glGetUniformLocation(program->programId, "u_LocalRippleWidth");
+        if (locRippleWidth >= 0 && rippleCount > 0) glUniform1fv(locRippleWidth, rippleCount, rippleWidth);
+        const GLint locRippleStrengths = glGetUniformLocation(program->programId, "u_LocalRippleStrength");
+        if (locRippleStrengths >= 0 && rippleCount > 0) glUniform1fv(locRippleStrengths, rippleCount, rippleStrength);
+        const GLint locRippleMagnitude = glGetUniformLocation(program->programId, "u_LocalRippleMagnitude");
+        if (locRippleMagnitude >= 0 && rippleCount > 0) glUniform1fv(locRippleMagnitude, rippleCount, rippleMagnitude);
+        const GLint locRippleFrequency = glGetUniformLocation(program->programId, "u_LocalRippleFrequency");
+        if (locRippleFrequency >= 0 && rippleCount > 0) glUniform1fv(locRippleFrequency, rippleCount, rippleFrequency);
+        const GLint locRippleSpeed = glGetUniformLocation(program->programId, "u_LocalRippleSpeed");
+        if (locRippleSpeed >= 0 && rippleCount > 0) glUniform1fv(locRippleSpeed, rippleCount, rippleSpeed);
+        const GLint locRippleFalloff = glGetUniformLocation(program->programId, "u_LocalRippleFalloff");
+        if (locRippleFalloff >= 0 && rippleCount > 0) glUniform1fv(locRippleFalloff, rippleCount, rippleFalloff);
+        const GLint locRippleTiling = glGetUniformLocation(program->programId, "u_LocalRippleTiling");
+        if (locRippleTiling >= 0 && rippleCount > 0) glUniform1fv(locRippleTiling, rippleCount, rippleTiling);
+        const GLint locRippleDirection = glGetUniformLocation(program->programId, "u_LocalRippleDirection");
+        if (locRippleDirection >= 0 && rippleCount > 0) glUniform2fv(locRippleDirection, rippleCount, rippleDirection);
+        const GLint locRippleDrift = glGetUniformLocation(program->programId, "u_LocalRippleDriftSpeed");
+        if (locRippleDrift >= 0 && rippleCount > 0) glUniform1fv(locRippleDrift, rippleCount, rippleDrift);
+        const GLint locRippleFoamBoost = glGetUniformLocation(program->programId, "u_LocalRippleFoamBoost");
+        if (locRippleFoamBoost >= 0 && rippleCount > 0) glUniform1fv(locRippleFoamBoost, rippleCount, rippleFoamBoost);
+        const GLint locRippleNoiseScale = glGetUniformLocation(program->programId, "u_LocalRippleNoiseScale");
+        if (locRippleNoiseScale >= 0 && rippleCount > 0) glUniform1fv(locRippleNoiseScale, rippleCount, rippleNoiseScale);
+        const GLint locRippleNoiseStrength = glGetUniformLocation(program->programId, "u_LocalRippleNoiseStrength");
+        if (locRippleNoiseStrength >= 0 && rippleCount > 0) glUniform1fv(locRippleNoiseStrength, rippleCount, rippleNoiseStrength);
+        const GLint locRippleNoiseSpeed = glGetUniformLocation(program->programId, "u_LocalRippleNoiseSpeed");
+        if (locRippleNoiseSpeed >= 0 && rippleCount > 0) glUniform1fv(locRippleNoiseSpeed, rippleCount, rippleNoiseSpeed);
+        const GLint locRippleUseTexture = glGetUniformLocation(program->programId, "u_LocalRippleUseTexture");
+        if (locRippleUseTexture >= 0 && rippleCount > 0) glUniform1iv(locRippleUseTexture, rippleCount, rippleUseTexture);
+
+        for (int i = 0; i < rippleCount; ++i) {
+          if (rippleUseTexture[i] == 0) continue;
+          glActiveTexture(GL_TEXTURE7 + i);
+          glBindTexture(GL_TEXTURE_2D, rippleTextureIds[i]);
+          const char* uniformName =
+              (i == 0) ? "u_LocalRippleTex0" : (i == 1) ? "u_LocalRippleTex1" : "u_LocalRippleTex2";
+          const GLint loc = glGetUniformLocation(program->programId, uniformName);
+          if (loc >= 0) glUniform1i(loc, 7 + i);
+        }
+      }
+
       glActiveTexture(GL_TEXTURE0);
 
       const GLint locLc = glGetUniformLocation(program->programId, "u_LightCount");
@@ -3400,6 +3497,11 @@ void OpenGlRenderer::render(const ecs::systems::GraphicsSystem::FrameSnapshot& f
       const GLenum mode = program->hasTessellation ? GL_PATCHES : GL_TRIANGLES;
       glDrawElements(mode, static_cast<GLsizei>(mesh->indexCount), GL_UNSIGNED_INT, nullptr);
       glBindVertexArray(0);
+      for (int rippleTexUnit = 7; rippleTexUnit <= 9; ++rippleTexUnit) {
+        glActiveTexture(GL_TEXTURE0 + rippleTexUnit);
+        glBindTexture(GL_TEXTURE_2D, 0);
+      }
+      glActiveTexture(GL_TEXTURE0);
     }
   };
   passStart = glfwGetTime();

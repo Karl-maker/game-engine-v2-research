@@ -11,6 +11,7 @@
 #include "ecs/components/GrassPatchComponent.h"
 #include "ecs/components/LightComponent.h"
 #include "ecs/components/MeshComponent.h"
+#include "ecs/components/RippleComponent.h"
 #include "ecs/components/RenderSettingsComponent.h"
 #include "ecs/components/RockScatterComponent.h"
 #include "ecs/components/RaycastComponent.h"
@@ -498,6 +499,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
   m_frame.draw2d.clear();
   m_frame.billboards.clear();
   m_frame.vfx.clear();
+  m_frame.ripples.clear();
   m_frame.lights.clear();
   m_frame.settings = {};
 
@@ -915,6 +917,34 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         draw.shadowBias = light.shadowBias;
         draw.shadowDistance = light.shadowDistance;
         m_frame.lights.push_back(std::move(draw));
+      });
+
+  // --- Localized water ripple emitters ---
+  registry.view<ecs::RippleComponent, ecs::TransformComponent>(
+      [&](ecs::EntityId id, const ecs::RippleComponent& ripple, const ecs::TransformComponent& tr) {
+        if (!ripple.enabled) return;
+        FrameSnapshot::RippleDraw draw;
+        draw.entity = id;
+        draw.position = {tr.position.x, tr.position.y};
+        draw.radiusMeters = ripple.radiusMeters;
+        draw.lengthMeters = ripple.lengthMeters;
+        draw.widthMeters = ripple.widthMeters;
+        draw.strength = ripple.strength;
+        draw.magnitude = ripple.magnitude;
+        draw.frequency = ripple.frequency;
+        draw.speed = ripple.speed;
+        draw.falloffPower = ripple.falloffPower;
+        draw.tiling = ripple.tiling;
+        draw.directionX = ripple.direction.x;
+        draw.directionY = ripple.direction.y;
+        draw.driftSpeed = ripple.driftSpeed;
+        draw.foamBoost = ripple.foamBoost;
+        draw.noiseScale = ripple.noiseScale;
+        draw.noiseStrength = ripple.noiseStrength;
+        draw.noiseSpeed = ripple.noiseSpeed;
+        draw.hasTexture = ripple.textureEnabled && ripple.texture.enabled && !ripple.texture.key.empty();
+        draw.texture = ripple.texture;
+        m_frame.ripples.push_back(std::move(draw));
       });
 
   // --- Fog volumes (pick the first enabled) ---

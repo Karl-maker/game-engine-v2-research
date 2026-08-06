@@ -30,6 +30,7 @@
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/GrassPatchComponent.h"
 #include "ecs/components/PoseComponent.h"
+#include "ecs/components/RippleComponent.h"
 #include "ecs/components/SkeletonComponent.h"
 #include "ecs/components/SocketComponent.h"
 #include "ecs/components/ThirdPersonCameraComponent.h"
@@ -510,6 +511,32 @@ void Game::onStart() {
     hurtVolume.offset = {0.0f, 0.95f, 0.0f};
     hurtVolume.damageMultiplier = 1.0f;
     combat.volumes.push_back(hurtVolume);
+  }
+
+  {
+    const ecs::EntityId ripple = m_registry.createEntity("boat_wake_ripple");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(ripple);
+    tr.position = {0.0f, 0.0f, 0.0f};
+
+    auto& rc = m_registry.emplace<ecs::RippleComponent>(ripple);
+    rc.radiusMeters = 18.0f;
+    rc.lengthMeters = 4.0f;
+    rc.widthMeters = 7.5f;
+    rc.strength = 0.22f;
+    rc.magnitude = 3.25f;
+    rc.frequency = 11.5f;
+    rc.speed = 3.1f;
+    rc.falloffPower = 1.65f;
+    rc.tiling = 0.28f;
+    rc.direction = {1.0f, 0.10f};
+    rc.driftSpeed = 0.24f;
+    rc.foamBoost = 0.72f;
+    rc.noiseScale = 0.22f;
+    rc.noiseStrength = 0.55f;
+    rc.noiseSpeed = 0.85f;
+    rc.textureEnabled = true;
+    rc.texture = {true, "assets/textures/water/ripples/ripple-00.jpg", 0};
+    rc.enabled = false;
   }
 
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
