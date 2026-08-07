@@ -128,8 +128,9 @@ struct PhysicalInput final {
   std::string colliderMeshId;
   std::string colliderMeshKey;
   bool colliderUseMeshBounds = false;
-  bool buoyant = false;
+  bool buoyant = true;
   float buoyancyHeight = -0.5f;
+  bool sway = false;
 };
 
 struct SkeletonInput final {

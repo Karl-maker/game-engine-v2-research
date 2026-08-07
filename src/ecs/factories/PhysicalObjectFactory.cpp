@@ -10,6 +10,7 @@
 #include "ecs/components/TransformComponent.h"
 #include "ecs/components/RigidbodyComponent.h"
 #include "ecs/components/MotionComponent.h"
+#include "ecs/components/BuoyantComponent.h"
 
 #include <algorithm>
 
@@ -46,6 +47,13 @@ EntityId PhysicalObjectFactory::create(
     rb.kinematic = config.physical.kinematic;
     rb.buoyant = config.physical.buoyant;
     rb.buoyancyHeight = config.physical.buoyancyHeight;
+  }
+
+  if(config.physical.buoyant) {
+    auto& by = registry.emplace<ecs::BuoyantComponent>(id);
+    by.sway = config.physical.sway;
+    by.buoyant = config.physical.buoyant;
+    by.buoyancyHeight = config.physical.buoyancyHeight;
   }
 
   if (config.physical.hasCollider) {

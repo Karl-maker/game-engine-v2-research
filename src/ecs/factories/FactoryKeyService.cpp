@@ -1001,6 +1001,8 @@ void readPlayerHudInto(const data::JsonValue::Object& obj, const char* key, bool
   if (const auto* v = data::getObjectKey(*ho, "tint")) (void)readColorValue(*v, hud.tint);
 }
 
+}  // namespace
+
 PlayableCharacterConfig readPlayableCharacterInput(const data::JsonValue::Object& obj, const FactoryContext& ctx) {
   PlayableCharacterConfig pc{};
 
@@ -1063,6 +1065,8 @@ PlayableCharacterConfig readPlayableCharacterInput(const data::JsonValue::Object
 
   return pc;
 }
+
+namespace {
 
 VfxConfig readVfxInput(const data::JsonValue::Object& obj, const FactoryContext& ctx) {
   VfxConfig v{};
@@ -1297,6 +1301,7 @@ PhysicalInput readPhysicalInput(const data::JsonValue::Object& obj) {
 
       p.hasCollider = data::getBoolOr(*po, "hasCollider", p.hasCollider);
       p.buoyant = data::getBoolOr(*po, "buoyant", p.buoyant);
+      p.sway = data::getBoolOr(*po, "sway", p.sway);
       p.mass = data::getFloatOr(*po, "mass", p.mass);
       p.buoyancyHeight = data::getFloatOr(*po, "buoyancyHeight", p.buoyancyHeight);
       if (const auto* sv = data::getObjectKey(*po, "shape")) {

@@ -12,7 +12,7 @@ Factories are intended to be composed from small config blocks so you can mix an
   - Optional visuals: mesh + shader
   - If `meshKey` is empty, no `MeshComponent`/`ShaderComponent` is attached
 - `PhysicalInput` (`src/ecs/factories/FactoryInputs.h`)
-  - Rigidbody + collider settings (mass/gravity/shape/size/layer)
+  - Rigidbody + collider settings (mass/gravity/shape/size/layer/buoyancy)
 
 ## Built-in Factory Keys
 
@@ -64,6 +64,38 @@ Example:
   }
 }
 ```
+
+## Player And Combatant Config Parity
+
+- `playable_character` and `combatant` should consume the same structured sub-blocks such as `physical`, `stats`, `animation`, `pose`, `ik`, `sensorCone`, and HUD/camera config.
+- `persistent.player` in `assets/world/config.json` also supports those same structured blocks now, so prefer authoring new settings there instead of inventing more one-off top-level aliases.
+- Example:
+
+```json
+{
+  "persistent": {
+    "player": {
+      "physical": {
+        "buoyant": false,
+        "buoyancyHeight": -0.2,
+        "sway": true
+      }
+    }
+  }
+}
+```
+
+## Adding Config Attributes
+
+When you add a new config attribute for players/combatants, wire it through all three layers:
+
+1. Add storage to the relevant config/input struct in `src/ecs/factories/FactoryInputs.h`, `src/ecs/factories/CombatantFactory.h`, or `src/ecs/factories/PlayableCharacterFactory.h`.
+2. Parse the structured JSON block in `src/ecs/factories/FactoryKeyService.cpp`. This parser is shared by chunk-spawned `playable_character` entities and the persistent startup player.
+3. Apply the value in the runtime factory/component setup, such as `src/ecs/factories/PhysicalObjectFactory.cpp`, `src/ecs/factories/CombatantFactory.cpp`, or `src/ecs/factories/PlayableCharacterFactory.cpp`.
+
+Notes:
+- Prefer extending structured blocks like `physical` or `stats` so player and combatant config stay in sync automatically.
+- Only touch `src/games/WorldConfig.cpp` when you intentionally add or keep a legacy flat alias under `persistent.player`.
 
 ## Adding A New Factory
 

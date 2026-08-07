@@ -2,6 +2,7 @@
 
 #include "data/JsonUtil.h"
 #include "ecs/components/ColliderComponent.h"
+#include "ecs/factories/FactoryKeyService.h"
 #include "ecs/services/ChunkStreamingService.h"
 #include "physics/LayerMask.h"
 
@@ -315,6 +316,9 @@ void readPlayerConfig(const data::JsonValue::Object& obj, ecs::services::Playabl
   cfg.base.physical.mass = data::getFloatOr(obj, "mass", cfg.base.physical.mass);
   cfg.base.physical.useGravity = data::getBoolOr(obj, "useGravity", cfg.base.physical.useGravity);
   cfg.base.physical.kinematic = data::getBoolOr(obj, "kinematic", cfg.base.physical.kinematic);
+  cfg.base.physical.buoyant = data::getBoolOr(obj, "buoyant", cfg.base.physical.buoyant);
+  cfg.base.physical.buoyancyHeight = data::getFloatOr(obj, "buoyancyHeight", cfg.base.physical.buoyancyHeight);
+  cfg.base.physical.sway = data::getBoolOr(obj, "sway", cfg.base.physical.sway);
   if (const auto* colliderSize = data::getObjectKey(obj, "colliderSize")) data::readVec3(*colliderSize, cfg.base.physical.colliderSize);
   if (const auto* colliderOffset = data::getObjectKey(obj, "colliderOffset")) data::readVec3(*colliderOffset, cfg.base.physical.colliderOffset);
 
@@ -359,6 +363,20 @@ void readPlayerConfig(const data::JsonValue::Object& obj, ecs::services::Playabl
       (void)readColor4(*hudObj, "tint", cfg.hud.tint);
     }
   }
+
+  const ecs::services::PlayableCharacterConfig structuredCfg =
+      ecs::services::readPlayableCharacterInput(obj, ecs::services::FactoryContext{});
+
+  if (data::getObjectKey(obj, "physical")) cfg.base.physical = structuredCfg.base.physical;
+  if (data::getObjectKey(obj, "stats")) cfg.base.stats = structuredCfg.base.stats;
+  if (data::getObjectKey(obj, "animation")) cfg.base.animation = structuredCfg.base.animation;
+  if (data::getObjectKey(obj, "pose")) cfg.base.pose = structuredCfg.base.pose;
+  if (data::getObjectKey(obj, "ik")) cfg.base.ik = structuredCfg.base.ik;
+  if (data::getObjectKey(obj, "sensorCone")) cfg.base.sensorCone = structuredCfg.base.sensorCone;
+  if (data::getObjectKey(obj, "combat")) cfg.base.combat = structuredCfg.base.combat;
+  if (data::getObjectKey(obj, "camera")) cfg.camera = structuredCfg.camera;
+  if (data::getObjectKey(obj, "playerHud") || data::getObjectKey(obj, "hud")) cfg.hud = structuredCfg.hud;
+  if (data::getObjectKey(obj, "base")) cfg.base = structuredCfg.base;
 }
 
 void readSkyConfig(const data::JsonValue::Object& obj, ecs::SkyComponent& sky) {

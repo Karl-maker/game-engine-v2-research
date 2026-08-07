@@ -40,7 +40,7 @@ struct PlayableCharacterCameraConfig final {
   int motionBlurSamples = 12;
 };
 
-struct PlayableCharacterConfig final {
+struct PlayableCharacterConfig  final {
   CombatantConfig base{};
 
   // Adds a ControllerComponent (player input interface).
