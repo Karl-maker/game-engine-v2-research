@@ -34,6 +34,9 @@ struct RigidbodyComponent {
   bool sleepEnabled = true;
 
   math::Vec3 centerOfMass{0.0f, 0.0f, 0.0f};
+
+  bool buoyant = false;
+  float buoyancyHeight = -0.5;
 };
 
 }  // namespace ecs

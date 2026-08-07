@@ -1296,7 +1296,9 @@ PhysicalInput readPhysicalInput(const data::JsonValue::Object& obj) {
       p.kinematic = data::getBoolOr(*po, "kinematic", p.kinematic);
 
       p.hasCollider = data::getBoolOr(*po, "hasCollider", p.hasCollider);
-      p.colliderIsTrigger = data::getBoolOr(*po, "isTrigger", p.colliderIsTrigger);
+      p.buoyant = data::getBoolOr(*po, "buoyant", p.buoyant);
+      p.mass = data::getFloatOr(*po, "mass", p.mass);
+      p.buoyancyHeight = data::getFloatOr(*po, "buoyancyHeight", p.buoyancyHeight);
       if (const auto* sv = data::getObjectKey(*po, "shape")) {
         std::string s;
         if (data::readString(*sv, s)) p.colliderShape = parseColliderShape(std::move(s));

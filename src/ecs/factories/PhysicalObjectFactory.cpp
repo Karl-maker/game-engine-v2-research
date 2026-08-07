@@ -44,6 +44,8 @@ EntityId PhysicalObjectFactory::create(
     rb.inverseMass = 1.0f / std::max(0.0001f, rb.mass);
     rb.useGravity = config.physical.useGravity;
     rb.kinematic = config.physical.kinematic;
+    rb.buoyant = config.physical.buoyant;
+    rb.buoyancyHeight = config.physical.buoyancyHeight;
   }
 
   if (config.physical.hasCollider) {

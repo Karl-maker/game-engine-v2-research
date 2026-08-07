@@ -7,6 +7,7 @@
 #include "ecs/components/CombatantHudComponent.h"
 #include "ecs/components/PlayerHudComponent.h"
 #include "ecs/components/TransformComponent.h"
+#include "ecs/components/RigidbodyComponent.h"
 
 namespace ecs::services {
 
@@ -77,6 +78,11 @@ EntityId CombatantFactory::create(
       hud.fillFromRight = config.playerHud.fillFromRight;
     }
   }
+
+  auto& ridig = registry.emplace<ecs::RigidbodyComponent>(id);
+
+  ridig.buoyant = true;
+  ridig.buoyancyHeight = -1.5;
 
   return id;
 }

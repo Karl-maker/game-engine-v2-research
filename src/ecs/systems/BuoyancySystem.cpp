@@ -5,11 +5,13 @@
 #include "ecs/components/TerrainComponent.h"
 #include "ecs/components/ShaderComponent.h"
 #include "ecs/components/RippleComponent.h"
+#include "ecs/components/RigidbodyComponent.h"
+#include "ecs/components/MotionComponent.h"
 
-#include <vector>
 #include <cmath>
-#include <cstdint>
 #include <unordered_map>
+#include <cstdint>
+
 
 namespace ecs::systems {
 
@@ -23,17 +25,21 @@ constexpr char kWaterShader[] = "graphics/shaders/water";
 // Buoyancy tuning
 // ---------------------------------------------------------
 
-// Very subtle water movement
+// How strong objects are pushed upward
+constexpr float kBuoyancyForce = 4.0f;
+
+
+// Maximum water sway
 constexpr float kPitchAmount = 0.35f;
-constexpr float kYawAmount   = 0.15f;
-constexpr float kRollAmount  = 5.0f;
+constexpr float kYawAmount = 0.15f;
+constexpr float kRollAmount = 5.0f;
 
 
-// Slow ocean movement
+// Ocean speed
 constexpr float kWaveSpeed = 0.35f;
 
 
-// Smoothness
+// Rotation smoothing
 constexpr float kWaterResponse = 2.0f;
 
 
@@ -47,6 +53,7 @@ constexpr float kTwoPi = 6.283185f;
 
 
 struct BuoyancyOffset {
+
     float basePitch;
     float baseYaw;
     float baseRoll;
@@ -54,6 +61,7 @@ struct BuoyancyOffset {
     float phase;
     float speed;
     float strength;
+
 };
 
 
@@ -72,6 +80,7 @@ float random01(uint32_t value)
 
 
 }
+
 
 
 void BuoyancySystem::tick(
@@ -95,7 +104,7 @@ void BuoyancySystem::tick(
 
 
     // ---------------------------------------------------------
-    // Find water
+    // Find water surface
     // ---------------------------------------------------------
 
     registry.view<TerrainComponent,
@@ -112,7 +121,10 @@ void BuoyancySystem::tick(
             }
 
 
-            waterHeight = transform.position.y;
+            waterHeight =
+                transform.position.y;
+
+
             hasWater = true;
 
         });
@@ -125,7 +137,7 @@ void BuoyancySystem::tick(
 
 
 
-    const float smoothing =
+    float rotationSmooth =
         1.0f -
         std::exp(-kWaterResponse * dt);
 
@@ -133,31 +145,116 @@ void BuoyancySystem::tick(
 
 
     // ---------------------------------------------------------
-    // Floating objects
+    // Buoyant objects
     // ---------------------------------------------------------
 
-    registry.view<MeshComponent, TransformComponent>(
+    registry.view<MeshComponent,
+                 TransformComponent,
+                 RigidbodyComponent>(
         [&](EntityId entity,
             MeshComponent& mesh,
-            TransformComponent& transform) {
-
-
-            float distance =
-                waterHeight -
-                transform.position.y;
+            TransformComponent& transform,
+            RigidbodyComponent& rigidbody) {
 
 
 
-            if (distance < 0.0f ||
-                distance > kWaterHeightTolerance) {
-
+            // Not buoyant, ignore completely
+            if (!rigidbody.buoyant) {
                 return;
             }
 
 
 
             // -------------------------------------------------
-            // Create unique buoyancy settings once
+            // Calculate desired floating height first - this is
+            // the actual line buoyancy should engage/disengage
+            // around, NOT the raw water surface. buoyancyHeight
+            // shifts that line up (rests above surface, e.g. a
+            // boat hull) or down (rests partially submerged), so
+            // gating on waterHeight directly caused objects to
+            // freeze right at sea level instead of ever reaching
+            // targetHeight.
+            // -------------------------------------------------
+
+            float targetHeight =
+                waterHeight +
+                rigidbody.buoyancyHeight;
+
+
+
+            bool belowTarget =
+                transform.position.y < targetHeight;
+
+
+            if (!belowTarget) {
+                // At or above the intended floating height - leave
+                // gravity/movement completely alone so items above
+                // the water (or resting exactly at their float
+                // line) fall/behave normally instead of buoyancy
+                // holding them prematurely.
+                return;
+            }
+
+
+
+            // Optional - not every buoyant entity will have one,
+            // so always guard against it being absent below.
+            MotionComponent* motion =
+                registry.tryGet<MotionComponent>(entity);
+
+
+
+            float heightDifference =
+                targetHeight -
+                transform.position.y;
+
+
+
+            // -------------------------------------------------
+            // Gentle upward correction
+            // -------------------------------------------------
+
+            if (motion != nullptr) {
+
+                // MovementSystem is the single source of truth for turning
+                // MotionComponent::velocity into transform.position
+                // (tr.position = tr.position + motion.velocity * dt).
+                // Buoyancy must only set velocity here - never touch
+                // transform.position directly - or the two systems double-
+                // apply movement and fight/cancel each other out.
+
+                // Still below the float line - keep gravity off this
+                // entity (GravitySystem skips anything with isGrounded
+                // true) and push it upward via velocity.
+                motion->isGrounded = true;
+
+                float liftVelocity =
+                    heightDifference *
+                    kBuoyancyForce;
+
+
+                motion->velocity.y = liftVelocity;
+
+            } else {
+
+                // No MotionComponent - fall back to writing position
+                // directly, since nothing else will integrate this entity.
+                float lift =
+                    heightDifference *
+                    kBuoyancyForce *
+                    dt;
+
+
+                transform.position.y += lift;
+
+
+                if (rigidbody.linearVelocity.y < 0.0f) {
+                    rigidbody.linearVelocity.y = 0.0f;
+                }
+            }
+
+            // -------------------------------------------------
+            // Create unique water movement
             // -------------------------------------------------
 
             auto it =
@@ -171,23 +268,29 @@ void BuoyancySystem::tick(
                     static_cast<uint32_t>(entity);
 
 
+
                 s_offsets[entity] = {
 
                     transform.rotation.x,
                     transform.rotation.y,
                     transform.rotation.z,
 
-                    random01(seed) * kTwoPi,
+
+                    random01(seed) *
+                    kTwoPi,
+
 
                     1.0f +
                     ((random01(seed + 10) - 0.5f)
-                     *
-                     kSpeedVariation),
+                    *
+                    kSpeedVariation),
+
 
                     1.0f +
                     ((random01(seed + 20) - 0.5f)
-                     *
-                     kStrengthVariation)
+                    *
+                    kStrengthVariation)
+
                 };
 
 
@@ -197,23 +300,23 @@ void BuoyancySystem::tick(
 
 
 
-            auto& buoyancy =
+            auto& offset =
                 it->second;
 
 
 
 
             // -------------------------------------------------
-            // Water movement
+            // Water sway
             // -------------------------------------------------
 
             float pitchWave =
                 std::sin(
                     time *
                     kWaveSpeed *
-                    buoyancy.speed
+                    offset.speed
                     +
-                    buoyancy.phase
+                    offset.phase
                 );
 
 
@@ -222,9 +325,9 @@ void BuoyancySystem::tick(
                     time *
                     kWaveSpeed *
                     0.5f *
-                    buoyancy.speed
+                    offset.speed
                     +
-                    buoyancy.phase * 2.0f
+                    offset.phase * 2.0f
                 );
 
 
@@ -232,68 +335,66 @@ void BuoyancySystem::tick(
                 std::sin(
                     time *
                     kWaveSpeed *
-                    buoyancy.speed
+                    offset.speed
                     +
-                    buoyancy.phase * 1.3f
+                    offset.phase * 1.3f
                 );
 
 
 
 
-            // -------------------------------------------------
-            // Target rotation
-            // Base rotation + water offset
-            // -------------------------------------------------
-
             float targetPitch =
-                buoyancy.basePitch +
+                offset.basePitch +
                 pitchWave *
                 kPitchAmount *
-                buoyancy.strength;
+                offset.strength;
+
 
 
             float targetYaw =
-                buoyancy.baseYaw +
+                offset.baseYaw +
                 yawWave *
                 kYawAmount *
-                buoyancy.strength;
+                offset.strength;
+
 
 
             float targetRoll =
-                buoyancy.baseRoll +
+                offset.baseRoll +
                 rollWave *
                 kRollAmount *
-                buoyancy.strength;
+                offset.strength;
 
 
 
 
             // -------------------------------------------------
-            // Smooth movement
+            // Apply water rotation
             // -------------------------------------------------
 
             transform.rotation.x +=
                 (targetPitch -
                  transform.rotation.x)
-                 *
-                 smoothing;
+                *
+                rotationSmooth;
 
 
             transform.rotation.y +=
                 (targetYaw -
                  transform.rotation.y)
-                 *
-                 smoothing;
+                *
+                rotationSmooth;
 
 
             transform.rotation.z +=
                 (targetRoll -
                  transform.rotation.z)
-                 *
-                 smoothing;
+                *
+                rotationSmooth;
 
 
         });
+
 
 }
 
