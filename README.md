@@ -32,6 +32,17 @@ Common runtime flags:
 ./build/duppy gameplay --debug
 ```
 
+Hot-reload workflows:
+
+```bash
+./build/duppy gameplay --fps 144 --uncapped --dev
+./tools/dev-gameplay.sh
+```
+
+- `--dev` hot-reloads runtime content such as world JSON, shaders, textures, and models.
+- `./tools/dev-gameplay.sh` watches C++ source and `CMakeLists.txt`, rebuilds, and relaunches the game automatically.
+- Use the script when you want source edits to behave more like tooling live refresh.
+
 Single-command build examples:
 
 ```bash
@@ -63,6 +74,8 @@ Useful launch commands:
 - `./build/duppy gameplay`
 
 If fullscreen is stuck at 60 FPS on your display, make sure you are not forcing vsync and use `--refresh-rate 144` or your panel’s native refresh rate.
+
+If you edit `.cpp` or `.h` files while only running `./build/duppy ... --dev`, nothing will change until the binary is rebuilt. That is expected. Use `./tools/dev-gameplay.sh` for source-watch rebuilds.
 
 For frame profiling, prefer `--debug-overlay` first. It shows the frame debugger without enabling the heavier world-space debug lines, so the numbers are much more trustworthy.
 

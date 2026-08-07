@@ -35,6 +35,7 @@
 #include "ecs/systems/MovementSystem.h"
 #include "ecs/systems/KnockbackSystem.h"
 #include "ecs/systems/PlayerHudSystem.h"
+#include "ecs/systems/BuoyancySystem.h"
 #include "ecs/systems/PoseSystem.h"
 #include "ecs/systems/RayDetectionSystem.h"
 #include "ecs/systems/SensorSystem.h"
@@ -50,8 +51,9 @@
 #include "graphics/OpenGlRenderer.h"
 #endif
 
-#include <string>
+#include <filesystem>
 #include <memory>
+#include <string>
 
 namespace games {
 
@@ -67,6 +69,8 @@ struct GameConfig final {
   int chunkSearchRadius = 2;
   float chunkLoadProximityMeters = 14.0f;
   float chunkUnloadProximityMeters = 22.0f;
+  bool devMode = false;
+  double devHotReloadPollSeconds = 0.25;
 };
 
 class Game final : public core::IGame {
@@ -77,6 +81,9 @@ class Game final : public core::IGame {
   void onStop() override;
 
  private:
+  bool applyPersistentWorldConfigToScene();
+  void pollDevHotReload();
+
   GameConfig m_config{};
   ecs::EntityRegistry m_registry;
   core::ControlService m_controls;
@@ -98,6 +105,7 @@ class Game final : public core::IGame {
   ecs::systems::CombatInteractionSystem m_combatInteractionSystem;
   ecs::systems::HierarchySystem m_hierarchySystem;
   ecs::systems::MotionSystem m_motionSystem;
+  ecs::systems::BuoyancySystem m_buoyancySystem;
   ecs::systems::MovementSystem m_movementSystem;
   ecs::systems::KnockbackSystem m_knockbackSystem;
   ecs::systems::PoseSystem m_poseSystem;
@@ -123,6 +131,8 @@ class Game final : public core::IGame {
   ecs::EntityId m_demoNpc = ecs::kInvalidEntityId;
   ecs::EntityId m_terrain = ecs::kInvalidEntityId;
   ecs::EntityId m_light = ecs::kInvalidEntityId;
+  ecs::EntityId m_sky = ecs::kInvalidEntityId;
+  ecs::EntityId m_fog = ecs::kInvalidEntityId;
   ecs::EntityId m_renderSettings = ecs::kInvalidEntityId;
   ecs::EntityId m_playerHandSocket = ecs::kInvalidEntityId;
   ecs::EntityId m_playerHitVolume = ecs::kInvalidEntityId;
@@ -130,9 +140,11 @@ class Game final : public core::IGame {
 
   double m_printTimer = 0.0;
   double m_attackTimerSeconds = 0.0;
+  double m_devHotReloadTimerSeconds = 0.0;
   std::string m_debugOverlayText;
   ProfilingWorldConfig m_profiling{};
   std::string m_performancePreset = "custom";
+  std::filesystem::file_time_type m_devAssetWriteTime{};
 };
 
 }  // namespace games

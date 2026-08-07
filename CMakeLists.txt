@@ -32,6 +32,7 @@ add_executable(duppy
   src/ecs/systems/MovementSystem.cpp
   src/ecs/systems/KnockbackSystem.cpp
   src/ecs/systems/CombatantHudSystem.cpp
+  src/ecs/systems/BuoyancySystem.cpp
   src/ecs/systems/PlayerHudSystem.cpp
   src/ecs/systems/PoseSystem.cpp
   src/ecs/systems/RayDetectionSystem.cpp

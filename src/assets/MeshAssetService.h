@@ -128,6 +128,7 @@ class MeshAssetService final {
 
   void start();
   void stop();
+  void invalidateAll();
   void registerLoader(std::string extension, std::unique_ptr<IMeshAssetLoader> loader);
 
   Status request(const std::string& path);

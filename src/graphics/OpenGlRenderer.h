@@ -50,6 +50,7 @@ class OpenGlRenderer final {
   bool start(int width, int height, const char* title);
   bool start(const WindowConfig& cfg, const char* title);
   void stop();
+  void reloadRuntimeAssets();
 
   bool isOpen() const;
   void pollEvents();

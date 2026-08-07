@@ -46,6 +46,8 @@ Use this when your display supports a higher refresh rate and you want to verify
 ./build/duppy gameplay --debug-world
 ./build/duppy gameplay --debug
 ./build/duppy gameplay --fps 144 --uncapped
+./build/duppy gameplay --fps 144 --uncapped --dev
+./tools/dev-gameplay.sh
 ```
 
 Flag guidance:
@@ -55,7 +57,9 @@ Flag guidance:
 - `--debug` enables both overlay and world debug together
 - `--fps` sets the desired target frame rate
 - `--uncapped` removes the frame cap when you want to measure raw engine performance
+- `--dev` hot-reloads runtime content like shaders, textures, models, and world config while the game is running
 - `--refresh-rate` should match your monitor if fullscreen is locking to a lower value than expected
+- `./tools/dev-gameplay.sh` watches C++ source and rebuilds/relaunches automatically when code changes
 
 Performance note:
 
@@ -78,5 +82,6 @@ Use these searches when you need to see how a component, factory key, or chunk e
 
 1. Edit a component, factory, or service.
 2. Update its matching doc page under `docs/`.
-3. Rebuild with `cmake --build build`.
-4. Run `./build/duppy gameplay` and verify the content behaves as expected.
+3. Run `./tools/dev-gameplay.sh` if you want source edits to rebuild automatically, or rebuild manually with `cmake --build build`.
+4. Use `./build/duppy gameplay --dev` when you only need runtime asset/config hot reload.
+5. Verify the content behaves as expected.

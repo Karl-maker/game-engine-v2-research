@@ -655,6 +655,15 @@ void MeshAssetService::stop() {
   if (m_worker.joinable()) m_worker.join();
 }
 
+void MeshAssetService::invalidateAll() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  for (auto& [_, entry] : m_entries) {
+    entry.state = State::Unloaded;
+    entry.error.clear();
+    entry.ready.reset();
+  }
+}
+
 void MeshAssetService::registerLoader(std::string extension, std::unique_ptr<IMeshAssetLoader> loader) {
   std::transform(extension.begin(), extension.end(), extension.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });

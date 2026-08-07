@@ -363,6 +363,10 @@ void Tooling::onTick(const core::TickContext& ctx) {
 
   m_skeletonAssetSyncSystem.tick(m_registry, m_meshAssets);
   m_skyPresetSystem.tick(m_registry);
+  
+  // --- Ocean ---
+
+  m_buoyancySystem.tick(m_registry, ctx.deltaSeconds, ctx.elapsedSeconds);
 
   const auto& frame = m_graphics.tick(m_registry);
   std::ostringstream overlay;

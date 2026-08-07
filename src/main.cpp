@@ -27,10 +27,10 @@ static std::unique_ptr<core::IGame> makeGameFromMode(const std::string& mode, co
   if (mode == "tooling" || mode == "editor" || mode == "view") {
     return std::make_unique<games::Tooling>(cfg.gameplay);
   }
-  if (mode == "game" || mode == "graphics" || mode == "4") {
+  if (mode == "game" || mode == "gameplay" || mode == "graphics" || mode == "4") {
     return std::make_unique<games::Game>(cfg.gameplay);
   }
-  return std::make_unique<games::Game>();
+  return std::make_unique<games::Game>(cfg.gameplay);
 }
 
 }  // namespace
@@ -49,6 +49,7 @@ int main(int argc, char** argv) {
   std::cout << "  --vsync | --no-vsync\n";
   std::cout << "  --uncapped | --cap-fps\n";
   std::cout << "  --fps N\n";
+  std::cout << "  --dev\n";
   std::cout << "  --debug-overlay | --debug-frame\n";
   std::cout << "  --debug-world\n";
   std::cout << "  --debug | --no-debug\n";
@@ -109,6 +110,12 @@ int main(int argc, char** argv) {
     }
     if (arg == "--cap-fps") {
       cfg.loop.capFrameRate = true;
+      continue;
+    }
+    if (arg == "--dev") {
+      cfg.gameplay.devMode = true;
+      cfg.loop.capFrameRate = false;
+      cfg.gameplay.vsync = false;
       continue;
     }
     if (arg == "--debug") {

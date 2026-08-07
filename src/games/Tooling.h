@@ -19,6 +19,7 @@
 #include "ecs/services/EntityFactoryRegistry.h"
 #include "ecs/services/FileChunkSource.h"
 #include "ecs/systems/GraphicsSystem.h"
+#include "ecs/systems/BuoyancySystem.h"
 #include "ecs/systems/SkeletonAssetSyncSystem.h"
 #include "ecs/systems/SkyPresetSystem.h"
 #include "graphics/OpenGlRenderer.h"
@@ -67,6 +68,7 @@ class Tooling final : public core::IGame {
   ecs::EntityId m_fog = ecs::kInvalidEntityId;
   ecs::systems::SkeletonAssetSyncSystem m_skeletonAssetSyncSystem;
   ecs::systems::SkyPresetSystem m_skyPresetSystem;
+  ecs::systems::BuoyancySystem m_buoyancySystem;
 
   std::string m_debugOverlayText;
   ProfilingWorldConfig m_profiling{};

@@ -1228,6 +1228,41 @@ void OpenGlRenderer::stop() {
   glfwTerminate();
 }
 
+void OpenGlRenderer::reloadRuntimeAssets() {
+  m_shaders.clear();
+  m_uniformLocationCache.clear();
+  m_terrainLodState.clear();
+  m_hasPrevViewProj = false;
+
+  for (auto& [_, mesh] : m_terrainMeshes) {
+    destroyTerrainMesh(mesh);
+  }
+  m_terrainMeshes.clear();
+
+  for (auto& [_, mesh] : m_rockMeshes) {
+    destroyRockMesh(mesh);
+  }
+  m_rockMeshes.clear();
+
+  for (auto& [_, mesh] : m_grassMeshes) {
+    destroyGrassMesh(mesh);
+  }
+  m_grassMeshes.clear();
+
+  for (auto& [_, mesh] : m_gpuMeshes) {
+    destroyGpuMesh(mesh);
+  }
+  m_gpuMeshes.clear();
+  m_meshLogState.clear();
+  m_frameTextureCacheSrgb.clear();
+  m_frameTextureCacheLinear.clear();
+
+  if (m_window) {
+    m_textures.destroyAllGlTextures();
+  }
+  m_meshAssets.invalidateAll();
+}
+
 bool OpenGlRenderer::isOpen() const { return m_window && glfwWindowShouldClose(m_window) == GLFW_FALSE; }
 
 void OpenGlRenderer::pollEvents() {

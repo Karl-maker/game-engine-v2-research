@@ -47,6 +47,8 @@
 #include "materials/presets/RealisticSkyClouds.h"
 
 #include <algorithm>
+#include <cctype>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -242,7 +244,146 @@ std::string formatPerformanceHint(const core::FrameTimingReport& cpuReport, cons
   return "hint=profiling warming";
 }
 
+std::string toLowerCopy(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+bool isDevHotReloadAssetFile(const std::filesystem::path& path) {
+  const std::string ext = toLowerCopy(path.extension().string());
+  return ext == ".glsl" || ext == ".vert" || ext == ".frag" || ext == ".tesc" || ext == ".tese" || ext == ".geom" ||
+         ext == ".comp" || ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga" ||
+         ext == ".gif" || ext == ".gltf" || ext == ".glb" || ext == ".bin";
+}
+
+void accumulateLatestWriteTime(const std::filesystem::path& path,
+                               std::filesystem::file_time_type& latest,
+                               bool& foundAny) {
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec) || ec) return;
+
+  const auto considerFile = [&](const std::filesystem::path& filePath) {
+    if (!isDevHotReloadAssetFile(filePath)) return;
+    std::error_code wtEc;
+    const auto wt = std::filesystem::last_write_time(filePath, wtEc);
+    if (wtEc) return;
+    if (!foundAny || wt > latest) {
+      latest = wt;
+      foundAny = true;
+    }
+  };
+
+  if (std::filesystem::is_regular_file(path, ec) && !ec) {
+    considerFile(path);
+    return;
+  }
+  if (!std::filesystem::is_directory(path, ec) || ec) return;
+
+  for (std::filesystem::recursive_directory_iterator it(
+           path, std::filesystem::directory_options::skip_permission_denied, ec),
+       end;
+       it != end;
+       it.increment(ec)) {
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    if (!it->is_regular_file(ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    considerFile(it->path());
+  }
+}
+
+std::filesystem::file_time_type latestDevAssetWriteTime() {
+  std::filesystem::file_time_type latest{};
+  bool foundAny = false;
+  accumulateLatestWriteTime("graphics/shaders", latest, foundAny);
+  accumulateLatestWriteTime("assets/textures", latest, foundAny);
+  accumulateLatestWriteTime("assets/models", latest, foundAny);
+  return foundAny ? latest : std::filesystem::file_time_type{};
+}
+
 }  // namespace
+
+bool Game::applyPersistentWorldConfigToScene() {
+  PersistentWorldConfig persistentConfig{};
+  if (!loadPersistentWorldConfig(m_config.chunkConfigPath, persistentConfig)) return false;
+
+  m_profiling = persistentConfig.profiling;
+  m_performancePreset = persistentConfig.performance.preset;
+
+  if (persistentConfig.hasChunkStreaming) {
+    m_config.chunkSizeMeters = persistentConfig.chunkStreaming.chunkSizeMeters;
+    m_config.chunkSearchRadius = persistentConfig.chunkStreaming.searchRadiusChunks;
+    m_config.chunkLoadProximityMeters = persistentConfig.chunkStreaming.loadProximityMeters;
+    m_config.chunkUnloadProximityMeters = persistentConfig.chunkStreaming.unloadProximityMeters;
+
+    ecs::services::ChunkStreamingConfig chunkCfg = m_chunkStreaming.config();
+    chunkCfg.chunkSizeMeters = persistentConfig.chunkStreaming.chunkSizeMeters;
+    chunkCfg.searchRadiusChunks = persistentConfig.chunkStreaming.searchRadiusChunks;
+    chunkCfg.loadProximityMeters = persistentConfig.chunkStreaming.loadProximityMeters;
+    chunkCfg.unloadProximityMeters = persistentConfig.chunkStreaming.unloadProximityMeters;
+    chunkCfg.maxLoadsPerTick = persistentConfig.chunkStreaming.maxLoadsPerTick;
+    chunkCfg.maxUnloadsPerTick = persistentConfig.chunkStreaming.maxUnloadsPerTick;
+    m_chunkStreaming.setConfig(chunkCfg);
+  }
+
+  if (auto* sky = m_registry.tryGet<ecs::SkyComponent>(m_sky)) {
+    *sky = persistentConfig.sky;
+    sky->linkedDirectionalLightEntity = m_light;
+    sky->linkedFogVolumeEntity = (!persistentConfig.hasFog && m_fog != ecs::kInvalidEntityId) ? m_fog : ecs::kInvalidEntityId;
+  }
+  if (auto* fogTransform = m_registry.tryGet<ecs::TransformComponent>(m_fog)) {
+    fogTransform->position = persistentConfig.fogAnchor;
+  }
+  if (auto* fog = m_registry.tryGet<ecs::FogVolumeComponent>(m_fog)) {
+    *fog = persistentConfig.fog;
+  }
+  if (auto* light = m_registry.tryGet<ecs::LightComponent>(m_light)) {
+    *light = persistentConfig.sun;
+  }
+  if (auto* renderSettings = m_registry.tryGet<ecs::RenderSettingsComponent>(m_renderSettings)) {
+    *renderSettings = persistentConfig.renderSettings;
+  }
+  if (auto* camera = m_registry.tryGet<ecs::CameraComponent>(m_camera)) {
+    camera->renderScale = persistentConfig.player.camera.renderScale;
+    camera->depthOfField.enabled = persistentConfig.player.camera.depthOfFieldEnabled;
+    camera->motionBlur.enabled = persistentConfig.player.camera.motionBlurEnabled;
+  }
+
+  m_skyPresets.tick(m_registry);
+  return true;
+}
+
+void Game::pollDevHotReload() {
+  if (!m_config.devMode) return;
+
+  if (auto* fileChunkSource = dynamic_cast<ecs::services::FileChunkSource*>(m_chunkSource.get())) {
+    if (fileChunkSource->reloadIfChanged()) {
+      (void)applyPersistentWorldConfigToScene();
+      m_chunkStreaming.unloadAll(m_registry);
+      std::cout << "[dev] reloaded world config: " << fileChunkSource->path() << "\n";
+    }
+  }
+
+  const auto latestAssetWrite = latestDevAssetWriteTime();
+  if (latestAssetWrite == std::filesystem::file_time_type{}) return;
+  if (m_devAssetWriteTime == std::filesystem::file_time_type{}) {
+    m_devAssetWriteTime = latestAssetWrite;
+    return;
+  }
+  if (latestAssetWrite <= m_devAssetWriteTime) return;
+
+  m_devAssetWriteTime = latestAssetWrite;
+  m_meshAssets.invalidateAll();
+#if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
+  if (m_renderer.isOpen()) m_renderer.reloadRuntimeAssets();
+#endif
+  std::cout << "[dev] reloaded runtime assets (shaders/textures/models)\n";
+}
 
 void Game::onStart() {
   std::cout << "\x1B[2J\x1B[H";
@@ -256,6 +397,10 @@ void Game::onStart() {
   std::cout << "- Runs GraphicsSystem each tick (prints a snapshot)\n";
 #endif
   std::cout << "Type `q` then Enter to quit.\n\n";
+  if (m_config.devMode) {
+    std::cout << "Dev mode: hot-reloads world config, shaders, textures, and models while the game is running.\n";
+    std::cout << "C++ source edits still require rebuilding the binary.\n\n";
+  }
 
   m_meshAssets.start();
 
@@ -428,30 +573,28 @@ void Game::onStart() {
   }
 
   // Sky (procedural clouds).
-  ecs::EntityId skyEntity = ecs::kInvalidEntityId;
   {
-    skyEntity = m_registry.createEntity("sky");
-    m_registry.emplace<ecs::TransformComponent>(skyEntity);
+    m_sky = m_registry.createEntity("sky");
+    m_registry.emplace<ecs::TransformComponent>(m_sky);
 
-    auto& skyc = m_registry.emplace<ecs::SkyComponent>(skyEntity, persistentConfig.sky);
+    auto& skyc = m_registry.emplace<ecs::SkyComponent>(m_sky, persistentConfig.sky);
     skyc.linkedDirectionalLightEntity = m_light;
 
-    auto& sh = m_registry.emplace<ecs::ShaderComponent>(skyEntity, materials::presets::RealisticSkyClouds());
+    auto& sh = m_registry.emplace<ecs::ShaderComponent>(m_sky, materials::presets::RealisticSkyClouds());
     sh.shader.key = "graphics/shaders/sky";
   }
 
   // Global ground mist.
-  ecs::EntityId fogEntity = ecs::kInvalidEntityId;
   {
-    fogEntity = m_registry.createEntity("mist");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(fogEntity);
+    m_fog = m_registry.createEntity("mist");
+    auto& tr = m_registry.emplace<ecs::TransformComponent>(m_fog);
     tr.position = persistentConfig.fogAnchor;
 
-    m_registry.emplace<ecs::FogVolumeComponent>(fogEntity, persistentConfig.fog);
+    m_registry.emplace<ecs::FogVolumeComponent>(m_fog, persistentConfig.fog);
   }
 
-  if (skyEntity != ecs::kInvalidEntityId && fogEntity != ecs::kInvalidEntityId && !persistentConfig.hasFog) {
-    m_registry.get<ecs::SkyComponent>(skyEntity).linkedFogVolumeEntity = fogEntity;
+  if (m_sky != ecs::kInvalidEntityId && m_fog != ecs::kInvalidEntityId && !persistentConfig.hasFog) {
+    m_registry.get<ecs::SkyComponent>(m_sky).linkedFogVolumeEntity = m_fog;
   }
 
   // Apply once so the very first frame matches the chosen SkyType.
@@ -513,32 +656,6 @@ void Game::onStart() {
     combat.volumes.push_back(hurtVolume);
   }
 
-  {
-    const ecs::EntityId ripple = m_registry.createEntity("boat_wake_ripple");
-    auto& tr = m_registry.emplace<ecs::TransformComponent>(ripple);
-    tr.position = {0.0f, 0.0f, 0.0f};
-
-    auto& rc = m_registry.emplace<ecs::RippleComponent>(ripple);
-    rc.radiusMeters = 18.0f;
-    rc.lengthMeters = 4.0f;
-    rc.widthMeters = 7.5f;
-    rc.strength = 0.22f;
-    rc.magnitude = 3.25f;
-    rc.frequency = 11.5f;
-    rc.speed = 3.1f;
-    rc.falloffPower = 1.65f;
-    rc.tiling = 0.28f;
-    rc.direction = {1.0f, 0.10f};
-    rc.driftSpeed = 0.24f;
-    rc.foamBoost = 0.72f;
-    rc.noiseScale = 0.22f;
-    rc.noiseStrength = 0.55f;
-    rc.noiseSpeed = 0.85f;
-    rc.textureEnabled = true;
-    rc.texture = {true, "assets/textures/water/ripples/ripple-00.jpg", 0};
-    rc.enabled = false;
-  }
-
 #if defined(DUPPY_ENABLE_OPENGL) && DUPPY_ENABLE_OPENGL
   graphics::OpenGlRenderer::WindowConfig wcfg{};
   wcfg.width = m_config.windowWidth;
@@ -562,6 +679,7 @@ void Game::onStart() {
       persistentConfig.hasChunkStreaming ? persistentConfig.chunkStreaming.maxUnloadsPerTick : chunkCfg.maxUnloadsPerTick;
   m_chunkStreaming.setConfig(chunkCfg);
   m_chunkSource = std::make_unique<ecs::services::FileChunkSource>(m_config.chunkConfigPath);
+  m_devAssetWriteTime = latestDevAssetWriteTime();
 }
 
 void Game::onTick(const core::TickContext& ctx) {
@@ -602,6 +720,14 @@ void Game::onTick(const core::TickContext& ctx) {
 #endif
   profile("controls", [&] { m_controls.update(ctx, rt.hasInput ? &rt : nullptr); });
   profile("controller", [&] { m_controllerSystem.tick(m_registry, m_controls); });
+
+  if (m_config.devMode) {
+    m_devHotReloadTimerSeconds += ctx.deltaSeconds;
+    if (m_devHotReloadTimerSeconds >= std::max(0.05, m_config.devHotReloadPollSeconds)) {
+      m_devHotReloadTimerSeconds = 0.0;
+      profile("dev_reload", [&] { pollDevHotReload(); });
+    }
+  }
 
   if (auto* renderSettings = m_registry.tryGet<ecs::RenderSettingsComponent>(m_renderSettings)) {
     renderSettings->showRays = ctx.debugWorldEnabled;
@@ -665,6 +791,9 @@ void Game::onTick(const core::TickContext& ctx) {
   profile("hit_detect", [&] { m_hitDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds); });
   profile("combat_interaction", [&] { m_combatInteractionSystem.tick(m_registry, m_events, ctx.elapsedSeconds); });
   profile("knockback", [&] { m_knockbackSystem.tick(m_registry, m_events); });
+
+  // --- Water Systems ---
+  profile("buoyancy", [&] { m_buoyancySystem.tick(m_registry, ctx.deltaSeconds, ctx.elapsedSeconds); });
 
   // --- Third-person camera follow ---
   profile("camera_follow", [&] { m_thirdPersonCameraSystem.tick(m_registry, ctx.deltaSeconds); });
