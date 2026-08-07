@@ -196,161 +196,160 @@ void BuoyancySystem::tick(
                 s_offsets.erase(entity);
             }
 
-            // -------------------------------------------------
-            // Ripples - only when at buoyancy height (within 0.1 range)
-            // -------------------------------------------------
-            float distanceToTarget = std::abs(currentY - targetHeight);
-            bool atBuoyancyHeight = distanceToTarget < kRippleProximityThreshold;
+          // -------------------------------------------------
+        // Ripples - show when object is IN the water (position.y < waterHeight)
+        // -------------------------------------------------
+        bool isInWater = currentY < waterHeight;
 
-            if (atBuoyancyHeight) {
-                // Determine if object is moving
-                bool isMoving = false;
-                float speed = 0.0f;
+        if (isInWater) {
+            // Determine if object is moving
+            bool isMoving = false;
+            float speed = 0.0f;
 
-                if (motion != nullptr) {
-                    float hSpeed = std::sqrt(
-                        motion->velocity.x * motion->velocity.x +
-                        motion->velocity.z * motion->velocity.z
-                    );
-                    speed = hSpeed;
-                    isMoving = hSpeed > 0.15f;
-                } else if (rigidbody != nullptr) {
-                    float hSpeed = std::sqrt(
-                        rigidbody->linearVelocity.x * rigidbody->linearVelocity.x +
-                        rigidbody->linearVelocity.z * rigidbody->linearVelocity.z
-                    );
-                    speed = hSpeed;
-                    isMoving = hSpeed > 0.15f;
-                }
+            if (motion != nullptr) {
+                float hSpeed = std::sqrt(
+                    motion->velocity.x * motion->velocity.x +
+                    motion->velocity.z * motion->velocity.z
+                );
+                speed = hSpeed;
+                isMoving = hSpeed > 0.15f;
+            } else if (rigidbody != nullptr) {
+                float hSpeed = std::sqrt(
+                    rigidbody->linearVelocity.x * rigidbody->linearVelocity.x +
+                    rigidbody->linearVelocity.z * rigidbody->linearVelocity.z
+                );
+                speed = hSpeed;
+                isMoving = hSpeed > 0.15f;
+            }
 
-                if (!registry.has<RippleComponent>(entity)) {
-                    // Create ripple component
-                    auto& rc = registry.emplace<RippleComponent>(entity);
+            if (!registry.has<RippleComponent>(entity)) {
+                // Create ripple component
+                auto& rc = registry.emplace<RippleComponent>(entity);
 
-                    if (isMoving) {
-                        // MOVING: Elongated wake with trail
-                        rc.radiusMeters = 22.0f;
-                        rc.lengthMeters = 4.5f;
-                        rc.widthMeters = 2.0f;
-                        rc.strength = 1.35f;
-                        rc.magnitude = 5.5f;
-                        rc.frequency = 8.5f;
-                        rc.speed = 2.8f;
-                        rc.falloffPower = 1.45f;
-                        rc.tiling = 0.32f;
+                if (isMoving) {
+                    // MOVING: Elongated wake with trail
+                    rc.radiusMeters = 22.0f;
+                    rc.lengthMeters = 4.5f;
+                    rc.widthMeters = 2.0f;
+                    rc.strength = 1.35f;
+                    rc.magnitude = 5.5f;
+                    rc.frequency = 8.5f;
+                    rc.speed = 2.8f;
+                    rc.falloffPower = 1.45f;
+                    rc.tiling = 0.32f;
 
-                        // Direction based on velocity
-                        math::Vec2 moveDir;
-                        if (motion != nullptr) {
-                            moveDir = {motion->velocity.x, motion->velocity.z};
-                        } else if (rigidbody != nullptr) {
-                            moveDir = {rigidbody->linearVelocity.x, rigidbody->linearVelocity.z};
-                        } else {
-                            moveDir = {1.0f, 0.0f};
-                        }
-                        
-                        float dirLen = std::sqrt(moveDir.x * moveDir.x + moveDir.y * moveDir.y);
-                        if (dirLen > 0.01f) {
-                            rc.direction = {moveDir.x / dirLen, moveDir.y / dirLen};
-                        } else {
-                            rc.direction = {1.0f, 0.10f};
-                        }
-
-                        rc.driftSpeed = 0.35f;
-                        rc.foamBoost = 0.08f;
-                        rc.noiseScale = 0.18f;
-                        rc.noiseStrength = 0.15f;
-                        rc.noiseSpeed = 0.95f;
+                    // Direction based on velocity
+                    math::Vec2 moveDir;
+                    if (motion != nullptr) {
+                        moveDir = {motion->velocity.x, motion->velocity.z};
+                    } else if (rigidbody != nullptr) {
+                        moveDir = {rigidbody->linearVelocity.x, rigidbody->linearVelocity.z};
                     } else {
-                        // STATIONARY: Circular pulse rings
-                        rc.radiusMeters = 12.0f;
-                        rc.lengthMeters = 1.2f;
-                        rc.widthMeters = 1.2f;
-                        rc.strength = 0.85f;
-                        rc.magnitude = 2.8f;
-                        rc.frequency = 14.0f;
-                        rc.speed = 3.8f;
-                        rc.falloffPower = 2.2f;
-                        rc.tiling = 0.22f;
-                        rc.direction = {1.0f, 0.0f};
-                        rc.driftSpeed = 0.12f;
-                        rc.foamBoost = 0.01f;
-                        rc.noiseScale = 0.08f;
-                        rc.noiseStrength = 0.03f;
-                        rc.noiseSpeed = 0.5f;
+                        moveDir = {1.0f, 0.0f};
+                    }
+                    
+                    float dirLen = std::sqrt(moveDir.x * moveDir.x + moveDir.y * moveDir.y);
+                    if (dirLen > 0.01f) {
+                        rc.direction = {moveDir.x / dirLen, moveDir.y / dirLen};
+                    } else {
+                        rc.direction = {1.0f, 0.10f};
                     }
 
-                    rc.textureEnabled = true;
-                    rc.texture = {
-                        true,
-                        "assets/textures/water/ripples/ripple-01.jpg",
-                        0
-                    };
-                    rc.enabled = true;
+                    rc.driftSpeed = 0.35f;
+                    rc.foamBoost = 0.08f;
+                    rc.noiseScale = 0.18f;
+                    rc.noiseStrength = 0.15f;
+                    rc.noiseSpeed = 0.95f;
                 } else {
-                    // Update existing ripple component
-                    auto& rc = registry.get<RippleComponent>(entity);
-                    rc.enabled = true;
-
-                    if (isMoving) {
-                        float transitionSpeed = 3.0f * dt;
-
-                        rc.lengthMeters += (4.5f - rc.lengthMeters) * transitionSpeed;
-                        rc.widthMeters += (2.0f - rc.widthMeters) * transitionSpeed;
-                        rc.strength += (1.35f - rc.strength) * transitionSpeed;
-                        rc.magnitude += (5.5f - rc.magnitude) * transitionSpeed;
-                        rc.frequency += (8.5f - rc.frequency) * transitionSpeed;
-                        rc.speed += (2.8f - rc.speed) * transitionSpeed;
-                        rc.falloffPower += (1.45f - rc.falloffPower) * transitionSpeed;
-                        rc.foamBoost += (0.08f - rc.foamBoost) * transitionSpeed;
-                        rc.noiseScale += (0.18f - rc.noiseScale) * transitionSpeed;
-                        rc.noiseStrength += (0.15f - rc.noiseStrength) * transitionSpeed;
-                        rc.noiseSpeed += (0.95f - rc.noiseSpeed) * transitionSpeed;
-                        rc.driftSpeed += (0.35f - rc.driftSpeed) * transitionSpeed;
-
-                        // Update direction
-                        math::Vec2 moveDir;
-                        if (motion != nullptr) {
-                            moveDir = {motion->velocity.x, motion->velocity.z};
-                        } else if (rigidbody != nullptr) {
-                            moveDir = {rigidbody->linearVelocity.x, rigidbody->linearVelocity.z};
-                        } else {
-                            moveDir = {1.0f, 0.0f};
-                        }
-
-                        float dirLen = std::sqrt(moveDir.x * moveDir.x + moveDir.y * moveDir.y);
-                        if (dirLen > 0.1f) {
-                            math::Vec2 targetDir = {moveDir.x / dirLen, moveDir.y / dirLen};
-                            rc.direction.x += (targetDir.x - rc.direction.x) * transitionSpeed;
-                            rc.direction.y += (targetDir.y - rc.direction.y) * transitionSpeed;
-                        }
-
-                        float speedFactor = std::min(speed / 5.0f, 1.5f);
-                        rc.strength *= (0.8f + speedFactor * 0.4f);
-                        rc.magnitude *= (0.7f + speedFactor * 0.6f);
-                    } else {
-                        float transitionSpeed = 3.0f * dt;
-
-                        rc.lengthMeters += (1.2f - rc.lengthMeters) * transitionSpeed;
-                        rc.widthMeters += (1.2f - rc.widthMeters) * transitionSpeed;
-                        rc.strength += (0.85f - rc.strength) * transitionSpeed;
-                        rc.magnitude += (2.8f - rc.magnitude) * transitionSpeed;
-                        rc.frequency += (14.0f - rc.frequency) * transitionSpeed;
-                        rc.speed += (3.8f - rc.speed) * transitionSpeed;
-                        rc.falloffPower += (2.2f - rc.falloffPower) * transitionSpeed;
-                        rc.foamBoost += (0.01f - rc.foamBoost) * transitionSpeed;
-                        rc.noiseScale += (0.08f - rc.noiseScale) * transitionSpeed;
-                        rc.noiseStrength += (0.03f - rc.noiseStrength) * transitionSpeed;
-                        rc.noiseSpeed += (0.5f - rc.noiseSpeed) * transitionSpeed;
-                        rc.driftSpeed += (0.12f - rc.driftSpeed) * transitionSpeed;
-                    }
+                    // STATIONARY: Circular pulse rings
+                    rc.radiusMeters = 12.0f;
+                    rc.lengthMeters = 1.2f;
+                    rc.widthMeters = 1.2f;
+                    rc.strength = 0.85f;
+                    rc.magnitude = 2.8f;
+                    rc.frequency = 14.0f;
+                    rc.speed = 3.8f;
+                    rc.falloffPower = 2.2f;
+                    rc.tiling = 0.22f;
+                    rc.direction = {1.0f, 0.0f};
+                    rc.driftSpeed = 0.12f;
+                    rc.foamBoost = 0.01f;
+                    rc.noiseScale = 0.08f;
+                    rc.noiseStrength = 0.03f;
+                    rc.noiseSpeed = 0.5f;
                 }
+
+                rc.textureEnabled = true;
+                rc.texture = {
+                    true,
+                    "assets/textures/water/ripples/ripple-01.jpg",
+                    0
+                };
+                rc.enabled = true;
             } else {
-                // Not at buoyancy height - remove ripples
-                if (registry.has<RippleComponent>(entity)) {
-                    registry.remove<RippleComponent>(entity);
+                // Update existing ripple component
+                auto& rc = registry.get<RippleComponent>(entity);
+                rc.enabled = true;
+
+                if (isMoving) {
+                    float transitionSpeed = 3.0f * dt;
+
+                    rc.lengthMeters += (4.5f - rc.lengthMeters) * transitionSpeed;
+                    rc.widthMeters += (2.0f - rc.widthMeters) * transitionSpeed;
+                    rc.strength += (1.35f - rc.strength) * transitionSpeed;
+                    rc.magnitude += (5.5f - rc.magnitude) * transitionSpeed;
+                    rc.frequency += (8.5f - rc.frequency) * transitionSpeed;
+                    rc.speed += (2.8f - rc.speed) * transitionSpeed;
+                    rc.falloffPower += (1.45f - rc.falloffPower) * transitionSpeed;
+                    rc.foamBoost += (0.08f - rc.foamBoost) * transitionSpeed;
+                    rc.noiseScale += (0.18f - rc.noiseScale) * transitionSpeed;
+                    rc.noiseStrength += (0.15f - rc.noiseStrength) * transitionSpeed;
+                    rc.noiseSpeed += (0.95f - rc.noiseSpeed) * transitionSpeed;
+                    rc.driftSpeed += (0.35f - rc.driftSpeed) * transitionSpeed;
+
+                    // Update direction
+                    math::Vec2 moveDir;
+                    if (motion != nullptr) {
+                        moveDir = {motion->velocity.x, motion->velocity.z};
+                    } else if (rigidbody != nullptr) {
+                        moveDir = {rigidbody->linearVelocity.x, rigidbody->linearVelocity.z};
+                    } else {
+                        moveDir = {1.0f, 0.0f};
+                    }
+
+                    float dirLen = std::sqrt(moveDir.x * moveDir.x + moveDir.y * moveDir.y);
+                    if (dirLen > 0.1f) {
+                        math::Vec2 targetDir = {moveDir.x / dirLen, moveDir.y / dirLen};
+                        rc.direction.x += (targetDir.x - rc.direction.x) * transitionSpeed;
+                        rc.direction.y += (targetDir.y - rc.direction.y) * transitionSpeed;
+                    }
+
+                    float speedFactor = std::min(speed / 5.0f, 1.5f);
+                    rc.strength *= (0.8f + speedFactor * 0.4f);
+                    rc.magnitude *= (0.7f + speedFactor * 0.6f);
+                } else {
+                    float transitionSpeed = 3.0f * dt;
+
+                    rc.lengthMeters += (1.2f - rc.lengthMeters) * transitionSpeed;
+                    rc.widthMeters += (1.2f - rc.widthMeters) * transitionSpeed;
+                    rc.strength += (0.85f - rc.strength) * transitionSpeed;
+                    rc.magnitude += (2.8f - rc.magnitude) * transitionSpeed;
+                    rc.frequency += (14.0f - rc.frequency) * transitionSpeed;
+                    rc.speed += (3.8f - rc.speed) * transitionSpeed;
+                    rc.falloffPower += (2.2f - rc.falloffPower) * transitionSpeed;
+                    rc.foamBoost += (0.01f - rc.foamBoost) * transitionSpeed;
+                    rc.noiseScale += (0.08f - rc.noiseScale) * transitionSpeed;
+                    rc.noiseStrength += (0.03f - rc.noiseStrength) * transitionSpeed;
+                    rc.noiseSpeed += (0.5f - rc.noiseSpeed) * transitionSpeed;
+                    rc.driftSpeed += (0.12f - rc.driftSpeed) * transitionSpeed;
                 }
             }
+        } else {
+            // NOT in water - remove ripples
+            if (registry.has<RippleComponent>(entity)) {
+                registry.remove<RippleComponent>(entity);
+            }
+        }
         });
 }
 
