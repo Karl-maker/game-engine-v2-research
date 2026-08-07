@@ -88,284 +88,507 @@ uniform vec3 u_LightColor[MAX_LIGHTS];
 uniform float u_LightIntensity[MAX_LIGHTS];
 uniform float u_LightRange[MAX_LIGHTS];
 
-float saturate(float x) { return clamp(x, 0.0, 1.0); }
+const float WATER_F0 = 0.02;
+const float WATER_ABSORPTION = 0.28;
 
-float hash12(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
+float saturate(float x) { return clamp(x, 0.0, 1.0); }
+float softClip(float x, float threshold) { return x / (x + threshold); }
+
+// ------------------------------------------------------------
+// High-quality noise functions
+// ------------------------------------------------------------
+float hash2(vec2 p) {
+    float h = dot(p, vec2(127.1, 311.7));
+    return fract(sin(h) * 43758.5453123);
 }
 
-float valueNoise(vec2 p) {
-  vec2 i = floor(p);
-  vec2 f = fract(p);
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  float a = hash12(i + vec2(0.0, 0.0));
-  float b = hash12(i + vec2(1.0, 0.0));
-  float c = hash12(i + vec2(0.0, 1.0));
-  float d = hash12(i + vec2(1.0, 1.0));
-  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+float gradientNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(hash2(i + vec2(0.0, 0.0)), hash2(i + vec2(1.0, 0.0)), u.x),
+        mix(hash2(i + vec2(0.0, 1.0)), hash2(i + vec2(1.0, 1.0)), u.x),
+        u.y
+    );
 }
 
 float fbm(vec2 p) {
-  float sum = 0.0;
-  float amp = 0.5;
-  float freq = 1.0;
-  for (int i = 0; i < 4; ++i) {
-    sum += valueNoise(p * freq) * amp;
-    freq *= 2.03;
-    amp *= 0.5;
-  }
-  return sum;
+    float sum = 0.0;
+    float amp = 0.5;
+    float freq = 1.0;
+    for (int i = 0; i < 6; ++i) {
+        sum += gradientNoise(p * freq) * amp;
+        freq *= 2.17;
+        amp *= 0.5;
+    }
+    return sum;
 }
 
+float warpedFbm(vec2 p, float time) {
+    float warp1 = fbm(p * 1.3 + vec2(time * 0.15, time * 0.12));
+    float warp2 = fbm(p * 1.7 + vec2(time * -0.1, time * 0.18) + warp1 * 2.0);
+    return fbm(p * 2.1 + vec2(warp1 * 1.8, warp2 * 1.5));
+}
+
+// ------------------------------------------------------------
+// 3D Ripple System
+// ------------------------------------------------------------
+struct RippleData {
+    float height;
+    vec3 normal;
+    float foam;
+    float occlusion;
+};
+
+// Single ripple wave with dispersion (different frequencies travel at different speeds)
+float rippleWave(vec2 pos, vec2 center, float time, float frequency, float speed, float falloff) {
+    float dist = length(pos - center);
+    float wavelength = 1.0 / max(0.001, frequency);
+    float phase = dist * frequency * 6.28318 - time * speed;
+    
+    // Amplitude attenuation with distance (energy conservation)
+    float amplitude = 1.0 / max(0.001, 1.0 + dist * falloff);
+    
+    // Dispersion: higher frequencies travel faster
+    float dispersion = 1.0 + frequency * 0.3;
+    phase *= dispersion;
+    
+    return sin(phase) * amplitude;
+}
+
+// Calculate 3D ripple field at a given world position
+RippleData calculateRipples(vec2 worldXZ, vec2 ripplePos, float radius, 
+                            vec2 lengthWidth, float strength, float magnitude,
+                            float frequency, float speed, float falloffPower,
+                            vec2 direction, float driftSpeed, float foamBoost,
+                            float noiseScale, float noiseStrength, float noiseSpeed,
+                            bool useTexture, sampler2D rippleTex, float tiling) {
+    
+    RippleData result;
+    result.height = 0.0;
+    result.normal = vec3(0.0, 1.0, 0.0);
+    result.foam = 0.0;
+    result.occlusion = 1.0;
+    
+    vec2 dir = length(direction) > 0.001 ? normalize(direction) : vec2(1.0, 0.0);
+    vec2 side = vec2(-dir.y, dir.x);
+    
+    // Anisotropic distance for wake shape
+    vec2 delta = worldXZ - ripplePos;
+    float alongDist = dot(delta, dir);
+    float acrossDist = dot(delta, side);
+    
+    // Elliptical falloff
+    float ellipseDist = sqrt(
+        (alongDist * alongDist) / (lengthWidth.x * lengthWidth.x) +
+        (acrossDist * acrossDist) / (lengthWidth.y * lengthWidth.y)
+    );
+    
+    float radialDist = length(delta);
+    
+    // Multi-layer ripple pattern
+    float ripple1 = rippleWave(worldXZ, ripplePos, u_Time, frequency, speed, falloffPower * 0.5);
+    float ripple2 = rippleWave(worldXZ, ripplePos, u_Time, frequency * 1.6, speed * 0.7, falloffPower * 0.7);
+    float ripple3 = rippleWave(worldXZ, ripplePos, u_Time, frequency * 2.3, speed * 0.5, falloffPower * 0.9);
+    
+    // Combine ripple frequencies
+    float ripplePattern = ripple1 * 0.5 + ripple2 * 0.3 + ripple3 * 0.2;
+    
+    // Add noise-based micro-variation
+    float noiseTime = u_Time * noiseSpeed;
+    float microNoise = fbm(delta * noiseScale + vec2(noiseTime, noiseTime * 0.7)) * noiseStrength;
+    float macroNoise = warpedFbm(delta * noiseScale * 0.5, noiseTime) * noiseStrength * 0.5;
+    
+    ripplePattern += microNoise + macroNoise;
+    
+    // Distance-based falloff with noise modulation
+    float falloff = 1.0 - saturate(ellipseDist);
+    falloff = pow(falloff, falloffPower);
+    falloff *= 1.0 - saturate(radialDist / max(0.001, radius));
+    
+    // Texture mask
+    float texMask = 1.0;
+    if (useTexture) {
+        vec2 texUv = delta * tiling + dir * (u_Time * driftSpeed);
+        texMask = texture(rippleTex, texUv).r;
+        texMask = smoothstep(0.1, 0.9, texMask);
+    }
+    
+    // Height displacement
+    float heightDisplacement = ripplePattern * falloff * strength * magnitude * texMask;
+    result.height = heightDisplacement;
+    
+    // Calculate normal from height field gradient
+    float eps = 0.02;
+    float hx = rippleWave(worldXZ + vec2(eps, 0.0), ripplePos, u_Time, frequency, speed, falloffPower * 0.5) * 0.5 +
+               rippleWave(worldXZ + vec2(eps, 0.0), ripplePos, u_Time, frequency * 1.6, speed * 0.7, falloffPower * 0.7) * 0.3 +
+               rippleWave(worldXZ + vec2(eps, 0.0), ripplePos, u_Time, frequency * 2.3, speed * 0.5, falloffPower * 0.9) * 0.2;
+    
+    float hy = rippleWave(worldXZ + vec2(0.0, eps), ripplePos, u_Time, frequency, speed, falloffPower * 0.5) * 0.5 +
+               rippleWave(worldXZ + vec2(0.0, eps), ripplePos, u_Time, frequency * 1.6, speed * 0.7, falloffPower * 0.7) * 0.3 +
+               rippleWave(worldXZ + vec2(0.0, eps), ripplePos, u_Time, frequency * 2.3, speed * 0.5, falloffPower * 0.9) * 0.2;
+    
+    float hc = ripple1 * 0.5 + ripple2 * 0.3 + ripple3 * 0.2;
+    hc *= falloff * strength * magnitude * texMask;
+    hx = hx * falloff * strength * magnitude * texMask;
+    hy = hy * falloff * strength * magnitude * texMask;
+    
+    // Proper 3D normal from height field
+    vec3 rippleNormal = normalize(vec3(
+        -(hx - hc) / eps,
+        1.0 / (1.0 + abs(heightDisplacement) * 5.0),
+        -(hy - hc) / eps
+    ));
+    
+    result.normal = rippleNormal;
+    
+    // Foam generation based on wave steepness
+    float steepness = length(vec2(hx - hc, hy - hc)) / eps;
+    float foamThreshold = 0.3 / (1.0 + magnitude * 0.5);
+    result.foam = smoothstep(foamThreshold, foamThreshold * 1.5, steepness) * foamBoost * falloff;
+    
+    // Self-occlusion (ripple peaks shadow troughs)
+    result.occlusion = 1.0 - abs(ripplePattern) * falloff * 0.3;
+    
+    return result;
+}
+
+// ------------------------------------------------------------
+// Wave system
+// ------------------------------------------------------------
 vec2 safeDir(vec2 v) {
-  float lenSq = dot(v, v);
-  if (lenSq < 1e-5) return vec2(1.0, 0.0);
-  return v * inversesqrt(lenSq);
+    float lenSq = dot(v, v);
+    if (lenSq < 1e-5) return vec2(1.0, 0.0);
+    return v * inversesqrt(lenSq);
 }
 
-vec3 tangentNormal(sampler2D tex, vec2 uv) {
-  vec3 n = texture(tex, uv).xyz * 2.0 - 1.0;
-  return normalize(vec3(n.x, max(0.02, n.z), n.y));
+void waveDeformation(vec2 worldXZ, out float height, out vec2 gradient) {
+    vec2 dirA = safeDir(u_WaveDirection);
+    vec2 dirB = safeDir(u_SecondaryWaveDirection);
+    
+    height = 0.0;
+    gradient = vec2(0.0);
+    
+    float primarySteepness = u_WaveHeight * 0.6;
+    float secondarySteepness = u_SecondaryWaveHeight * 0.55;
+    
+    for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        float freq = 1.0 + fi * 0.7;
+        float amp = 1.0 / (1.0 + fi * 0.8);
+        float wavelength = u_WaveScale / freq;
+        float k = 6.28318 / max(0.001, wavelength);
+        
+        // Primary
+        float phaseA = k * dot(worldXZ, dirA) - u_Time * u_WaveSpeed * (1.0 + fi * 0.3);
+        height += primarySteepness * amp * cos(phaseA) * 0.5;
+        gradient += primarySteepness * amp * k * sin(phaseA) * dirA * 0.5;
+        
+        // Secondary
+        float phaseB = k * dot(worldXZ, dirB) - u_Time * u_SecondaryWaveSpeed * (1.0 + fi * 0.25);
+        height += secondarySteepness * amp * cos(phaseB) * 0.5;
+        gradient += secondarySteepness * amp * k * sin(phaseB) * dirB * 0.5;
+    }
+    
+    float microDetail = fbm(worldXZ * 3.5 + vec2(u_Time * 0.08, u_Time * 0.06));
+    float eps = 0.02;
+    vec2 microGrad;
+    microGrad.x = fbm((worldXZ + vec2(eps, 0.0)) * 3.5 + vec2(u_Time * 0.08, u_Time * 0.06));
+    microGrad.y = fbm((worldXZ + vec2(0.0, eps)) * 3.5 + vec2(u_Time * 0.08, u_Time * 0.06));
+    microGrad = (microGrad - microDetail) / eps;
+    
+    height += microDetail * 0.15 * u_WaveHeight;
+    gradient += microGrad * 0.15 * u_WaveHeight;
 }
 
-vec3 applyPlanarNormal(vec3 baseN, vec3 tangentN) {
-  vec3 T = vec3(1.0, 0.0, 0.0);
-  vec3 B = vec3(0.0, 0.0, 1.0);
-  return normalize(T * tangentN.x + baseN * tangentN.y + B * tangentN.z);
-}
-
-float sampleLocalRippleTexture(int index, vec2 uv) {
-  if (index == 0) return texture(u_LocalRippleTex0, uv).r;
-  if (index == 1) return texture(u_LocalRippleTex1, uv).r;
-  if (index == 2) return texture(u_LocalRippleTex2, uv).r;
-  return 1.0;
-}
-
-// Raw, un-contrasted height field. Deliberately NOT pushed through a hard
-// smoothstep here — a near-binary field has near-zero gradient across most
-// of its area, which is what made the derived normal go flat/static almost
-// everywhere except thin blob edges. Contrast is applied separately by
-// callers that want a punchier *visual* mask (e.g. foam breakup) without
-// destroying the gradient information used for the normal.
-float rippleHeight(vec2 uv) {
-  if (!u_UseRippleMask) return 0.0;
-  float a = texture(u_RippleMaskTex, uv).r;
-  float b = texture(u_RippleMaskTex, uv * 1.9 + vec2(0.17, -0.11)).r;
-  float c = texture(u_RippleMaskTex, uv * 3.6 + vec2(-0.23, 0.29)).r;
-  return a * 0.55 + b * 0.30 + c * 0.15;
-}
-
-vec3 rippleNormal(vec2 uv) {
-  if (!u_UseRippleMask) return vec3(0.0, 1.0, 0.0);
-  // Step size tied to the actual texel size of the mask (not a fixed
-  // world-space constant) so the finite difference always samples real
-  // detail in the texture regardless of u_RippleTiling.
-  vec2 texel = 1.0 / vec2(textureSize(u_RippleMaskTex, 0));
-  vec2 eps = max(texel * 1.5, vec2(0.0008));
-  float h  = rippleHeight(uv);
-  float hx = rippleHeight(uv + vec2(eps.x, 0.0));
-  float hy = rippleHeight(uv + vec2(0.0, eps.y));
-  vec2 grad = vec2(hx - h, hy - h) / eps;
-  // Fixed bump scale: u_RippleStrength is applied exactly once, as the
-  // blend weight where this is mixed into N below. Previously it also
-  // scaled this internal steepness, so turning it up simultaneously made
-  // ripples both more visible AND more spiky, with no clean middle ground.
-  const float bumpScale = 2.2;
-  return normalize(vec3(-grad.x * bumpScale, 1.0, -grad.y * bumpScale));
-}
-
-vec2 waveGradient(vec2 worldXZ) {
-  vec2 dirA = safeDir(u_WaveDirection);
-  vec2 dirB = safeDir(u_SecondaryWaveDirection);
-  float phaseA = dot(worldXZ, dirA) * u_WaveScale + u_Time * u_WaveSpeed;
-  float phaseB = dot(worldXZ, dirB) * u_SecondaryWaveScale + u_Time * u_SecondaryWaveSpeed;
-  vec2 grad = cos(phaseA) * u_WaveHeight * u_WaveScale * dirA;
-  grad += cos(phaseB) * u_SecondaryWaveHeight * u_SecondaryWaveScale * dirB;
-  return grad;
+vec3 proceduralRippleNormal(vec2 worldXZ, float tiling, vec2 drift) {
+    float scale = 1.0 / max(0.001, tiling);
+    float eps = 0.015;
+    float h = fbm(worldXZ * scale + drift);
+    float hx = fbm((worldXZ + vec2(eps, 0.0)) * scale + drift);
+    float hy = fbm((worldXZ + vec2(0.0, eps)) * scale + drift);
+    vec2 grad = vec2(hx - h, hy - h) / eps;
+    return normalize(vec3(-grad.x * 1.8, 1.0, -grad.y * 1.8));
 }
 
 float terrainHeightAt(vec2 uv) {
-  if (!u_UseHeightMap || u_ShoreTerrainHeightScale <= 0.0) return u_ShoreTerrainBaseY;
-  float h = texture(u_HeightMapTex, uv * u_MapUvTiling).r;
-  if (u_HeightMapInvert != 0) h = 1.0 - h;
-  return u_ShoreTerrainBaseY + h * u_ShoreTerrainHeightScale * u_HeightMapStrength;
+    if (!u_UseHeightMap || u_ShoreTerrainHeightScale <= 0.0) return u_ShoreTerrainBaseY;
+    float h = texture(u_HeightMapTex, uv * u_MapUvTiling).r;
+    if (u_HeightMapInvert != 0) h = 1.0 - h;
+    return u_ShoreTerrainBaseY + h * u_ShoreTerrainHeightScale * u_HeightMapStrength;
 }
 
+float schlickFresnel(float NdotV, float F0) {
+    return F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
+}
+
+float ggxSpecular(float NdotH, float roughness) {
+    float alpha = roughness * roughness;
+    float alpha2 = alpha * alpha;
+    float d = NdotH * NdotH * (alpha2 - 1.0) + 1.0;
+    return alpha2 / (3.14159 * d * d);
+}
+
+// ------------------------------------------------------------
+// Main
+// ------------------------------------------------------------
 void main() {
-  vec3 V = normalize(u_CameraPos - v_WorldPos);
-  vec2 grad = waveGradient(v_WorldPos.xz);
-  vec3 N = normalize(vec3(-grad.x, 1.0, -grad.y));
-
-  if (u_UseNormal) {
-    vec2 uvA = v_WorldPos.xz * 0.045 + safeDir(u_WaveDirection) * (u_Time * 0.025);
-    vec2 uvB = v_WorldPos.xz * 0.031 - safeDir(u_SecondaryWaveDirection) * (u_Time * 0.018);
-    vec3 nA = tangentNormal(u_NormalTex, uvA);
-    vec3 nB = tangentNormal(u_NormalTex, uvB);
-    vec3 waterNormal = normalize(mix(nA, nB, 0.5));
-    N = normalize(mix(N, applyPlanarNormal(N, waterNormal), saturate(u_NormalStrength)));
-  }
-
-  // Ripple detail now drifts with the same wave directions as the big
-  // swell (scaled by u_WaveSpeed) instead of unrelated fixed constants.
-  // That's what made the fine ripples look like they were sliding the
-  // "wrong" way relative to everything else on the surface.
-  vec2 rippleDirA = safeDir(u_WaveDirection);
-  vec2 rippleDirB = safeDir(u_SecondaryWaveDirection);
-  float rippleDriftSpeed = 0.12 * max(0.05, u_WaveSpeed);
-  vec2 rippleUv = v_WorldPos.xz * u_RippleTiling + rippleDirA * (u_Time * rippleDriftSpeed);
-  vec2 rippleUvFine = v_WorldPos.xz * (u_RippleTiling * 2.4) - rippleDirB * (u_Time * rippleDriftSpeed * 1.4);
-  vec3 rippleN = normalize(mix(rippleNormal(rippleUv), rippleNormal(rippleUvFine), 0.48));
-  N = normalize(mix(N, applyPlanarNormal(N, rippleN), saturate(u_RippleStrength)));
-
-  vec3 localRippleAccum = vec3(0.0);
-  float localRippleWeight = 0.0;
-  float localRippleFoam = 0.0;
-  for (int i = 0; i < MAX_LOCAL_RIPPLES; ++i) {
-    if (i >= u_LocalRippleCount) break;
-    vec2 delta = v_WorldPos.xz - u_LocalRipplePos[i];
-    float radius = max(0.001, u_LocalRippleRadius[i]);
-    vec2 dir = safeDir(u_LocalRippleDirection[i]);
-    vec2 side = vec2(-dir.y, dir.x);
-    float noiseScale = max(0.001, u_LocalRippleNoiseScale[i]);
-    vec2 warp = vec2(
-        fbm(delta * noiseScale + vec2(u_Time * u_LocalRippleNoiseSpeed[i], 1.7)),
-        fbm(delta.yx * (noiseScale * 1.11) + vec2(-2.3, u_Time * u_LocalRippleNoiseSpeed[i] * 0.83))) -
-        vec2(0.5);
-    vec2 warpedDelta = delta + warp * (radius * 0.24 * saturate(u_LocalRippleNoiseStrength[i]));
-    float lengthMeters = max(0.001, u_LocalRippleLength[i]);
-    float widthMeters = max(0.001, u_LocalRippleWidth[i]);
-    float along = dot(warpedDelta, dir);
-    float across = dot(warpedDelta, side);
-    float ellipse = sqrt((along * along) / (lengthMeters * lengthMeters) +
-                         (across * across) / (widthMeters * widthMeters));
-    if (ellipse > 1.0) continue;
-    float dist = length(warpedDelta);
-
-    float radiusMask = 1.0 - saturate(dist / radius);
-    float ellipseMask = 1.0 - saturate(ellipse);
-    float frontMask = 1.0 - smoothstep(0.10 * lengthMeters, 0.52 * lengthMeters, along);
-    float trailMask = 1.0 - smoothstep(0.0, lengthMeters, -along);
-    float wakeCore = exp(-abs(across) / max(0.18, widthMeters * 0.30)) * trailMask;
-    float wakeBands = 0.5 + 0.5 * sin((-along * 0.58 + abs(across) * 1.32) * u_LocalRippleFrequency[i] -
-                                      u_Time * u_LocalRippleSpeed[i] * 1.12);
-    float sideChop = 0.5 + 0.5 * sin(across * (u_LocalRippleFrequency[i] * 1.55) + along * 0.30 -
-                                     u_Time * u_LocalRippleSpeed[i] * 0.78);
-    float disturbanceNoise = fbm(warpedDelta * (noiseScale * 1.7) + vec2(4.2, -3.1) +
-                                 dir * (u_Time * u_LocalRippleNoiseSpeed[i] * 1.22));
-    float falloff = pow(radiusMask * ellipseMask, max(0.1, u_LocalRippleFalloff[i]));
-    vec2 localUv = warpedDelta * u_LocalRippleTiling[i] + dir * (u_Time * u_LocalRippleDriftSpeed[i]);
-    float texMask = (u_LocalRippleUseTexture[i] != 0) ? sampleLocalRippleTexture(i, localUv) : 1.0;
-    texMask = mix(0.45, 1.0, smoothstep(0.05, 0.85, texMask));
-    float noise = fbm(warpedDelta * noiseScale + dir * (u_Time * u_LocalRippleNoiseSpeed[i]));
-    float noiseMask = mix(1.0, mix(0.70, 1.0, smoothstep(0.20, 0.80, noise)), saturate(u_LocalRippleNoiseStrength[i]));
-    float impactRing = 0.5 + 0.5 * sin(dist * (u_LocalRippleFrequency[i] * 0.82) - u_Time * u_LocalRippleSpeed[i] * 0.9);
-    float objectDisturbance = frontMask * impactRing;
-    float wakeDisturbance = wakeCore * mix(wakeBands, sideChop, 0.35);
-    float chop = mix(0.82, 1.18, disturbanceNoise);
-    float wave = mix(objectDisturbance, wakeDisturbance, 0.64) * chop;
-    float mask = falloff * noiseMask * mix(1.0, texMask, (u_LocalRippleUseTexture[i] != 0) ? 1.0 : 0.0);
-    float height = wave * mask * u_LocalRippleStrength[i] * max(0.0, u_LocalRippleMagnitude[i]);
-
-    vec2 normalDir = normalize(mix((dist > 1e-4) ? (warpedDelta / dist) : dir, dir, 0.58));
-    vec3 localN = normalize(vec3(-normalDir.x * height * 3.0,
-                                 1.0 / max(0.22, 1.0 + u_LocalRippleMagnitude[i] + wakeCore * 0.8),
-                                 -normalDir.y * height * 3.0));
-    localRippleAccum += localN * (mask * (0.8 + wakeCore * 0.9));
-    localRippleWeight += mask * (1.1 + wakeCore * 0.9);
-    localRippleFoam += mask * max(wakeDisturbance, objectDisturbance * 0.65) * u_LocalRippleFoamBoost[i] * 2.25;
-  }
-  if (localRippleWeight > 1e-4) {
-    vec3 localRippleN = normalize(localRippleAccum / localRippleWeight);
-    N = normalize(mix(N, applyPlanarNormal(N, localRippleN), saturate(localRippleWeight * 1.4)));
-  }
-
-  float groundHeight = terrainHeightAt(v_Uv);
-  float waterDepth = max(0.0, u_WaterLevel - groundHeight);
-  float deepness = saturate(waterDepth / max(0.001, u_ShoreFadeDistance));
-  float shallowMask = 1.0 - deepness;
-
-  vec3 waterColor = mix(u_ShallowColor, u_BaseColor.rgb, deepness);
-
-  // Contrast is applied here, for the visual foam/breakup mask only —
-  // rippleHeight() itself stays raw so rippleNormal()'s gradient is
-  // never flattened to zero across most of the surface.
-  float rippleBreakup = u_UseRippleMask
-      ? smoothstep(0.25, 0.75, max(rippleHeight(rippleUv), rippleHeight(rippleUvFine)))
-      : 0.5;
-  float shoreMask = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFoamDepth), waterDepth);
-  float foamEdge = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFadeDistance * 0.65), waterDepth);
-  vec2 foamDriftDir = safeDir(u_FoamDriftDirection);
-  vec2 foamDrift = foamDriftDir * (u_Time * u_FoamDriftSpeed);
-  float foamNoise = fbm(v_WorldPos.xz * max(0.001, u_FoamNoiseScale) + foamDrift + vec2(1.7, -2.3));
-  float foamClumps = smoothstep(0.48, 0.82, foamNoise);
-  float clumpMask = mix(1.0, foamClumps, saturate(u_FoamNoiseStrength));
-  float foam = shoreMask * mix(0.45, 1.0, rippleBreakup) * u_ShoreFoamStrength;
-  foam += foamEdge * mix(0.18, 0.55, rippleBreakup) * u_ShoreFoamStrength;
-  foam *= mix(1.0, mix(0.72, 1.3, clumpMask), saturate(u_FoamNoiseStrength));
-  foam += localRippleFoam;
-
-  if (u_UseFoamNormal) {
-    vec2 foamUv = v_WorldPos.xz * u_FoamTiling + foamDrift + vec2(-u_Time * 0.015, u_Time * 0.009);
-    vec3 foamNormal = tangentNormal(u_FoamNormalTex, foamUv);
-    float foamBreakup = saturate(length(foamNormal.xz));
-    foam += shoreMask * foamBreakup * u_FoamStrength * 1.15;
-    foam += foamEdge * foamBreakup * u_FoamStrength * 0.90;
-    float driftingFoam = foamBreakup * clumpMask * u_FoamStrength * mix(0.0, 0.8, saturate(u_FoamNoiseStrength));
-    float openWaterFoamMask = mix(shallowMask, 1.0 - deepness * 0.65, 0.35);
-    foam += openWaterFoamMask * driftingFoam;
-    N = normalize(mix(N, applyPlanarNormal(N, foamNormal), max(shoreMask * 0.25, foamEdge * 0.18)));
-  }
-
-  foam = smoothstep(0.18, 0.88, saturate(foam));
-
-  vec3 lit = waterColor * vec3(0.06, 0.08, 0.10);
-  float NdotV = saturate(dot(N, V));
-  float fresnel = pow(1.0 - NdotV, 5.0);
-  float gloss = 1.0 - saturate(u_Roughness);
-
-  for (int i = 0; i < u_LightCount && i < MAX_LIGHTS; ++i) {
-    vec3 L = vec3(0.0, 1.0, 0.0);
-    float attenuation = 1.0;
-
-    if (u_LightType[i] == 0) {
-      L = normalize(-u_LightDir[i]);
-    } else {
-      vec3 toLight = u_LightPos[i] - v_WorldPos;
-      float dist = length(toLight);
-      if (dist > 1e-4) L = toLight / dist;
-      float range = max(0.001, u_LightRange[i]);
-      float falloff = saturate(1.0 - dist / range);
-      attenuation = falloff * falloff;
+    vec3 V = normalize(u_CameraPos - v_WorldPos);
+    
+    // Wave deformation
+    float waveHeight;
+    vec2 waveGrad;
+    waveDeformation(v_WorldPos.xz, waveHeight, waveGrad);
+    vec3 N = normalize(vec3(-waveGrad.x, 1.0, -waveGrad.y));
+    
+    // Accumulate 3D ripples
+    RippleData totalRipples;
+    totalRipples.height = 0.0;
+    totalRipples.normal = vec3(0.0, 1.0, 0.0);
+    totalRipples.foam = 0.0;
+    totalRipples.occlusion = 1.0;
+    
+    float totalWeight = 0.0;
+    
+    for (int i = 0; i < MAX_LOCAL_RIPPLES; ++i) {
+        if (i >= u_LocalRippleCount) break;
+        
+        sampler2D rippleTex;
+        if (u_LocalRippleUseTexture[i] != 0) {
+            if (i == 0) rippleTex = u_LocalRippleTex0;
+            else if (i == 1) rippleTex = u_LocalRippleTex1;
+            else rippleTex = u_LocalRippleTex2;
+        }
+        
+        RippleData ripple = calculateRipples(
+            v_WorldPos.xz,
+            u_LocalRipplePos[i],
+            u_LocalRippleRadius[i],
+            vec2(u_LocalRippleLength[i], u_LocalRippleWidth[i]),
+            u_LocalRippleStrength[i],
+            u_LocalRippleMagnitude[i],
+            u_LocalRippleFrequency[i],
+            u_LocalRippleSpeed[i],
+            u_LocalRippleFalloff[i],
+            u_LocalRippleDirection[i],
+            u_LocalRippleDriftSpeed[i],
+            u_LocalRippleFoamBoost[i],
+            u_LocalRippleNoiseScale[i],
+            u_LocalRippleNoiseStrength[i],
+            u_LocalRippleNoiseSpeed[i],
+            u_LocalRippleUseTexture[i] != 0,
+            rippleTex,
+            u_LocalRippleTiling[i]
+        );
+        
+        float weight = 1.0 - saturate(length(v_WorldPos.xz - u_LocalRipplePos[i]) / max(0.001, u_LocalRippleRadius[i]));
+        
+        totalRipples.height += ripple.height * weight;
+        totalRipples.normal += ripple.normal * weight;
+        totalRipples.foam += ripple.foam * weight;
+        totalRipples.occlusion = min(totalRipples.occlusion, ripple.occlusion);
+        totalWeight += weight;
     }
-
-    float NdotL = saturate(dot(N, L));
-    if (NdotL <= 0.0) continue;
-
-    vec3 H = normalize(L + V);
-    float specPower = mix(180.0, 22.0, saturate(u_Roughness));
-    float spec = pow(saturate(dot(N, H)), specPower) * mix(0.08, 1.35, saturate(u_SpecularIntensity));
-    vec3 lightCol = u_LightColor[i] * u_LightIntensity[i] * attenuation;
-    lit += waterColor * lightCol * (NdotL * mix(0.12, 0.20, shallowMask));
-    lit += lightCol * spec * mix(0.45, 1.15, fresnel);
-  }
-
-  float causticWave = 0.5 + 0.5 * sin((v_WorldPos.x + v_WorldPos.z) * 0.24 + u_Time * 2.7);
-  float causticRipple = 0.5 + 0.5 * sin((v_WorldPos.x - v_WorldPos.z) * 0.41 - u_Time * 1.8);
-  float caustics = shallowMask * rippleBreakup * causticWave * causticRipple * 0.18;
-  lit += vec3(0.10, 0.20, 0.18) * caustics;
-
-  vec3 skyReflect = mix(vec3(0.06, 0.15, 0.20), vec3(0.48, 0.64, 0.76), pow(1.0 - saturate(V.y * 0.5 + 0.5), 2.0));
-  float reflectionMix = clamp(0.36 + fresnel * 0.70 + gloss * 0.14, 0.0, 0.96);
-  vec3 finalColor = mix(lit, skyReflect, reflectionMix);
-  finalColor = mix(finalColor, mix(u_FoamColor, vec3(1.0), 0.55), foam);
-
-  float alpha = mix(0.24, u_WaterAlpha, deepness);
-  alpha *= mix(1.0, 0.72, saturate(u_Clarity));
-  alpha = max(alpha, foam * 0.45);
-
-  float fog = fogFactorAt(u_CameraPos, v_WorldPos);
-  finalColor = mix(finalColor, u_FogColor, fog);
-  o_Color = vec4(finalColor, alpha);
+    
+    if (totalWeight > 0.001) {
+        totalRipples.normal = normalize(totalRipples.normal / totalWeight);
+        
+        // Blend ripple normal with base normal
+        float rippleBlend = saturate(totalWeight * 1.5);
+        N = normalize(mix(N, totalRipples.normal, rippleBlend));
+    }
+    
+    // Procedural micro-ripples
+    vec2 rippleDriftA = safeDir(u_WaveDirection) * (u_Time * 0.15 * max(0.05, u_WaveSpeed));
+    vec2 rippleDriftB = -safeDir(u_SecondaryWaveDirection) * (u_Time * 0.22 * max(0.05, u_SecondaryWaveSpeed));
+    
+    vec3 rippleN1 = proceduralRippleNormal(v_WorldPos.xz, u_RippleTiling, rippleDriftA);
+    vec3 rippleN2 = proceduralRippleNormal(v_WorldPos.xz, u_RippleTiling * 2.4, rippleDriftB);
+    vec3 rippleN = normalize(mix(rippleN1, rippleN2, 0.5));
+    
+    vec3 T = vec3(1.0, 0.0, 0.0);
+    vec3 B = vec3(0.0, 0.0, 1.0);
+    vec3 tangentN = normalize(T * rippleN.x + N * rippleN.y + B * rippleN.z);
+    N = normalize(mix(N, tangentN, saturate(u_RippleStrength * 1.2)));
+    
+    // Depth and shore
+    float groundHeight = terrainHeightAt(v_Uv);
+    float waterDepth = max(0.0, u_WaterLevel - groundHeight);
+    float deepness = saturate(waterDepth / max(0.001, u_ShoreFadeDistance));
+    float shallowMask = 1.0 - deepness;
+    
+    float absorption = exp(-WATER_ABSORPTION * waterDepth);
+    vec3 waterColor = mix(u_ShallowColor, u_BaseColor.rgb, 1.0 - absorption);
+    
+    // Foam
+    vec2 foamDrift = safeDir(u_FoamDriftDirection) * (u_Time * u_FoamDriftSpeed);
+    
+    float foamNoise1 = gradientNoise(v_WorldPos.xz * u_FoamTiling + foamDrift);
+    float foamNoise2 = gradientNoise(v_WorldPos.xz * u_FoamTiling * 2.5 - foamDrift * 0.7);
+    float foamNoise3 = fbm(v_WorldPos.xz * u_FoamNoiseScale * 4.0 + foamDrift * 1.5);
+    
+    float foamPattern = foamNoise1 * 0.5 + foamNoise2 * 0.3 + foamNoise3 * 0.2;
+    float foamClumps = smoothstep(0.45, 0.78, foamPattern);
+    float clumpMask = mix(1.0, foamClumps, saturate(u_FoamNoiseStrength));
+    
+    float breakupNoise = warpedFbm(v_WorldPos.xz * 3.0, u_Time * 0.2);
+    float rippleBreakup = smoothstep(0.3, 0.7, breakupNoise);
+    
+    float shoreMask = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFoamDepth), waterDepth);
+    float foamEdge = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFadeDistance * 0.65), waterDepth);
+    
+    float foam = 0.0;
+    foam += shoreMask * mix(0.45, 1.0, rippleBreakup) * u_ShoreFoamStrength;
+    foam += foamEdge * mix(0.18, 0.55, rippleBreakup) * u_ShoreFoamStrength;
+    foam *= mix(1.0, mix(0.72, 1.3, clumpMask), saturate(u_FoamNoiseStrength));
+    
+    // Add ripple-generated foam
+    foam += totalRipples.foam * 2.0;
+    
+    float streakNoise = gradientNoise(v_WorldPos.xz * 0.8 + foamDrift * 0.5);
+    float streaks = smoothstep(0.62, 0.82, streakNoise) * (1.0 - deepness * 0.7);
+    foam += streaks * u_FoamStrength * 0.4 * rippleBreakup;
+    
+    float foamNormalStrength = max(shoreMask * 0.3, foamEdge * 0.2);
+    vec3 foamPerturb = proceduralRippleNormal(v_WorldPos.xz, u_FoamTiling, foamDrift);
+    N = normalize(mix(N, tangentN * 0.5 + foamPerturb * 0.5, foamNormalStrength));
+    
+    foam = smoothstep(0.18, 0.88, saturate(foam));
+    
+    // ------------------------------------------------------------
+    // Lighting with self-shadowing
+    // ------------------------------------------------------------
+    vec3 ambient = waterColor * 0.04 * totalRipples.occlusion;
+    vec3 lit = ambient;
+    
+    float NdotV = saturate(dot(N, V));
+    float fresnel = schlickFresnel(NdotV, WATER_F0);
+    
+    float metallicInfluence = saturate(u_Metallic);
+    float specTint = mix(1.0, 0.65, metallicInfluence);
+    float roughness = saturate(u_Roughness);
+    
+    for (int i = 0; i < u_LightCount && i < MAX_LIGHTS; ++i) {
+        vec3 L;
+        float attenuation = 1.0;
+        
+        if (u_LightType[i] == 0) {
+            L = normalize(-u_LightDir[i]);
+        } else {
+            vec3 toLight = u_LightPos[i] - v_WorldPos;
+            float dist = length(toLight);
+            L = (dist > 1e-4) ? toLight / dist : vec3(0.0, 1.0, 0.0);
+            float range = max(0.001, u_LightRange[i]);
+            float falloff = saturate(1.0 - dist / range);
+            attenuation = falloff * falloff;
+        }
+        
+        float NdotL = saturate(dot(N, L));
+        
+        // Self-shadowing from ripples
+        float shadow = 1.0;
+        if (NdotL > 0.0) {
+            // Simulate self-shadowing based on ripple height
+            float rippleShadow = totalRipples.height * 2.0;
+            shadow = 1.0 - saturate(rippleShadow * (1.0 - NdotL)) * 0.5;
+            shadow *= totalRipples.occlusion;
+        }
+        
+        NdotL *= shadow;
+        if (NdotL <= 0.0) continue;
+        
+        vec3 H = normalize(L + V);
+        float NdotH = saturate(dot(N, H));
+        vec3 lightCol = u_LightColor[i] * u_LightIntensity[i] * attenuation;
+        
+        // Two-lobe specular
+        float specSoft = ggxSpecular(NdotH, roughness);
+        float specSparkle = ggxSpecular(NdotH, roughness * 0.22);
+        specSparkle = softClip(specSparkle, 2.5);
+        
+        float sparkleBoost = 0.3 + 0.7 * fresnel;
+        float spec = (specSoft * 0.4 + specSparkle * 3.0 * sparkleBoost) * u_SpecularIntensity;
+        
+        // Ripple sparkle enhancement
+        spec *= 1.0 + totalRipples.foam * 2.0;
+        
+        if (u_LightType[i] == 0) {
+            vec3 lightDir = normalize(-u_LightDir[i]);
+            vec3 sunReflect = reflect(-lightDir, N);
+            float sunGlitter = saturate(dot(sunReflect, V));
+            
+            float glitter1 = pow(sunGlitter, mix(600.0, 2000.0, roughness));
+            float glitter2 = pow(sunGlitter, mix(2000.0, 8000.0, roughness * 0.5));
+            
+            glitter1 = softClip(glitter1, 0.2);
+            glitter2 = softClip(glitter2, 0.08);
+            
+            float sunStreak = (glitter1 * 0.6 + glitter2 * 0.4);
+            spec += sunStreak * fresnel * u_SpecularIntensity * 1.8;
+        }
+        
+        // Subsurface scattering approximation for ripple peaks
+        float sss = 0.0;
+        if (totalRipples.height > 0.0) {
+            vec3 backLight = -L;
+            float sssFactor = saturate(dot(V, -backLight)) * saturate(totalRipples.height * 0.5);
+            sss = sssFactor * 0.15 * shadow;
+        }
+        
+        lit += waterColor * lightCol * (NdotL * mix(0.10, 0.18, shallowMask) + sss);
+        
+        vec3 specColor = lightCol * spec * specTint;
+        specColor = mix(specColor, specColor * waterColor, metallicInfluence * 0.6);
+        lit += specColor;
+    }
+    
+    // Caustics
+    vec2 causticCoord1 = v_WorldPos.xz * 0.6 + vec2(u_Time * 0.35, u_Time * 0.28);
+    vec2 causticCoord2 = v_WorldPos.xz * 0.9 - vec2(u_Time * 0.22, -u_Time * 0.32);
+    
+    float caustic1 = warpedFbm(causticCoord1, u_Time * 0.5);
+    float caustic2 = fbm(causticCoord2 + vec2(sin(u_Time * 0.4), cos(u_Time * 0.35)));
+    
+    float caustics = caustic1 * 0.6 + caustic2 * 0.4;
+    caustics = smoothstep(0.38, 0.72, caustics);
+    caustics *= shallowMask * 0.22 * totalRipples.occlusion;
+    
+    lit += vec3(0.12, 0.24, 0.20) * caustics;
+    
+    float microCaustic = fbm(v_WorldPos.xz * 4.5 + vec2(u_Time * 1.2, -u_Time * 0.9));
+    microCaustic = smoothstep(0.55, 0.78, microCaustic) * shallowMask * 0.08;
+    lit += vec3(0.08, 0.16, 0.14) * microCaustic;
+    
+    // Reflection
+    vec3 R = reflect(-V, N);
+    float skyGrad = pow(1.0 - saturate(R.y * 0.5 + 0.5), 2.0);
+    
+    vec3 skyHorizon = vec3(0.06, 0.15, 0.22);
+    vec3 skyZenith = vec3(0.48, 0.64, 0.76);
+    vec3 skyReflect = mix(skyHorizon, skyZenith, skyGrad);
+    
+    float cloudNoise = fbm(R.xz * 0.8 + vec2(u_Time * 0.02, u_Time * 0.015)) * 0.15;
+    skyReflect = mix(skyReflect, skyReflect * 1.1 + vec3(0.05), cloudNoise);
+    
+    float gloss = 1.0 - roughness;
+    float reflectionMix = clamp(fresnel * 0.82 + gloss * 0.10, 0.0, 0.96);
+    
+    vec3 reflectionColor = mix(vec3(1.0), waterColor * 0.7, metallicInfluence * 0.3);
+    
+    vec3 finalColor = mix(lit, skyReflect * reflectionColor, reflectionMix);
+    finalColor = mix(finalColor, mix(u_FoamColor, vec3(1.0), 0.45), foam);
+    
+    // Alpha
+    float alpha = mix(0.28, u_WaterAlpha, deepness);
+    alpha *= mix(1.0, 0.68, saturate(u_Clarity));
+    alpha = max(alpha, foam * 0.5);
+    
+    float edgeFade = smoothstep(0.0, 0.3, waterDepth);
+    alpha *= mix(0.5, 1.0, edgeFade);
+    
+    float fog = fogFactorAt(u_CameraPos, v_WorldPos);
+    finalColor = mix(finalColor, u_FogColor, fog);
+    
+    o_Color = vec4(finalColor, alpha);
 }
