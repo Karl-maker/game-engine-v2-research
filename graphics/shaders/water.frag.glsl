@@ -143,23 +143,37 @@ float sampleLocalRippleTexture(int index, vec2 uv) {
   return 1.0;
 }
 
+// Raw, un-contrasted height field. Deliberately NOT pushed through a hard
+// smoothstep here — a near-binary field has near-zero gradient across most
+// of its area, which is what made the derived normal go flat/static almost
+// everywhere except thin blob edges. Contrast is applied separately by
+// callers that want a punchier *visual* mask (e.g. foam breakup) without
+// destroying the gradient information used for the normal.
 float rippleHeight(vec2 uv) {
   if (!u_UseRippleMask) return 0.0;
   float a = texture(u_RippleMaskTex, uv).r;
   float b = texture(u_RippleMaskTex, uv * 1.9 + vec2(0.17, -0.11)).r;
   float c = texture(u_RippleMaskTex, uv * 3.6 + vec2(-0.23, 0.29)).r;
-  float combined = a * 0.55 + b * 0.30 + c * 0.15;
-  return smoothstep(0.18, 0.82, combined);
+  return a * 0.55 + b * 0.30 + c * 0.15;
 }
 
 vec3 rippleNormal(vec2 uv) {
   if (!u_UseRippleMask) return vec3(0.0, 1.0, 0.0);
-  float eps = 0.003;
-  float h = rippleHeight(uv);
-  float hx = rippleHeight(uv + vec2(eps, 0.0));
-  float hy = rippleHeight(uv + vec2(0.0, eps));
+  // Step size tied to the actual texel size of the mask (not a fixed
+  // world-space constant) so the finite difference always samples real
+  // detail in the texture regardless of u_RippleTiling.
+  vec2 texel = 1.0 / vec2(textureSize(u_RippleMaskTex, 0));
+  vec2 eps = max(texel * 1.5, vec2(0.0008));
+  float h  = rippleHeight(uv);
+  float hx = rippleHeight(uv + vec2(eps.x, 0.0));
+  float hy = rippleHeight(uv + vec2(0.0, eps.y));
   vec2 grad = vec2(hx - h, hy - h) / eps;
-  return normalize(vec3(-grad.x, 1.0 / max(0.001, u_RippleStrength * 12.0), -grad.y));
+  // Fixed bump scale: u_RippleStrength is applied exactly once, as the
+  // blend weight where this is mixed into N below. Previously it also
+  // scaled this internal steepness, so turning it up simultaneously made
+  // ripples both more visible AND more spiky, with no clean middle ground.
+  const float bumpScale = 2.2;
+  return normalize(vec3(-grad.x * bumpScale, 1.0, -grad.y * bumpScale));
 }
 
 vec2 waveGradient(vec2 worldXZ) {
@@ -193,8 +207,15 @@ void main() {
     N = normalize(mix(N, applyPlanarNormal(N, waterNormal), saturate(u_NormalStrength)));
   }
 
-  vec2 rippleUv = v_WorldPos.xz * u_RippleTiling + vec2(u_Time * 0.028, -u_Time * 0.020);
-  vec2 rippleUvFine = v_WorldPos.xz * (u_RippleTiling * 2.4) + vec2(-u_Time * 0.035, u_Time * 0.026);
+  // Ripple detail now drifts with the same wave directions as the big
+  // swell (scaled by u_WaveSpeed) instead of unrelated fixed constants.
+  // That's what made the fine ripples look like they were sliding the
+  // "wrong" way relative to everything else on the surface.
+  vec2 rippleDirA = safeDir(u_WaveDirection);
+  vec2 rippleDirB = safeDir(u_SecondaryWaveDirection);
+  float rippleDriftSpeed = 0.12 * max(0.05, u_WaveSpeed);
+  vec2 rippleUv = v_WorldPos.xz * u_RippleTiling + rippleDirA * (u_Time * rippleDriftSpeed);
+  vec2 rippleUvFine = v_WorldPos.xz * (u_RippleTiling * 2.4) - rippleDirB * (u_Time * rippleDriftSpeed * 1.4);
   vec3 rippleN = normalize(mix(rippleNormal(rippleUv), rippleNormal(rippleUvFine), 0.48));
   N = normalize(mix(N, applyPlanarNormal(N, rippleN), saturate(u_RippleStrength)));
 
@@ -267,7 +288,12 @@ void main() {
 
   vec3 waterColor = mix(u_ShallowColor, u_BaseColor.rgb, deepness);
 
-  float rippleBreakup = u_UseRippleMask ? max(rippleHeight(rippleUv), rippleHeight(rippleUvFine)) : 0.5;
+  // Contrast is applied here, for the visual foam/breakup mask only —
+  // rippleHeight() itself stays raw so rippleNormal()'s gradient is
+  // never flattened to zero across most of the surface.
+  float rippleBreakup = u_UseRippleMask
+      ? smoothstep(0.25, 0.75, max(rippleHeight(rippleUv), rippleHeight(rippleUvFine)))
+      : 0.5;
   float shoreMask = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFoamDepth), waterDepth);
   float foamEdge = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFadeDistance * 0.65), waterDepth);
   vec2 foamDriftDir = safeDir(u_FoamDriftDirection);

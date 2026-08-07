@@ -393,7 +393,51 @@ void BuoyancySystem::tick(
                 rotationSmooth;
 
 
+                // -------------------------------------------------
+                // Add ripple component if missing
+                // -------------------------------------------------
+
+                if (!registry.has<RippleComponent>(entity)) {
+
+                    auto& rc =
+                        registry.emplace<RippleComponent>(entity);
+
+                    rc.radiusMeters = 18.0f;
+
+                    rc.lengthMeters = 1.0f;
+                    rc.widthMeters = 1.5f;
+
+                    rc.strength = 0.22f;
+                    rc.magnitude = 3.25f;
+
+                    rc.frequency = 11.5f;
+                    rc.speed = 3.1f;
+
+                    rc.falloffPower = 1.65f;
+                    rc.tiling = 0.28f;
+
+                    rc.direction = {1.0f, 0.10f};
+                    rc.driftSpeed = 0.24f;
+
+                    rc.foamBoost = 0.72f;
+
+                    rc.noiseScale = 0.22f;
+                    rc.noiseStrength = 0.55f;
+                    rc.noiseSpeed = 0.85f;
+
+                    rc.textureEnabled = true;
+
+                    rc.texture = {
+                        true,
+                        "assets/textures/water/ripples/ripple-01.jpg",
+                        0
+                    };
+
+                    rc.enabled = true;
+                }
         });
+
+
 
 
 }

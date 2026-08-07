@@ -88,7 +88,20 @@ uniform vec3 u_LightColor[MAX_LIGHTS];
 uniform float u_LightIntensity[MAX_LIGHTS];
 uniform float u_LightRange[MAX_LIGHTS];
 
+// Water physical constants
+const float WATER_F0 = 0.02;  // Fresnel reflectance at normal incidence for water
+const float WATER_ABSORPTION = 0.25;  // Beer's law absorption coefficient
+
 float saturate(float x) { return clamp(x, 0.0, 1.0); }
+
+// Soft clipping function to prevent harsh white blowouts
+float softClip(float x, float threshold) {
+    return x / (x + threshold);
+}
+
+vec3 softClip(vec3 x, float threshold) {
+    return x / (x + threshold);
+}
 
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -111,9 +124,9 @@ float fbm(vec2 p) {
   float sum = 0.0;
   float amp = 0.5;
   float freq = 1.0;
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < 5; ++i) {
     sum += valueNoise(p * freq) * amp;
-    freq *= 2.03;
+    freq *= 2.17;
     amp *= 0.5;
   }
   return sum;
@@ -177,6 +190,31 @@ float terrainHeightAt(vec2 uv) {
   float h = texture(u_HeightMapTex, uv * u_MapUvTiling).r;
   if (u_HeightMapInvert != 0) h = 1.0 - h;
   return u_ShoreTerrainBaseY + h * u_ShoreTerrainHeightScale * u_HeightMapStrength;
+}
+
+// Schlick fresnel approximation with correct water F0
+vec3 schlickFresnel(float NdotV, vec3 F0) {
+    return F0 + (vec3(1.0) - F0) * pow(1.0 - NdotV, 5.0);
+}
+
+// Two-lobe specular for realistic water sparkle
+float specularLobe1(float NdotH, float roughness) {
+    // Soft broad highlight
+    float alpha = roughness * roughness;
+    float alpha2 = alpha * alpha;
+    float d = NdotH * NdotH * (alpha2 - 1.0) + 1.0;
+    return alpha2 / (3.14159 * d * d);
+}
+
+float specularLobe2(float NdotH, float roughness) {
+    // Tight sparkle lobe (much narrower)
+    float sparkleRoughness = roughness * 0.25;  // Much tighter
+    float alpha = sparkleRoughness * sparkleRoughness;
+    float alpha2 = alpha * alpha;
+    float d = NdotH * NdotH * (alpha2 - 1.0) + 1.0;
+    float sparkle = alpha2 / (3.14159 * d * d);
+    // Soft clip to prevent over-bright sparkles
+    return softClip(sparkle, 2.0);
 }
 
 void main() {
@@ -265,7 +303,9 @@ void main() {
   float deepness = saturate(waterDepth / max(0.001, u_ShoreFadeDistance));
   float shallowMask = 1.0 - deepness;
 
-  vec3 waterColor = mix(u_ShallowColor, u_BaseColor.rgb, deepness);
+  // Beer's law exponential color falloff for realistic depth absorption
+  float absorption = exp(-WATER_ABSORPTION * waterDepth);
+  vec3 waterColor = mix(u_ShallowColor, u_BaseColor.rgb, 1.0 - absorption);
 
   float rippleBreakup = u_UseRippleMask ? max(rippleHeight(rippleUv), rippleHeight(rippleUvFine)) : 0.5;
   float shoreMask = 1.0 - smoothstep(0.0, max(0.001, u_ShoreFoamDepth), waterDepth);
@@ -296,8 +336,20 @@ void main() {
 
   vec3 lit = waterColor * vec3(0.06, 0.08, 0.10);
   float NdotV = saturate(dot(N, V));
-  float fresnel = pow(1.0 - NdotV, 5.0);
-  float gloss = 1.0 - saturate(u_Roughness);
+  
+  // Schlick fresnel with correct water F0
+  vec3 F0 = vec3(WATER_F0);
+  // u_Metallic tints the specular/reflection toward water color (stylization)
+  F0 = mix(F0, waterColor * 0.3, saturate(u_Metallic));
+  vec3 fresnel = schlickFresnel(NdotV, F0);
+  
+  float roughness = saturate(u_Roughness);
+  float gloss = 1.0 - roughness;
+
+  // Real reflection vector for sky gradient (responds to wave normals)
+  vec3 R = reflect(-V, N);
+  float skyGradient = pow(1.0 - saturate(R.y * 0.5 + 0.5), 2.0);
+  vec3 skyReflect = mix(vec3(0.06, 0.15, 0.20), vec3(0.48, 0.64, 0.76), skyGradient);
 
   for (int i = 0; i < u_LightCount && i < MAX_LIGHTS; ++i) {
     vec3 L = vec3(0.0, 1.0, 0.0);
@@ -318,21 +370,54 @@ void main() {
     if (NdotL <= 0.0) continue;
 
     vec3 H = normalize(L + V);
-    float specPower = mix(180.0, 22.0, saturate(u_Roughness));
-    float spec = pow(saturate(dot(N, H)), specPower) * mix(0.08, 1.35, saturate(u_SpecularIntensity));
+    float NdotH = saturate(dot(N, H));
     vec3 lightCol = u_LightColor[i] * u_LightIntensity[i] * attenuation;
+    
+    // Two-lobe specular: soft broad highlight + tight sparkle
+    float specSoft = specularLobe1(NdotH, roughness);
+    float specSparkle = specularLobe2(NdotH, roughness);
+    
+    // Modulate sparkle by fresnel - sparkles are stronger at grazing angles
+    float sparkleModulation = 0.4 + 0.6 * fresnel.g;
+    float spec = (specSoft * 0.5 + specSparkle * 2.5 * sparkleModulation) * u_SpecularIntensity;
+    
+    // Sun glitter path for directional lights
+    if (u_LightType[i] == 0) {
+        vec3 lightDir = normalize(-u_LightDir[i]);
+        vec3 sunReflect = reflect(-lightDir, N);
+        float sunGlitter = saturate(dot(sunReflect, V));
+        
+        // Very tight sun highlight with soft clipping
+        float sunHighlight = pow(sunGlitter, mix(400.0, 1200.0, roughness));
+        sunHighlight = softClip(sunHighlight, 0.15) * 0.7;
+        
+        // Add sun glitter streak
+        spec += sunHighlight * fresnel.g * u_SpecularIntensity * 2.0;
+    }
+    
+    // Diffuse lighting
     lit += waterColor * lightCol * (NdotL * mix(0.12, 0.20, shallowMask));
-    lit += lightCol * spec * mix(0.45, 1.15, fresnel);
+    
+    // Specular contribution with metallic tint
+    vec3 specColor = lightCol * spec;
+    specColor = mix(specColor, specColor * waterColor, u_Metallic * 0.5);
+    lit += specColor;
   }
 
-  float causticWave = 0.5 + 0.5 * sin((v_WorldPos.x + v_WorldPos.z) * 0.24 + u_Time * 2.7);
-  float causticRipple = 0.5 + 0.5 * sin((v_WorldPos.x - v_WorldPos.z) * 0.41 - u_Time * 1.8);
-  float caustics = shallowMask * rippleBreakup * causticWave * causticRipple * 0.18;
-  lit += vec3(0.10, 0.20, 0.18) * caustics;
+  // Caustics using FBM noise for organic, non-periodic patterns
+  vec2 causticCoord = v_WorldPos.xz * 0.5;
+  float causticNoise = fbm(causticCoord + vec2(u_Time * 0.3, u_Time * 0.25));
+  float causticNoise2 = fbm(causticCoord * 1.7 - vec2(u_Time * 0.2, -u_Time * 0.35));
+  float caustics = (causticNoise * 0.7 + causticNoise2 * 0.3);
+  caustics = smoothstep(0.35, 0.75, caustics);
+  caustics *= shallowMask * rippleBreakup * 0.22;
+  lit += vec3(0.12, 0.22, 0.20) * caustics;
 
-  vec3 skyReflect = mix(vec3(0.06, 0.15, 0.20), vec3(0.48, 0.64, 0.76), pow(1.0 - saturate(V.y * 0.5 + 0.5), 2.0));
-  float reflectionMix = clamp(0.36 + fresnel * 0.70 + gloss * 0.14, 0.0, 0.96);
-  vec3 finalColor = mix(lit, skyReflect, reflectionMix);
+  // Reflection mixing using real reflection vector
+  float reflectionMix = clamp(fresnel.g * 0.85 + gloss * 0.12, 0.0, 0.96);
+  // Metallic tint on reflections
+  vec3 reflectionTint = mix(vec3(1.0), waterColor * 0.8, u_Metallic * 0.4);
+  vec3 finalColor = mix(lit, skyReflect * reflectionTint, reflectionMix);
   finalColor = mix(finalColor, mix(u_FoamColor, vec3(1.0), 0.55), foam);
 
   float alpha = mix(0.24, u_WaterAlpha, deepness);

@@ -81,6 +81,7 @@ EntityId CombatantFactory::create(
 
   auto& ridig = registry.emplace<ecs::RigidbodyComponent>(id);
 
+  // TODO - Make more dynamic
   ridig.buoyant = true;
   ridig.buoyancyHeight = -1.5;
 
