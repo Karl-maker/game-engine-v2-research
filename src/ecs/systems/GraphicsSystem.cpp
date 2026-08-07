@@ -925,7 +925,7 @@ const GraphicsSystem::FrameSnapshot& GraphicsSystem::tick(EntityRegistry& regist
         if (!ripple.enabled) return;
         FrameSnapshot::RippleDraw draw;
         draw.entity = id;
-        draw.position = {tr.position.x, tr.position.y};
+        draw.position = {tr.position.x, tr.position.z};
         draw.radiusMeters = ripple.radiusMeters;
         draw.lengthMeters = ripple.lengthMeters;
         draw.widthMeters = ripple.widthMeters;

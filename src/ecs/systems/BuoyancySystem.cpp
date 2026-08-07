@@ -8,7 +8,8 @@
 
 #include <vector>
 #include <cmath>
-#include <algorithm>
+#include <cstdint>
+#include <unordered_map>
 
 namespace ecs::systems {
 
@@ -22,23 +23,52 @@ constexpr char kWaterShader[] = "graphics/shaders/water";
 // Buoyancy tuning
 // ---------------------------------------------------------
 
-// Side-to-side rocking angle
-constexpr float kMaxRoll = 8.0f;
-
-// Keep forward/back rotation disabled
-constexpr float kMaxPitch = 0.0f;
-
-
-// Slow ocean swell speed
-constexpr float kWaveSpeed = 0.45f;
+// Very subtle water movement
+constexpr float kPitchAmount = 0.35f;
+constexpr float kYawAmount   = 0.15f;
+constexpr float kRollAmount  = 5.0f;
 
 
-// How heavy the object feels
+// Slow ocean movement
+constexpr float kWaveSpeed = 0.35f;
+
+
+// Smoothness
 constexpr float kWaterResponse = 2.0f;
 
 
-// Vertical movement amount
-constexpr float kBobAmount = 0.08f;
+// Object variation
+constexpr float kSpeedVariation = 0.25f;
+constexpr float kStrengthVariation = 0.35f;
+
+
+constexpr float kTwoPi = 6.283185f;
+
+
+
+struct BuoyancyOffset {
+    float basePitch;
+    float baseYaw;
+    float baseRoll;
+
+    float phase;
+    float speed;
+    float strength;
+};
+
+
+std::unordered_map<EntityId, BuoyancyOffset> s_offsets;
+
+
+
+float random01(uint32_t value)
+{
+    value ^= value << 13;
+    value ^= value >> 17;
+    value ^= value << 5;
+
+    return static_cast<float>(value % 10000) / 10000.0f;
+}
 
 
 }
@@ -59,19 +89,18 @@ void BuoyancySystem::tick(
 
 
 
-    struct WaterSurface {
-        float height;
-    };
-
-
-    std::vector<WaterSurface> waterSurfaces;
+    float waterHeight = 0.0f;
+    bool hasWater = false;
 
 
 
     // ---------------------------------------------------------
-    // Find water surfaces
+    // Find water
     // ---------------------------------------------------------
-    registry.view<TerrainComponent, TransformComponent, ShaderComponent>(
+
+    registry.view<TerrainComponent,
+                 TransformComponent,
+                 ShaderComponent>(
         [&](EntityId entity,
             TerrainComponent& terrain,
             TransformComponent& transform,
@@ -83,157 +112,185 @@ void BuoyancySystem::tick(
             }
 
 
-            waterSurfaces.push_back({
-                transform.position.y
-            });
+            waterHeight = transform.position.y;
+            hasWater = true;
 
         });
 
 
 
-    if (waterSurfaces.empty()) {
+    if (!hasWater) {
         return;
     }
 
 
 
+    const float smoothing =
+        1.0f -
+        std::exp(-kWaterResponse * dt);
+
+
+
+
     // ---------------------------------------------------------
-    // Find floating objects
+    // Floating objects
     // ---------------------------------------------------------
+
     registry.view<MeshComponent, TransformComponent>(
         [&](EntityId entity,
             MeshComponent& mesh,
             TransformComponent& transform) {
 
 
-            bool floating = false;
-
-            float waterHeight = 0.0f;
-
-
-
-            for (const auto& water : waterSurfaces) {
-
-                float distance =
-                    water.height - transform.position.y;
-
-
-                if (distance >= 0.0f &&
-                    distance <= kWaterHeightTolerance) {
-
-                    floating = true;
-                    waterHeight = water.height;
-                    break;
-                }
-
-            }
+            float distance =
+                waterHeight -
+                transform.position.y;
 
 
 
-            if (!floating) {
+            if (distance < 0.0f ||
+                distance > kWaterHeightTolerance) {
+
                 return;
             }
 
 
 
             // -------------------------------------------------
-            // Ocean wave force
+            // Create unique buoyancy settings once
             // -------------------------------------------------
 
-            float wave =
-                std::sin(time * kWaveSpeed) * 0.75f +
-                std::sin(time * (kWaveSpeed * 0.25f)) * 0.25f;
+            auto it =
+                s_offsets.find(entity);
 
 
 
-            // Convert wave into roll angle
-            float targetRoll =
-                wave * kMaxRoll;
+            if (it == s_offsets.end()) {
+
+                uint32_t seed =
+                    static_cast<uint32_t>(entity);
 
 
+                s_offsets[entity] = {
 
-            // Smooth water force response
-            float smoothing =
-                1.0f -
-                std::exp(-kWaterResponse * dt);
+                    transform.rotation.x,
+                    transform.rotation.y,
+                    transform.rotation.z,
 
+                    random01(seed) * kTwoPi,
 
+                    1.0f +
+                    ((random01(seed + 10) - 0.5f)
+                     *
+                     kSpeedVariation),
 
-            // -------------------------------------------------
-            // Apply side-to-side rocking
-            // -------------------------------------------------
-
-            transform.rotation.z +=
-                (targetRoll - transform.rotation.z)
-                * smoothing;
-
-
-
-            // Keep pitch neutral
-            transform.rotation.x +=
-                (kMaxPitch - transform.rotation.x)
-                * smoothing;
-
-
-
-            // Keep yaw neutral
-            transform.rotation.y +=
-                (0.0f - transform.rotation.y)
-                * smoothing;
-
-
-
-            // -------------------------------------------------
-            // Floating height
-            // -------------------------------------------------
-
-            // transform.position.y =
-            //     waterHeight +
-            //     (wave * kBobAmount);
-
-
-
-            // -------------------------------------------------
-            // Add ripple component if missing
-            // -------------------------------------------------
-
-            if (true) return;
-            if (!registry.has<RippleComponent>(entity)) {
-
-                auto& rc = registry.emplace<RippleComponent>(entity);
-
-                rc.radiusMeters = 18.0f;
-                rc.lengthMeters = 1.0f;
-                rc.widthMeters = 1.5f;
-
-                rc.strength = 0.22f;
-                rc.magnitude = 3.25f;
-
-                rc.frequency = 11.5f;
-                rc.speed = 3.1f;
-
-                rc.falloffPower = 1.65f;
-                rc.tiling = 0.28f;
-
-                rc.direction = {1.0f, 0.10f};
-                rc.driftSpeed = 0.24f;
-
-                rc.foamBoost = 0.72f;
-
-                rc.noiseScale = 0.22f;
-                rc.noiseStrength = 0.55f;
-                rc.noiseSpeed = 0.85f;
-
-                rc.textureEnabled = true;
-
-                rc.texture = {
-                    true,
-                    "assets/textures/water/ripples/ripple-01.jpg",
-                    0
+                    1.0f +
+                    ((random01(seed + 20) - 0.5f)
+                     *
+                     kStrengthVariation)
                 };
 
-                rc.enabled = true;
+
+                it =
+                    s_offsets.find(entity);
             }
+
+
+
+            auto& buoyancy =
+                it->second;
+
+
+
+
+            // -------------------------------------------------
+            // Water movement
+            // -------------------------------------------------
+
+            float pitchWave =
+                std::sin(
+                    time *
+                    kWaveSpeed *
+                    buoyancy.speed
+                    +
+                    buoyancy.phase
+                );
+
+
+            float yawWave =
+                std::sin(
+                    time *
+                    kWaveSpeed *
+                    0.5f *
+                    buoyancy.speed
+                    +
+                    buoyancy.phase * 2.0f
+                );
+
+
+            float rollWave =
+                std::sin(
+                    time *
+                    kWaveSpeed *
+                    buoyancy.speed
+                    +
+                    buoyancy.phase * 1.3f
+                );
+
+
+
+
+            // -------------------------------------------------
+            // Target rotation
+            // Base rotation + water offset
+            // -------------------------------------------------
+
+            float targetPitch =
+                buoyancy.basePitch +
+                pitchWave *
+                kPitchAmount *
+                buoyancy.strength;
+
+
+            float targetYaw =
+                buoyancy.baseYaw +
+                yawWave *
+                kYawAmount *
+                buoyancy.strength;
+
+
+            float targetRoll =
+                buoyancy.baseRoll +
+                rollWave *
+                kRollAmount *
+                buoyancy.strength;
+
+
+
+
+            // -------------------------------------------------
+            // Smooth movement
+            // -------------------------------------------------
+
+            transform.rotation.x +=
+                (targetPitch -
+                 transform.rotation.x)
+                 *
+                 smoothing;
+
+
+            transform.rotation.y +=
+                (targetYaw -
+                 transform.rotation.y)
+                 *
+                 smoothing;
+
+
+            transform.rotation.z +=
+                (targetRoll -
+                 transform.rotation.z)
+                 *
+                 smoothing;
 
 
         });
