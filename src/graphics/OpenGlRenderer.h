@@ -281,6 +281,7 @@ class OpenGlRenderer final {
   bool m_keyA = false;
   bool m_keyS = false;
   bool m_keyD = false;
+  bool m_keyE = false;
   bool m_keyShift = false;
   bool m_keyCtrl = false;
   bool m_keySpaceQueued = false;

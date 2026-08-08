@@ -9,6 +9,8 @@ namespace ecs {
 struct InteractiveComponent {
   float interactive_distance = 1.0f;
 
+  std::string description = "Interact with item";
+
   // Per-frame detection/debug state filled by InteractionDetectionSystem.
   bool detected_this_frame = false;
   bool detected_by_player_sensor = false;

@@ -23,6 +23,7 @@ class ControlService final {
     bool sprint = false;
     bool crouch = false;
     bool jump = false;
+    bool interact = false;
     bool attack = false;
     bool lookActive = false;
     float lookDeltaPitchDeg = 0.0f;
@@ -36,6 +37,7 @@ class ControlService final {
     bool crouch = false;
     bool jump = false;
     bool attack = false;
+    bool interact = false;
   };
 
   void update(const TickContext& ctx, const RealtimeInput* realtime = nullptr);

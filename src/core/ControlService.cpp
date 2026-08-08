@@ -158,6 +158,11 @@ void ControlService::update(const TickContext& ctx, const RealtimeInput* realtim
       m_state.attack = true;
       continue;
     }
+
+    if (cmd == "interact") {
+      m_state.interact = true;
+      continue;
+    }
   }
 }
 

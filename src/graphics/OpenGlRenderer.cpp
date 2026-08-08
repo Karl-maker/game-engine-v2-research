@@ -645,6 +645,7 @@ void OpenGlRenderer::glfwKeyCallback(GLFWwindow* w, int key, int, int action, in
     case GLFW_KEY_A: self->m_keyA = down; break;
     case GLFW_KEY_S: self->m_keyS = down; break;
     case GLFW_KEY_D: self->m_keyD = down; break;
+    case GLFW_KEY_E: self->m_keyE  = down; break;
     default: break;
   }
   self->m_keyShift = (mods & GLFW_MOD_SHIFT) != 0;
