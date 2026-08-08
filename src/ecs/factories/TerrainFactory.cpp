@@ -15,7 +15,7 @@
 namespace ecs::services {
 
 namespace {
-
+ 
 void appendShaderBreakpoints(const ViewableInput& viewable, ecs::ShaderComponent& shader) {
   shader.lodBreakpoints.reserve(shader.lodBreakpoints.size() + viewable.lodBreakpoints.size());
   for (const auto& bp : viewable.lodBreakpoints) {
