@@ -12,7 +12,7 @@ GAME_EXITED=0
 if [ "$#" -gt 0 ]; then
   GAME_ARGS=("$@")
 else
-  GAME_ARGS=(gameplay --fps 144 --uncapped --dev)
+  GAME_ARGS=(gameplay --fps 144 --uncapped --dev --debug-world)
 fi
 
 source_snapshot() {

@@ -309,6 +309,7 @@ struct RaycastConeInput final {
   float radius = 0.0f;
   physics::LayerMask collisionLayers = physics::kLayerCharacter;
   physics::LayerMask ignoreLayers = 0;
+  bool ignoreTriggerColliders = true;
   bool ignoreSelf = true;
   int maxHits = 1;
   math::Vec3 originLocalOffset{0.0f, 0.0f, 0.0f};
@@ -319,7 +320,10 @@ struct SensorConeInput final {
   bool enabled = false;
   std::string sensorName = "player_head_sensor";
   std::string socketName = "player_head_socket";
+  std::string skeletonName;
   math::Vec3 socketPositionOffset{0.0f, 0.0f, 0.0f};
+  math::Vec3 socketRotationOffset{0.0f, 0.0f, 0.0f};
+  math::Vec3 socketScaleOffset{0.0f, 0.0f, 0.0f};
   RaycastConeInput cone{};
 };
 

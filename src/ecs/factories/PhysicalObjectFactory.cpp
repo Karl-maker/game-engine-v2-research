@@ -11,6 +11,7 @@
 #include "ecs/components/RigidbodyComponent.h"
 #include "ecs/components/MotionComponent.h"
 #include "ecs/components/BuoyantComponent.h"
+#include "ecs/components/InteractiveComponent.h"
 
 #include <algorithm>
 
@@ -79,6 +80,9 @@ EntityId PhysicalObjectFactory::create(
       motion.isGrounded = false;
     }
   }
+
+  // @TODO - Add to a factory for deeper behavior like interactive object or something
+  auto& interactive = registry.emplace<ecs::InteractiveComponent>(id);
 
   // @TODO - Add Combat Volume for basic objects
 

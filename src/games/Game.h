@@ -30,6 +30,7 @@
 #include "ecs/systems/GravitySystem.h"
 #include "ecs/systems/IdleAnimationSystem.h"
 #include "ecs/systems/IKSystem.h"
+#include "ecs/systems/InteractionDetectionSystem.h"
 #include "ecs/systems/JumpSystem.h"
 #include "ecs/systems/MotionSystem.h"
 #include "ecs/systems/MovementSystem.h"
@@ -102,6 +103,7 @@ class Game final : public core::IGame {
   ecs::systems::CollisionDetectionSystem m_collisionDetectionSystem;
   ecs::systems::CollisionResolutionSystem m_collisionResolutionSystem;
   ecs::systems::HitDetectionSystem m_hitDetectionSystem;
+  ecs::systems::InteractionDetectionSystem m_interactionDetectionSystem;
   ecs::systems::CombatInteractionSystem m_combatInteractionSystem;
   ecs::systems::HierarchySystem m_hierarchySystem;
   ecs::systems::MotionSystem m_motionSystem;

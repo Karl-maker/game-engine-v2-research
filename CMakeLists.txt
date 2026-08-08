@@ -28,6 +28,7 @@ add_executable(duppy
   src/ecs/systems/IKSystem.cpp
   src/ecs/systems/JumpSystem.cpp
   src/ecs/systems/HitDetectionSystem.cpp
+  src/ecs/systems/InteractiveDetectionSystem.cpp
   src/ecs/systems/MotionSystem.cpp
   src/ecs/systems/MovementSystem.cpp
   src/ecs/systems/KnockbackSystem.cpp

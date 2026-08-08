@@ -640,6 +640,7 @@ void Game::onTick(const core::TickContext& ctx) {
   profile("attachment", [&] { m_attachmentSystem.update(m_registry, ctx.deltaSeconds); });
   profile("ray_detect", [&] { m_rayDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds); });
   profile("sensor", [&] { m_sensorSystem.tick(m_registry, m_events); });
+  profile("interaction_detect", [&] { m_interactionDetectionSystem.tick(m_registry, m_events, ctx.elapsedSeconds); });
   profile("ik_targets", [&] {
     (void)updatePlayerVisionDrivenIk(m_registry, m_events, m_player, m_demoNpc);
     updatePlayerHeadFacingIk(m_registry, m_player, m_camera);

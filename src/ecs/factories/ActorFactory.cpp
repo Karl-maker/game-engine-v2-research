@@ -247,7 +247,10 @@ EntityId ActorFactory::create(
     SensorConeConfig cfg;
     cfg.sensorName = config.sensorCone.sensorName;
     cfg.socketName = config.sensorCone.socketName;
+    cfg.skeletonName = config.sensorCone.skeletonName;
     cfg.socketPositionOffset = config.sensorCone.socketPositionOffset;
+    cfg.socketRotationOffset = config.sensorCone.socketRotationOffset;
+    cfg.socketScaleOffset = config.sensorCone.socketScaleOffset;
     cfg.cone.baseName = config.sensorCone.cone.baseName;
     cfg.cone.rayCount = config.sensorCone.cone.rayCount;
     cfg.cone.coneAngleDeg = config.sensorCone.cone.coneAngleDeg;
@@ -255,6 +258,7 @@ EntityId ActorFactory::create(
     cfg.cone.radius = config.sensorCone.cone.radius;
     cfg.cone.collisionLayers = config.sensorCone.cone.collisionLayers;
     cfg.cone.ignoreLayers = config.sensorCone.cone.ignoreLayers;
+    cfg.cone.ignoreTriggerColliders = config.sensorCone.cone.ignoreTriggerColliders;
     cfg.cone.ignoreSelf = config.sensorCone.cone.ignoreSelf;
     cfg.cone.maxHits = config.sensorCone.cone.maxHits;
     cfg.cone.originLocalOffset = config.sensorCone.cone.originLocalOffset;

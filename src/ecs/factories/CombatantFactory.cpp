@@ -8,6 +8,7 @@
 #include "ecs/components/PlayerHudComponent.h"
 #include "ecs/components/TransformComponent.h"
 #include "ecs/components/RigidbodyComponent.h"
+#include "ecs/services/RaycastConeFactoryService.h"
 
 namespace ecs::services {
 

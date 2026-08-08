@@ -1491,7 +1491,38 @@ SensorConeInput readSensorConeInput(const data::JsonValue::Object& obj) {
   s.enabled = data::getBoolOr(*so, "enabled", s.enabled);
   s.sensorName = data::getStringOr(*so, "sensorName", s.sensorName);
   s.socketName = data::getStringOr(*so, "socketName", s.socketName);
+  s.skeletonName = data::getStringOr(*so, "skeletonName", s.skeletonName);
   if (const auto* v = data::getObjectKey(*so, "socketPositionOffset")) (void)data::readVec3(*v, s.socketPositionOffset);
+  if (const auto* v = data::getObjectKey(*so, "socketRotationOffset")) (void)data::readVec3(*v, s.socketRotationOffset);
+  if (const auto* v = data::getObjectKey(*so, "socketScaleOffset")) (void)data::readVec3(*v, s.socketScaleOffset);
+
+  // Support both the explicit `sensorCone.cone.*` shape and common shorthand
+  // fields directly under `sensorCone` for persistent/player-authored config.
+  s.cone.rayCount = data::getIntOr(*so, "rayCount", s.cone.rayCount);
+  s.cone.coneAngleDeg = data::getFloatOr(*so, "coneAngleDeg", s.cone.coneAngleDeg);
+  s.cone.length = data::getFloatOr(*so, "length", s.cone.length);
+  s.cone.radius = data::getFloatOr(*so, "radius", s.cone.radius);
+  s.cone.ignoreTriggerColliders = data::getBoolOr(*so, "ignoreTriggerColliders", s.cone.ignoreTriggerColliders);
+  s.cone.ignoreSelf = data::getBoolOr(*so, "ignoreSelf", s.cone.ignoreSelf);
+  s.cone.maxHits = data::getIntOr(*so, "maxHits", s.cone.maxHits);
+  s.cone.baseName = data::getStringOr(*so, "baseName", s.cone.baseName);
+  if (const auto* v = data::getObjectKey(*so, "originLocalOffset")) (void)data::readVec3(*v, s.cone.originLocalOffset);
+  if (const auto* lv = data::getObjectKey(*so, "collisionLayers")) {
+    if (const auto* n = lv->tryNumber()) {
+      s.cone.collisionLayers = static_cast<physics::LayerMask>(static_cast<std::uint32_t>(*n));
+    } else {
+      std::string str;
+      if (data::readString(*lv, str)) s.cone.collisionLayers = parseLayerMask(std::move(str));
+    }
+  }
+  if (const auto* lv = data::getObjectKey(*so, "ignoreLayers")) {
+    if (const auto* n = lv->tryNumber()) {
+      s.cone.ignoreLayers = static_cast<physics::LayerMask>(static_cast<std::uint32_t>(*n));
+    } else {
+      std::string str;
+      if (data::readString(*lv, str)) s.cone.ignoreLayers = parseLayerMask(std::move(str));
+    }
+  }
 
   if (const auto* cv = data::getObjectKey(*so, "cone")) {
     if (const auto* co = cv->tryObject()) {
@@ -1515,6 +1546,7 @@ SensorConeInput readSensorConeInput(const data::JsonValue::Object& obj) {
           if (data::readString(*lv, str)) s.cone.ignoreLayers = parseLayerMask(std::move(str));
         }
       }
+      s.cone.ignoreTriggerColliders = data::getBoolOr(*co, "ignoreTriggerColliders", s.cone.ignoreTriggerColliders);
       s.cone.ignoreSelf = data::getBoolOr(*co, "ignoreSelf", s.cone.ignoreSelf);
       s.cone.maxHits = data::getIntOr(*co, "maxHits", s.cone.maxHits);
       if (const auto* v = data::getObjectKey(*co, "originLocalOffset")) (void)data::readVec3(*v, s.cone.originLocalOffset);
