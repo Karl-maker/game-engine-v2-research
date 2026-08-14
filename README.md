@@ -1,4 +1,4 @@
-# Duppy Conquerer
+# eislett-education-research-development-game-engine-v2
 
 Author: Karl-Johan Bailey
 
